@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "班级工具站主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "班级工具站"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "班级工具站"
+    }
+  ]
+}

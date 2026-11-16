@@ -1,0 +1,7 @@
+# 本项目 release 不做名称混淆：
+# 开启 property 混淆会把网络请求体里的字段名（p_sid/p_name 等）改成 e4/f4，
+# 导致 PostgREST 找不到 RPC 函数（线上实测），因此 release 保持可读名称。
+# -enable-property-obfuscation
+# -enable-toplevel-obfuscation
+# -enable-filename-obfuscation
+# -enable-export-obfuscation

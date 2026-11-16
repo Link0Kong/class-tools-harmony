@@ -1,0 +1,617 @@
+import { Services } from '../../app/Services';
+import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
+import { ClassMember } from '../../data/member/ClassMember';
+import {
+  DrawConfig,
+  DrawEntry,
+  DrawPoolSource,
+  DrawResult,
+  DrawSortMode,
+  drawSortLabel
+} from '../../features/draw/DrawModels';
+import { defaultDrawRandom } from '../../features/draw/DrawRandom';
+import { DrawConfigCodec } from '../../features/draw/DrawConfigCodec';
+import { DrawStep, DrawTransition, DrawWorkflow, DrawWorkflowState } from '../../features/draw/DrawWorkflow';
+import { Tokens } from '../theme/Tokens';
+import { Motion } from '../theme/Motion';
+import { PageHeader } from '../components/PageHeader';
+import { DrawExportFactory, ExportCardSpec, ExportNaming } from '../../features/export/ExportCard';
+import { DrawSession } from '../../app/DrawSession';
+import { ExportPreview } from './ExportPreview';
+
+/**
+ * 抽签工具：STEP1 配置 → STEP2 候选 → STEP3 结果。
+ *
+ * - 参数写回 `userdata.draw`（脏检测 + 防抖推送，跨端一致）；
+ * - 候选来源支持「号码范围 / 班级名单」（名单来源显示姓名，不显示学号）；
+ * - 结果支持剔除补抽、重抽、切换排序（排序写回 config.sort）。
+ */
+@Component
+export struct DrawScreen {
+  onClose: () => void = () => {
+  };
+
+  @State private step: DrawStep = DrawStep.CONFIG;
+  @State private start: number = 1;
+  @State private end: number = 70;
+  @State private count: number = 10;
+  @State private dup: boolean = false;
+  @State private excl: string = '';
+  @State private sort: DrawSortMode = DrawSortMode.DRAW_ORDER;
+  @State private source: DrawPoolSource = DrawPoolSource.RANGE;
+  @State private candidates: DrawEntry[] = [];
+  @State private result: DrawResult | undefined = undefined;
+  @State private errorMsg: string = '';
+  @State private seatNames: string[] = [];
+  @State private seats: number[] = [];
+  @State private showExport: boolean = false;
+  @State private exportSpec: ExportCardSpec = new ExportCardSpec();
+
+  aboutToAppear(): void {
+    this.restoreConfig();
+    this.loadRoster();
+  }
+
+  private restoreConfig(): void {
+    const sections: Blob = Services.userdata.currentSections();
+    const config: DrawConfig = DrawConfigCodec.fromJson(JsonBlob.get(sections, 'draw'));
+    this.start = config.start;
+    this.end = config.end;
+    this.count = config.count;
+    this.dup = config.allowDuplicates;
+    this.excl = config.excludedText;
+    this.sort = config.sort;
+  }
+
+  private async loadRoster(): Promise<void> {
+    const loaded = await Services.members.load(false);
+    const seats: number[] = [];
+    const names: string[] = [];
+    for (let i = 0; i < loaded.members.length; i++) {
+      seats.push(loaded.members[i].seat);
+      names.push(loaded.members[i].name);
+    }
+    this.seats = seats;
+    this.seatNames = names;
+  }
+
+  private currentConfig(): DrawConfig {
+    const config: DrawConfig = new DrawConfig();
+    config.start = this.start;
+    config.end = this.end;
+    config.count = this.count;
+    config.allowDuplicates = this.dup;
+    config.excludedText = this.excl;
+    config.sort = this.sort;
+    config.poolSource = this.source;
+    return config;
+  }
+
+  private nameOf(number: number): string {
+    if (this.source !== DrawPoolSource.ROSTER) {
+      return '';
+    }
+    const index: number = this.seats.indexOf(number);
+    return index >= 0 && index < this.seatNames.length ? this.seatNames[index] : '';
+  }
+
+  /** 参数写回云端 `userdata.draw`（保留未知字段）。 */
+  private async persistConfig(): Promise<void> {
+    const current: Blob = Services.userdata.currentSections();
+    const next: Blob = {};
+    const keys: string[] = JsonBlob.keys(current);
+    for (let i = 0; i < keys.length; i++) {
+      next[keys[i]] = current[keys[i]];
+    }
+    const existing: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(current, 'draw'));
+    next['draw'] = DrawConfigCodec.toJson(this.currentConfig(), existing);
+    await Services.userdata.updateCurrent(next);
+  }
+
+  private toPreview(): void {
+    this.persistConfig();
+    let state: DrawWorkflowState = new DrawWorkflowState();
+    state.config = this.currentConfig();
+    const transition: DrawTransition = DrawWorkflow.toPreview(state, this.seats, (n: number) => this.nameOf(n));
+    if (!transition.ok || transition.state === undefined) {
+      this.errorMsg = transition.error !== undefined ? transition.error.message : '无法生成候选';
+      return;
+    }
+    this.errorMsg = '';
+    this.candidates = transition.state.candidates;
+    this.step = DrawStep.PREVIEW;
+  }
+
+  private swipeNext(): void {
+    if (this.step === DrawStep.CONFIG) {
+      this.toPreview();
+    }
+  }
+
+  private startDraw(): void {
+    let state: DrawWorkflowState = new DrawWorkflowState();
+    state.step = DrawStep.PREVIEW;
+    state.config = this.currentConfig();
+    state.candidates = this.candidates;
+    const transition: DrawTransition = DrawWorkflow.startDraw(state, defaultDrawRandom());
+    if (!transition.ok || transition.state === undefined || transition.state.result === undefined) {
+      this.errorMsg = transition.error !== undefined ? transition.error.message : '抽签失败';
+      return;
+    }
+    this.errorMsg = '';
+    this.result = transition.state.result;
+    DrawSession.set(this.result);
+    this.step = DrawStep.RESULT;
+  }
+
+  private back(): void {
+    if (this.step === DrawStep.RESULT) {
+      this.step = DrawStep.PREVIEW;
+      this.result = undefined;
+      return;
+    }
+    if (this.step === DrawStep.PREVIEW) {
+      this.step = DrawStep.CONFIG;
+      this.candidates = [];
+      return;
+    }
+    this.onClose();
+  }
+
+  private changeSort(mode: DrawSortMode): void {
+    this.sort = mode;
+    this.persistConfig();
+    if (this.step !== DrawStep.RESULT || this.result === undefined) {
+      return;
+    }
+    let state: DrawWorkflowState = new DrawWorkflowState();
+    state.step = DrawStep.RESULT;
+    state.config = this.currentConfig();
+    state.result = this.result;
+    const transition: DrawTransition = DrawWorkflow.changeSort(state, mode, defaultDrawRandom());
+    if (transition.ok && transition.state !== undefined) {
+      this.result = transition.state.result;
+      DrawSession.set(this.result);
+    }
+  }
+
+  private reroll(): void {
+    if (this.result === undefined) {
+      return;
+    }
+    let state: DrawWorkflowState = new DrawWorkflowState();
+    state.step = DrawStep.RESULT;
+    state.config = this.currentConfig();
+    state.result = this.result;
+    const transition: DrawTransition = DrawWorkflow.reroll(state, defaultDrawRandom());
+    if (!transition.ok || transition.state === undefined) {
+      this.errorMsg = transition.error !== undefined ? transition.error.message : '重抽失败';
+      return;
+    }
+    this.errorMsg = '';
+    this.result = transition.state.result;
+    DrawSession.set(this.result);
+  }
+
+  private removeAt(index: number): void {
+    if (this.result === undefined) {
+      return;
+    }
+    let state: DrawWorkflowState = new DrawWorkflowState();
+    state.step = DrawStep.RESULT;
+    state.config = this.currentConfig();
+    state.result = this.result;
+    const transition: DrawTransition = DrawWorkflow.removeAndRedraw(state, index, true, defaultDrawRandom());
+    if (!transition.ok || transition.state === undefined) {
+      this.errorMsg = transition.error !== undefined ? transition.error.message : '剔除失败';
+      return;
+    }
+    this.errorMsg = '';
+    this.result = transition.state.result;
+    DrawSession.set(this.result);
+  }
+
+  private openExport(): void {
+    if (this.result === undefined) {
+      return;
+    }
+    this.exportSpec = DrawExportFactory.create(this.result, Date.now(), ExportNaming.randomSuffix());
+    this.showExport = true;
+  }
+
+  @Builder
+  sortChip(mode: DrawSortMode) {
+    Text(drawSortLabel(mode))
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(this.sort === mode ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+      .backgroundColor(this.sort === mode ? Tokens.MIST_TEAL : Tokens.BG)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.changeSort(mode);
+      })
+  }
+
+  @Builder
+  sourceChip(source: DrawPoolSource, label: string) {
+    Text(label)
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(this.source === source ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+      .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+      .backgroundColor(this.source === source ? Tokens.SLATE_BLUE : Tokens.BG)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 8 })
+      .onClick(() => {
+        this.source = source;
+        this.persistConfig();
+      })
+  }
+
+  @Builder
+  numberField(label: string, value: number, onChange: (value: number) => void) {
+    Column() {
+      Text(label)
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_SECONDARY)
+      TextInput({ text: '' + value })
+        .type(InputType.Number)
+        .height(44)
+        .margin({ top: 4 })
+        .backgroundColor(Tokens.BG)
+        .borderRadius(10)
+        .fontSize(Tokens.F_BODY)
+        .onChange((text: string) => {
+          const parsed: number = Number(text);
+          if (Number.isFinite(parsed) && parsed > 0) {
+            onChange(Math.round(parsed));
+          }
+        })
+    }
+    .alignItems(HorizontalAlign.Start)
+    .layoutWeight(1)
+  }
+
+  @Builder
+  configStep() {
+    Scroll() {
+      Column() {
+        Column() {
+          Row({ space: 12 }) {
+            this.numberField('起始', this.start, (value: number) => {
+              this.start = Math.min(value, 999);
+            })
+            this.numberField('结束', this.end, (value: number) => {
+              this.end = Math.min(value, 999);
+            })
+          }
+          .width('100%')
+
+          Row({ space: 12 }) {
+            this.numberField('抽取个数', this.count, (value: number) => {
+              this.count = Math.min(value, 999);
+            })
+            Column() {
+              Text('允许重复')
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.TEXT_SECONDARY)
+              Toggle({ type: ToggleType.Switch, isOn: this.dup })
+                .margin({ top: 6 })
+                .selectedColor(Tokens.MIST_TEAL)
+                .onChange((isOn: boolean) => {
+                  this.dup = isOn;
+                })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width(110)
+          }
+          .width('100%')
+          .margin({ top: 14 })
+
+          Text('排除号')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_SECONDARY)
+            .width('100%')
+            .margin({ top: 14 })
+          TextInput({ placeholder: '如 3,7,10-12', text: this.excl })
+            .height(44)
+            .margin({ top: 4 })
+            .backgroundColor(Tokens.BG)
+            .borderRadius(10)
+            .fontSize(Tokens.F_BODY)
+            .onChange((text: string) => {
+              this.excl = text;
+            })
+
+          Text('候选来源')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_SECONDARY)
+            .width('100%')
+            .margin({ top: 16, bottom: 8 })
+          Row() {
+            this.sourceChip(DrawPoolSource.RANGE, '号码范围')
+            this.sourceChip(DrawPoolSource.ROSTER, '班级名单' + (this.seats.length > 0 ? ' · ' + this.seats.length : ''))
+          }
+
+          Text('结果排序')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_SECONDARY)
+            .width('100%')
+            .margin({ top: 16, bottom: 8 })
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.sortChip(DrawSortMode.DRAW_ORDER)
+            this.sortChip(DrawSortMode.ASCENDING)
+            this.sortChip(DrawSortMode.DESCENDING)
+            this.sortChip(DrawSortMode.RANDOM)
+          }
+        }
+        .width('100%')
+        .padding(16)
+        .backgroundColor(Tokens.CARD)
+        .borderRadius(Tokens.RADIUS_CARD)
+
+        if (this.errorMsg.length > 0) {
+          Text(this.errorMsg)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.DANGER)
+            .width('100%')
+            .margin({ top: 12 })
+        }
+
+        Button('预览候选')
+          .width('100%')
+          .height(48)
+          .margin({ top: 20 })
+          .backgroundColor(Tokens.MIST_TEAL)
+          .fontColor('#FFFFFF')
+          .fontSize(Tokens.F_BODY)
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.toPreview();
+          })
+      }
+      .width('100%')
+      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+    }
+    .layoutWeight(1)
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  previewStep() {
+    Column() {
+      Scroll() {
+        Column() {
+          Text('候选 ' + this.candidates.length + ' 个')
+            .fontSize(Tokens.F_HEADING)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Tokens.TEXT_PRIMARY)
+            .width('100%')
+
+          Text('参数固化后开始抽签；候选与实际抽签池一致')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .width('100%')
+            .margin({ top: 4, bottom: 12 })
+
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.candidates, (entry: DrawEntry) => {
+              Text(entry.label())
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.TEXT_PRIMARY)
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .backgroundColor(Tokens.BG)
+                .borderRadius(Tokens.RADIUS_PILL)
+                .margin({ right: 6, bottom: 6 })
+            }, (entry: DrawEntry) => '' + entry.number)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding(16)
+        .backgroundColor(Tokens.CARD)
+        .borderRadius(Tokens.RADIUS_CARD)
+      }
+      .layoutWeight(1)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+
+      Row({ space: 10 }) {
+        Button('返回')
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor(Tokens.CARD)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.back();
+          })
+        Button('开始抽签')
+          .layoutWeight(2)
+          .height(48)
+          .backgroundColor(Tokens.MIST_TEAL)
+          .fontColor('#FFFFFF')
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.startDraw();
+          })
+      }
+      .width('100%')
+      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 16, top: 10 })
+    }
+    .layoutWeight(1)
+  }
+
+  @Builder
+  resultStep() {
+    Column() {
+      Scroll() {
+        Column() {
+          Column() {
+            Text('结果 ' + (this.result !== undefined ? this.result.entries.length : 0) + ' 个')
+              .fontSize(Tokens.F_HEADING)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Tokens.TEXT_PRIMARY)
+              .width('100%')
+
+            Text('范围 ' + this.start + '–' + this.end + ' · ' + this.count + ' 个 · '
+              + (this.dup ? '可重复' : '不重复') + ' · ' + drawSortLabel(this.sort))
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.TEXT_TERTIARY)
+              .width('100%')
+              .margin({ top: 4, bottom: 10 })
+
+            ForEach(this.result !== undefined ? this.result.entries : [], (entry: DrawEntry, index: number) => {
+              Row() {
+                Text('' + (index + 1))
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(Tokens.TEXT_TERTIARY)
+                  .width(28)
+                Text(entry.label())
+                  .fontSize(Tokens.F_BODY)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Tokens.TEXT_PRIMARY)
+                  .layoutWeight(1)
+                Text('剔除')
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(Tokens.DANGER)
+                  .padding({ left: 8, right: 4, top: 6, bottom: 6 })
+                  .onClick(() => {
+                    this.removeAt(index);
+                  })
+              }
+              .width('100%')
+              .height(44)
+            }, (entry: DrawEntry, index: number) => '' + index + '_' + entry.number)
+
+            if (this.errorMsg.length > 0) {
+              Text(this.errorMsg)
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.DANGER)
+                .width('100%')
+                .margin({ top: 8 })
+            }
+          }
+          .width('100%')
+          .padding(16)
+          .backgroundColor(Tokens.CARD)
+          .borderRadius(Tokens.RADIUS_CARD)
+
+          Text('排序')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_SECONDARY)
+            .width('100%')
+            .margin({ top: 16, bottom: 8 })
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.sortChip(DrawSortMode.DRAW_ORDER)
+            this.sortChip(DrawSortMode.ASCENDING)
+            this.sortChip(DrawSortMode.DESCENDING)
+            this.sortChip(DrawSortMode.RANDOM)
+          }
+        }
+        .width('100%')
+        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 20 })
+      }
+      .layoutWeight(1)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+
+      Row({ space: 10 }) {
+        Button('调整参数')
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor(Tokens.CARD)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.step = DrawStep.CONFIG;
+            this.candidates = [];
+            this.result = undefined;
+          })
+        Button('重新抽一次')
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor(Tokens.CARD)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.reroll();
+          })
+        Button('导出图片')
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor(Tokens.MIST_TEAL)
+          .fontColor('#FFFFFF')
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.openExport();
+          })
+      }
+      .width('100%')
+      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 16, top: 10 })
+    }
+    .layoutWeight(1)
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        PageHeader({
+          title: '抽签 · ' + (this.step === DrawStep.CONFIG ? '配置'
+            : (this.step === DrawStep.PREVIEW ? '候选' : '结果')),
+          onBack: () => {
+            this.back();
+          }
+        })
+
+        if (this.step === DrawStep.CONFIG) {
+          Column() {
+            this.configStep()
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+        } else if (this.step === DrawStep.PREVIEW) {
+          Column() {
+            this.previewStep()
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+        } else {
+          Column() {
+            this.resultStep()
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Tokens.BG)
+
+      if (this.showExport) {
+        ExportPreview({
+          spec: this.exportSpec,
+          onClose: () => {
+            this.showExport = false;
+          }
+        })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .gesture(
+      PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+        .onActionEnd((event: GestureEvent) => {
+          if (event.offsetX > 60) {
+            this.back();
+          } else if (event.offsetX < -60) {
+            this.swipeNext();
+          }
+        })
+    )
+  }
+}

@@ -1,0 +1,213 @@
+import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
+import { Tokens } from '../theme/Tokens';
+import { PageHeader } from '../components/PageHeader';
+import { RosterScreen } from './RosterScreen';
+import { DrawScreen } from './DrawScreen';
+import { GroupScreen } from './GroupScreen';
+import { FitScreen } from './FitScreen';
+import { HomeworkScreen } from './HomeworkScreen';
+import { NoticeScreen } from './NoticeScreen';
+import { TimetableScreen } from './TimetableScreen';
+import { PowerScreen } from './PowerScreen';
+import { WaterScreen } from './WaterScreen';
+import { VoteScreen } from './VoteScreen';
+import { PptScreen } from './PptScreen';
+import { RollScreen } from './RollScreen';
+import { DiagScreen } from './DiagScreen';
+import { JwScreen } from './JwScreen';
+import { MapScreen } from './MapScreen';
+import { FileTransferScreen } from './FileTransferScreen';
+
+/**
+ * 工具页路由。
+ *
+ * - `draw` / `group` / `roster`：已原生实现；
+ * - 其余：占位骨架（逐个替换）。
+ */
+@Component
+export struct ToolScreen {
+  @Prop toolId: string = '';
+  onClose: () => void = () => {
+  };
+
+  private tool(): ToolDef | undefined {
+    return ToolCatalog.byId(this.toolId);
+  }
+
+  build() {
+    if (this.toolId === 'roster') {
+      RosterScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'draw') {
+      DrawScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'group') {
+      GroupScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'fit') {
+      FitScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'hw') {
+      HomeworkScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'nt') {
+      NoticeScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'tt') {
+      TimetableScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'power') {
+      PowerScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'water') {
+      WaterScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'vote') {
+      VoteScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'ppt') {
+      PptScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'roll') {
+      RollScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'diag') {
+      DiagScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'jw') {
+      JwScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'map') {
+      MapScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'file') {
+      FileTransferScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else {
+      Column() {
+        PageHeader({
+          title: this.tool() !== undefined ? this.tool()!.name : '工具',
+          onBack: () => {
+            this.onClose();
+          }
+        })
+
+        Scroll() {
+          Column() {
+            Column() {
+              Text(this.tool() !== undefined ? this.tool()!.glyph : '')
+                .fontSize(26)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL)
+                .width(64)
+                .height(64)
+                .textAlign(TextAlign.Center)
+                .backgroundColor(Tokens.tint(this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL, 0.12))
+                .borderRadius(20)
+
+              Text(this.tool() !== undefined ? this.tool()!.subtitle : '')
+                .fontSize(Tokens.F_LABEL)
+                .fontColor(Tokens.TEXT_SECONDARY)
+                .margin({ top: 12 })
+
+              Text('M2 原生实现中')
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.WARM_SAND)
+                .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                .backgroundColor(Tokens.TINT_SAND)
+                .borderRadius(Tokens.RADIUS_PILL)
+                .margin({ top: 10 })
+            }
+            .width('100%')
+            .padding({ top: 20, bottom: 24 })
+
+            Column() {
+              Text('计划功能')
+                .fontSize(Tokens.F_LABEL)
+                .fontColor(Tokens.TEXT_SECONDARY)
+                .width('100%')
+                .margin({ bottom: 8 })
+
+              ForEach(this.tool() !== undefined ? this.tool()!.features : [], (feature: string) => {
+                Row() {
+                  Circle()
+                    .width(5)
+                    .height(5)
+                    .fill(Tokens.TEXT_TERTIARY)
+                  Text(feature)
+                    .fontSize(Tokens.F_BODY)
+                    .fontColor(Tokens.TEXT_PRIMARY)
+                    .layoutWeight(1)
+                    .margin({ left: 10 })
+                }
+                .width('100%')
+                .padding({ top: 8, bottom: 8 })
+              }, (feature: string) => feature)
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(Tokens.CARD)
+            .borderRadius(Tokens.RADIUS_CARD)
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: 720 })
+          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+        }
+        .layoutWeight(1)
+        .align(Alignment.Top)
+        .scrollBar(BarState.Off)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Tokens.BG)
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "network-security-config": {
+    "base-config": {
+      "cleartextTrafficPermitted": true
+    },
+    "domain-config": [
+      {
+        "cleartextTrafficPermitted": true,
+        "include-subdomains": false,
+        "domains": [
+          {
+            "name": "121.196.47.2"
+          },
+          {
+            "name": "210.34.74.77"
+          }
+        ]
+      }
+    ],
+    "component-config": {
+      "ArkWeb": true,
+      "Network Kit": true
+    }
+  }
+}

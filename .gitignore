@@ -1,0 +1,33 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/artifacts
+/.preview
+/.cache
+**/.preview
+**/.cache
+**/oh_modules
+
+# 签名与密钥（绝不入库）
+*.p12
+*.cer
+*.p7b
+*.jks
+*.keystore
+*.pfx
+/signing/
+
+# 日志 / 系统文件
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
