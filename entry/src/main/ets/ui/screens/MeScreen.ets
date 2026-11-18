@@ -47,6 +47,8 @@ export struct MeScreen {
   @State private updateBusy: boolean = false;
   @State private updateNotice: string = '';
   @State private layoutWidth: number = 0;
+  @State private topFade: number = 0;
+  private scroller: Scroller = new Scroller();
 
   private async checkUpdate(): Promise<void> {
     if (this.updateBusy) {
@@ -654,7 +656,7 @@ export struct MeScreen {
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Stack({ alignContent: Alignment.Top }) {
-      Scroll() {
+      Scroll(this.scroller) {
       Column() {
         Column() {
           Row() {
@@ -955,6 +957,28 @@ export struct MeScreen {
           this.layoutWidth = next;
         }
       })
+      .onDidScroll(() => {
+        const offset: number = this.scroller.currentOffset().yOffset;
+        const next: number = offset > 0 ? Math.min(1, offset / 48) : 0;
+        if (Math.abs(next - this.topFade) > 0.02) {
+          this.topFade = next;
+        }
+      })
+
+      Column()
+        .width('100%')
+        .height(96)
+        .linearGradient({
+          angle: 180,
+          colors: [
+            ['#FFF6F7F8', 0.0],
+            ['#B8F6F7F8', 0.45],
+            ['#00F6F7F8', 1.0]
+          ]
+        })
+        .opacity(this.topFade)
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None)
       }
       if (this.notifyOpen) {
         Column() {

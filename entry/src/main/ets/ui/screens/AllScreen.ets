@@ -1,5 +1,6 @@
 ﻿import { HomeTools } from '../../data/home/HomeTools';
 import { ToolCatalog, ToolCategory, ToolDef } from '../../data/tool/ToolCatalog';
+import { ToolOrderStore } from '../../data/tool/ToolOrderStore';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { AppSymbols } from '../theme/AppSymbols';
@@ -19,9 +20,14 @@ export struct AllScreen {
   @Prop editing: boolean = false;
   @Prop @Watch('syncOrder') quickIds: string[] = [];
   @State private layoutWidth: number = 0;
+  @State private topFade: number = 0;
+  private scroller: Scroller = new Scroller();
   /** 首页工具的就地顺序，用于拖拽落位动画（与父级 quickIds 保持同步）。 */
   @State private order: string[] = [];
   @State private pulse: number = 0;
+  /** 「全部」页各分类内的卡片顺序（本机记忆）。 */
+  @State private studyOrder: string[] = [];
+  @State private classOrder: string[] = [];
   onToggleQuick: (id: string) => void = () => {
   };
   onToggleEdit: () => void = () => {
@@ -33,32 +39,16 @@ export struct AllScreen {
 
   aboutToAppear(): void {
     this.syncOrder();
+    this.loadOrders();
+  }
+
+  private async loadOrders(): Promise<void> {
+    this.studyOrder = await ToolOrderStore.load('study');
+    this.classOrder = await ToolOrderStore.load('class');
   }
 
   syncOrder(): void {
     this.order = this.quickIds.slice();
-  }
-
-  private tileWidth(): string {
-    return Breakpoints.gridItemWidthPercent(this.layoutWidth);
-  }
-
-  private columns(): number {
-    return Breakpoints.gridColumns(this.layoutWidth);
-  }
-
-  /** 最后一列不足列数时补空位，避免 SpaceBetween 把零散卡片拉到两端。 */
-  private fillers(count: number): number[] {
-    const columns: number = this.columns();
-    const rest: number = count % columns;
-    const out: number[] = [];
-    if (rest === 0) {
-      return out;
-    }
-    for (let i = 0; i < columns - rest; i++) {
-      out.push(i);
-    }
-    return out;
   }
 
   private categories(): ToolCategory[] {
@@ -85,6 +75,78 @@ export struct AllScreen {
 
   private isPicked(id: string): boolean {
     return this.order.indexOf(id) >= 0;
+  }
+
+  /** 某分类的卡片顺序：先用本机记忆顺序，再补齐新增工具。 */
+  private toolsOf(category: ToolCategory): ToolDef[] {
+    const stored: string[] = category === ToolCategory.STUDY ? this.studyOrder : this.classOrder;
+    const pool: ToolDef[] = ToolCatalog.byCategory(category);
+    const out: ToolDef[] = [];
+    for (let i = 0; i < stored.length; i++) {
+      const tool: ToolDef | undefined = ToolCatalog.byId(stored[i]);
+      if (tool !== undefined && tool.category === category && !ToolCatalog.isHidden(tool.id)
+        && out.indexOf(tool) < 0) {
+        out.push(tool);
+      }
+    }
+    for (let i = 0; i < pool.length; i++) {
+      if (out.indexOf(pool[i]) < 0) {
+        out.push(pool[i]);
+      }
+    }
+    return out;
+  }
+
+  private columns(): number {
+    return Breakpoints.gridColumns(this.layoutWidth);
+  }
+
+  private gridTemplate(): string {
+    const cols: number = this.columns();
+    let tpl: string = '1fr';
+    for (let i = 1; i < cols; i++) {
+      tpl += ' 1fr';
+    }
+    return tpl;
+  }
+
+  private gridRows(category: ToolCategory): number {
+    const count: number = this.toolsOf(category).length;
+    return Math.ceil(count / this.columns());
+  }
+
+  private gridHeight(category: ToolCategory): number {
+    const rows: number = this.gridRows(category);
+    if (rows <= 0) {
+      return 0;
+    }
+    return rows * 96 + (rows - 1) * Tokens.GAP;
+  }
+
+  /** 分类内拖拽落位：保持元素数量不变，数组顺序变化由系统播放落位动画。 */
+  private moveTool(category: ToolCategory, from: number, to: number): void {
+    const tools: ToolDef[] = this.toolsOf(category);
+    let target: number = to;
+    if (target >= tools.length) {
+      target = tools.length - 1;
+    }
+    if (from === target || from < 0 || target < 0 || from >= tools.length) {
+      return;
+    }
+    const ids: string[] = [];
+    for (let i = 0; i < tools.length; i++) {
+      ids.push(tools[i].id);
+    }
+    const moved: string[] = ids.splice(from, 1);
+    ids.splice(target, 0, moved[0]);
+    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.softSpring() }, () => {
+      if (category === ToolCategory.STUDY) {
+        this.studyOrder = ids;
+      } else {
+        this.classOrder = ids;
+      }
+    });
+    ToolOrderStore.save(category === ToolCategory.STUDY ? 'study' : 'class', ids);
   }
 
   /** 拖拽落位：只调整顺序（数组长度不变），系统据此播放落位动画。 */
@@ -123,8 +185,8 @@ export struct AllScreen {
 
   @Builder
   quickChip(tool: ToolDef) {
-    Column() {
-      Stack({ alignContent: Alignment.Top }) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      Column() {
         Stack({ alignContent: Alignment.Center }) {
           SymbolGlyph(tool.symbol)
             .fontSize(21)
@@ -137,35 +199,40 @@ export struct AllScreen {
         .backgroundColor(Tokens.tint(tool.accent, 0.14))
         .borderRadius(12)
 
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph(AppSymbols.XMARK)
-            .fontSize(9)
-            .fontWeight(FontWeight.Bold)
-            .fontColor([Color.White])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), this.pulse)
-        }
-        .width(17)
-        .height(17)
-        .backgroundColor(Tokens.tint(Tokens.TEXT_PRIMARY, 0.72))
-        .borderRadius(9)
-        .margin({ top: -5, right: -6 })
-        .onClick(() => {
-          this.tapTool(tool);
-        })
+        Text(tool.name)
+          .fontSize(11)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .maxLines(1)
+          .margin({ top: Tokens.SPACE_6 })
       }
+      .width(70)
+      .height(84)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(Tokens.GLASS_STRONG)
+      .border({ width: 0.5, color: Tokens.CARD_EDGE })
+      .borderRadius(16)
 
-      Text(tool.name)
-        .fontSize(11)
-        .fontColor(Tokens.TEXT_SECONDARY)
-        .maxLines(1)
-        .margin({ top: Tokens.SPACE_6 })
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(AppSymbols.XMARK)
+          .fontSize(9)
+          .fontWeight(FontWeight.Bold)
+          .fontColor([Color.White])
+          .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), this.pulse)
+      }
+      .width(20)
+      .height(20)
+      .backgroundColor(Tokens.tint(Tokens.TEXT_PRIMARY, 0.78))
+      .border({ width: 1, color: Tokens.tint('#FFFFFF', 0.92) })
+      .borderRadius(10)
+      .shadow({ radius: 6, color: Tokens.tint(Tokens.TEXT_PRIMARY, 0.22), offsetX: 0, offsetY: 2 })
+      .margin({ top: 2, right: 2 })
+      .onClick(() => {
+        this.tapTool(tool);
+      })
+      .accessibilityText('从首页移除 ' + tool.name)
     }
     .width(70)
     .height(84)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(Tokens.GLASS_STRONG)
-    .border({ width: 0.5, color: Tokens.CARD_EDGE })
-    .borderRadius(16)
   }
 
   @Builder
@@ -237,31 +304,12 @@ export struct AllScreen {
           this.tapTool(tool);
         }
       })
-      if (this.editing) {
-        Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph(this.isPicked(tool.id) ? AppSymbols.CHECKMARK : AppSymbols.PLUS)
-            .fontSize(12)
-            .fontWeight(FontWeight.Bold)
-            .fontColor([this.isPicked(tool.id) ? Color.White : Tokens.MIST_TEAL])
-            .renderingStrategy(SymbolRenderingStrategy.SINGLE)
-            .symbolEffect(new ReplaceSymbolEffect(EffectScope.WHOLE), this.pulse)
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.DOWN), this.pulse)
-        }
-        .width(22)
-        .height(22)
-        .backgroundColor(this.isPicked(tool.id) ? Tokens.MIST_TEAL : Tokens.tint('#FFFFFF', 0.86))
-        .border({ width: 0.5, color: this.isPicked(tool.id) ? Tokens.MIST_TEAL : Tokens.CARD_EDGE })
-        .borderRadius(11)
-        .margin({ top: -4, right: -4 })
-        .animation({ duration: Motion.NORMAL, curve: Motion.spring() })
-        .transition(Motion.popIn())
-      }
     }
   }
 
   build() {
     Stack({ alignContent: Alignment.Top }) {
-      Scroll() {
+      Scroll(this.scroller) {
         Column() {
           if (this.editing) {
             this.quickPanel()
@@ -270,31 +318,38 @@ export struct AllScreen {
           ForEach(this.categories(), (category: ToolCategory) => {
             Column() {
               SectionHeader({ title: category })
-              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
-                ForEach(ToolCatalog.byCategory(category), (tool: ToolDef) => {
-                  Column() {
-                    this.card(tool)
+              List({ space: Tokens.GAP }) {
+                ForEach(this.toolsOf(category), (tool: ToolDef) => {
+                  ListItem() {
+                    Column() {
+                      this.card(tool)
+                    }
+                    .width('100%')
+                    .height(96)
+                    .border({
+                      width: this.editing && this.isPicked(tool.id) ? 1.5 : 0,
+                      color: Tokens.tint(tool.accent, 0.55)
+                    })
+                    .borderRadius(Tokens.RADIUS_CARD)
+                    .scale({
+                      x: this.editing && this.isPicked(tool.id) ? 0.985 : 1,
+                      y: this.editing && this.isPicked(tool.id) ? 0.985 : 1
+                    })
+                    .animation({ duration: Motion.NORMAL, curve: Motion.spring() })
                   }
-                  .width(this.tileWidth())
-                  .margin({ bottom: Tokens.GAP })
-                  .border({
-                    width: this.editing && this.isPicked(tool.id) ? 1.5 : 0,
-                    color: Tokens.tint(tool.accent, 0.55)
-                  })
-                  .borderRadius(Tokens.RADIUS_CARD)
-                  .scale({
-                    x: this.editing && this.isPicked(tool.id) ? 0.985 : 1,
-                    y: this.editing && this.isPicked(tool.id) ? 0.985 : 1
-                  })
-                  .animation({ duration: Motion.NORMAL, curve: Motion.spring() })
+                  .transition(Motion.popIn())
                 }, (tool: ToolDef) => tool.id)
-                ForEach(this.fillers(ToolCatalog.byCategory(category).length), (i: number) => {
-                  Column()
-                    .width(this.tileWidth())
-                    .margin({ bottom: Tokens.GAP })
-                }, (i: number) => 'fill_' + category + '_' + i)
+                  .onMove((from: number, to: number) => {
+                    this.moveTool(category, from, to);
+                  })
               }
+              .lanes(this.columns(), Tokens.GAP)
               .width('100%')
+              .height(this.gridHeight(category))
+              .scrollBar(BarState.Off)
+              .enableScrollInteraction(false)
+              .edgeEffect(EdgeEffect.Spring)
+              .accessibilityText(category + '工具，长按拖动可调整顺序')
             }
             .width('100%')
             .margin({ bottom: Tokens.GAP_XL })
@@ -314,12 +369,34 @@ export struct AllScreen {
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor(Color.Transparent)
+      .onDidScroll(() => {
+        const offset: number = this.scroller.currentOffset().yOffset;
+        const next: number = offset > 0 ? Math.min(1, offset / 48) : 0;
+        if (Math.abs(next - this.topFade) > 0.02) {
+          this.topFade = next;
+        }
+      })
       .onAreaChange((oldArea: Area, newArea: Area) => {
         const next: number = Number(newArea.width);
         if (Math.abs(next - this.layoutWidth) > 1) {
           this.layoutWidth = next;
         }
       })
+
+      Column()
+        .width('100%')
+        .height(96)
+        .linearGradient({
+          angle: 180,
+          colors: [
+            ['#FFF6F7F8', 0.0],
+            ['#B8F6F7F8', 0.45],
+            ['#00F6F7F8', 1.0]
+          ]
+        })
+        .opacity(this.topFade)
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
     .height('100%')

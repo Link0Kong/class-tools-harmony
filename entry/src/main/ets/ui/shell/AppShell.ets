@@ -50,7 +50,9 @@ export struct AppShell {
   @State private activeTab: number = 0;
   @State private editHome: boolean = false;
   @State private homeEpoch: number = 0;
+  @State private homeConfigEpoch: number = 0;
   @State private layoutWidth: number = 0;
+  private homeScroller: Scroller = new Scroller();
   @State private tabPulse: number[] = [-1, -1, -1];
   private controller: HdsTabsController = new HdsTabsController();
   private materialLevel: hdsMaterial.MaterialLevel = Immersive.hdsLevel();
@@ -79,16 +81,21 @@ export struct AppShell {
     });
   }
 
-  /** 标题栏右侧配置按钮：与「全部工具」标题同一行、同一基线。 */
+  /** 标题栏右侧配置按钮：工作台打开卡片配置面板，「全部」切换快捷编辑。 */
   private titleMenus(): HdsNavigationMenuItemOptions[] {
     const items: HdsNavigationMenuItemOptions[] = [];
-    if (this.activeTab !== 1) {
+    if (this.activeTab === 2) {
       return items;
     }
     const icon: HdsNavigationIconOptions = {
-      icon: this.editHome ? $r('sys.symbol.gearshape_fill') : $r('sys.symbol.gearshape'),
+      icon: this.activeTab === 1 && this.editHome
+        ? $r('sys.symbol.gearshape_fill') : $r('sys.symbol.gearshape'),
       action: () => {
-        this.toggleEditHome();
+        if (this.activeTab === 0) {
+          this.homeConfigEpoch += 1;
+        } else {
+          this.toggleEditHome();
+        }
       }
     };
     const item: HdsNavigationMenuItemOptions = { content: icon };
@@ -205,6 +212,7 @@ export struct AppShell {
         TabContent() {
           Stack({ alignContent: Alignment.Bottom }) {
             HomeScreen({
+              scroller: this.homeScroller,
               userName: this.userName,
               maskedSid: this.maskedSid,
               roleLabel: this.roleLabel,
@@ -213,21 +221,7 @@ export struct AppShell {
               onReorderQuick: (ids: string[]) => {
                 this.onSetHomeTools(HomeTools.normalize(ids));
               },
-              editing: this.editHome,
-              onToggleEdit: () => {
-                this.editHome = !this.editHome;
-              },
-              onRemoveQuick: (id: string) => {
-                this.onSetHomeTools(HomeTools.remove(this.quickIds, id));
-              },
-              onAddQuick: () => {
-                this.editHome = true;
-                this.switchTab(1);
-              },
-              onEditQuick: () => {
-                this.editHome = true;
-                this.switchTab(1);
-              },
+              configEpoch: this.homeConfigEpoch,
               onOpenTool: (id: string) => {
                 this.onOpenTool(id);
               },
@@ -345,6 +339,17 @@ export struct AppShell {
       enableComponentSafeArea: true,
       style: {
         originalStyle: {
+          backgroundStyle: {
+            backgroundColor: Color.Transparent,
+            maskExtraHeight: 0
+          },
+          contentStyle: {
+            titleStyle: {
+              mainTitleColor: Tokens.TEXT_PRIMARY
+            }
+          }
+        },
+        scrollEffectStyle: {
           backgroundStyle: {
             backgroundColor: Color.Transparent,
             maskExtraHeight: 0

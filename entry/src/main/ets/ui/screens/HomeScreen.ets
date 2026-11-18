@@ -7,23 +7,32 @@ import { NoticeEntry, NoticesResult } from '../../data/notices/NoticesRepository
 import { PowerPrefs } from '../../data/power/PowerPrefs';
 import { PowerRooms, PowerRow } from '../../data/power/PowerModels';
 import { PowerRowResult } from '../../data/power/PowerRepository';
-import { SessionInfo, SessionState, TodayState, TtPlan } from '../../data/timetable/TimetableModels';
+import { SessionInfo, SessionState, TtPlan } from '../../data/timetable/TimetableModels';
 import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TtResult } from '../../data/timetable/TimetableRepository';
 import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
 import { HomeDigest, HomeCardItem } from '../../features/home/HomeDigest';
 import { HomeNtBadge } from '../../data/home/HomeNtBadge';
 import { HidePrefs } from '../../data/home/HidePrefs';
+import { HomeCardConfig, HomeCardDef, HomeCards } from '../../data/home/HomeCards';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { Breakpoints } from '../theme/Breakpoints';
 import { AppSymbols } from '../theme/AppSymbols';
-import { BrandMark } from '../components/BrandMark';
+import { HomeCardShell } from '../components/HomeCardShell';
+import { HomeCardConfigSheet } from './HomeCardConfigSheet';
+
+/** 统一卡片高度，保证一行两张时上下对齐。 */
+const HOME_CARD_H: number = 152;
 
 /**
  * 工作台（对齐小程序 pages/index）：
- * 问候（日期/周次/角色）→ 今日课程 → 宿舍电费 → 作业待交 → 通知待处理 → 常用工具。
- * 首页只读云端缓存（各仓库 TTL），不额外写数据；快捷工具在「全部」页勾选（≤4）。
+ * 问候 hero → 可自定义卡片（课程 / 电费 / 作业 / 通知 / 常用工具 / 各工具入口 / 时钟 / 天气）。
+ *
+ * 卡片顺序、类型、数量与宽度由右上角配置按钮自定义：
+ * - 一行最多两张，span=1 半宽、span=2 整行，宽度变化走弹性动画；
+ * - 布局按账号保存在本机 preferences，切换账号互不影响；
+ * - 首页只读缓存数据，不额外写业务数据。
  */
 @Component
 export struct HomeScreen {
@@ -33,13 +42,8 @@ export struct HomeScreen {
   @Prop @Watch('syncQuickOrder') quickIds: string[] = [];
   @State private quickOrder: string[] = [];
   @Prop @Watch('onEpochChanged') epoch: number = 0;
-  @Prop editing: boolean = false;
-  onToggleEdit: () => void = () => {
-  };
-  onRemoveQuick: (id: string) => void = () => {
-  };
-  onAddQuick: () => void = () => {
-  };
+  /** 右上角配置按钮每次点击 +1，用于打开配置面板。 */
+  @Prop @Watch('onConfigEpoch') configEpoch: number = 0;
   onOpenTool: (id: string) => void = () => {
   };
   onHomeReady: () => void = () => {
@@ -48,13 +52,9 @@ export struct HomeScreen {
   };
   onReorderQuick: (ids: string[]) => void = () => {
   };
-  onEditQuick: () => void = () => {
-    this.onOpenAll();
-  };
 
   @State private loading: boolean = true;
   @State private plan: TtPlan = new TtPlan();
-  @State private ttLoaded: boolean = false;
   @State private hwOpen: number = 0;
   @State private hwItems: HomeCardItem[] = [];
   @State private ntPending: number = 0;
@@ -73,14 +73,22 @@ export struct HomeScreen {
   @State private refreshing: boolean = false;
   @State private ntNew: boolean = false;
   @State private shimmer: boolean = false;
-  @State private floatY: number = 0;
   @State private layoutWidth: number = 0;
+  @State private topFade: number = 0;
+
+  @State private cards: HomeCardConfig[] = HomeCards.defaults();
+  @State private sheetOpen: boolean = false;
+
+  @State private clockText: string = '--:--';
+  @State private clockDate: string = '';
+  @State private clockWeek: string = '';
+
+  scroller: Scroller = new Scroller();
   private rotateTimer: number = -1;
-  private shimmerTimer: number = -1;
-  private floatTimer: number = -1;
-  private fadeTimer: number = -1;
+  private shimmerTimer: number = -1;  private fadeTimer: number = -1;
   private paintTimer: number = -1;
   private refreshTimer: number = -1;
+  private clockTimer: number = -1;
   private refreshRunning: boolean = false;
   private refreshSeq: number = 0;
   private startedAt: number = 0;
@@ -96,12 +104,20 @@ export struct HomeScreen {
     this.load(false);
   }
 
+  onConfigEpoch(): void {
+    if (this.configEpoch > 0) {
+      this.sheetOpen = true;
+    }
+  }
+
   aboutToAppear(): void {
     this.syncQuickOrder();
     this.startedAt = Date.now();
     this.applyLocal();
     this.startSkeleton();
     this.load(false);
+    this.loadCards();
+    this.tickClock();
     // 兜底：首帧动画最多 1.5s，任何异常/弱网都不能让骨架屏常驻
     setTimeout(() => {
       if (this.loading) {
@@ -111,11 +127,9 @@ export struct HomeScreen {
     this.rotateTimer = setInterval(() => {
       this.rotateTick();
     }, 5000);
-    this.floatTimer = setInterval(() => {
-      this.getUIContext().animateTo({ duration: 1200, curve: Motion.ease() }, () => {
-        this.floatY = this.floatY === 0 ? -2 : 0;
-      });
-    }, 2400);
+    this.clockTimer = setInterval(() => {
+      this.tickClock();
+    }, 20000);
   }
 
   aboutToDisappear(): void {
@@ -131,10 +145,6 @@ export struct HomeScreen {
       clearInterval(this.shimmerTimer);
       this.shimmerTimer = -1;
     }
-    if (this.floatTimer >= 0) {
-      clearInterval(this.floatTimer);
-      this.floatTimer = -1;
-    }
     if (this.paintTimer >= 0) {
       clearTimeout(this.paintTimer);
       this.paintTimer = -1;
@@ -142,6 +152,51 @@ export struct HomeScreen {
     if (this.refreshTimer >= 0) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = -1;
+    }
+    if (this.clockTimer >= 0) {
+      clearInterval(this.clockTimer);
+      this.clockTimer = -1;
+    }
+  }
+
+  private tickClock(): void {
+    const now: Date = new Date();
+    this.clockText = HomeDigest.pad2(now.getHours()) + ':' + HomeDigest.pad2(now.getMinutes());
+    this.clockDate = HomeDigest.dateText(now);
+    const names: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    this.clockWeek = names[now.getDay()];
+  }
+
+  private async loadCards(): Promise<void> {
+    const stored: HomeCardConfig[] | undefined = await HomeCards.load(Services.currentSid);
+    if (stored !== undefined && stored.length > 0) {
+      this.cards = HomeCards.normalize(stored);
+    }
+  }
+
+  private applyCards(next: HomeCardConfig[]): void {
+    const normalized: HomeCardConfig[] = HomeCards.normalize(next);
+    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.spring() }, () => {
+      this.cards = normalized;
+    });
+    HomeCards.save(Services.currentSid, normalized);
+  }
+
+  private onCardTap(id: string): void {
+    if (id === 'weather') {
+      this.getUIContext().getPromptAction().showToast({ message: '当前设备暂未提供天气数据' });
+      return;
+    }
+    if (id === 'clock') {
+      return;
+    }
+    if (id === 'quick') {
+      this.onOpenAll();
+      return;
+    }
+    const def: HomeCardDef = HomeCards.defOr(id);
+    if (def.toolId.length > 0) {
+      this.onOpenTool(def.toolId);
     }
   }
 
@@ -220,6 +275,34 @@ export struct HomeScreen {
     this.quickOrder = this.quickIds.slice();
   }
 
+  /** 首页常用工具拖拽落位：只调整顺序，交由外层持久化。 */
+  private moveQuick(from: number, to: number): void {
+    const tools: ToolDef[] = this.quick();
+    if (from === to || from < 0 || to < 0 || from >= tools.length || to >= tools.length) {
+      return;
+    }
+    const ids: string[] = [];
+    for (let i = 0; i < this.quickOrder.length; i++) {
+      ids.push(this.quickOrder[i]);
+    }
+    if (from >= ids.length || to >= ids.length) {
+      return;
+    }
+    const moved: string[] = ids.splice(from, 1);
+    ids.splice(to, 0, moved[0]);
+    this.quickOrder = ids;
+    this.onReorderQuick(ids);
+  }
+
+  private quickRows(wide: boolean): number {
+    const lanes: number = wide ? 4 : 2;
+    return Math.ceil(this.quick().length / lanes);
+  }
+
+  private quickHeight(wide: boolean): number {
+    return this.quickRows(wide) * (wide ? 64 : 36);
+  }
+
   private quick(): ToolDef[] {
     const out: ToolDef[] = [];
     for (let i = 0; i < this.quickOrder.length && out.length < 4; i++) {
@@ -231,25 +314,12 @@ export struct HomeScreen {
     return out;
   }
 
-  /** 首页常用工具拖拽落位：只交换顺序，交由外层持久化。 */
-  private moveQuick(from: number, to: number): void {
-    if (from === to || from < 0 || to < 0 || from >= this.quickOrder.length || to >= this.quickOrder.length) {
-      return;
-    }
-    const next: string[] = this.quickOrder.slice();
-    const moved: string[] = next.splice(from, 1);
-    next.splice(to, 0, moved[0]);
-    this.quickOrder = next;
-    this.onReorderQuick(next);
-  }
-
   /** 首帧直接用本机缓存渲染（marks / 课表 / 作业 / 通知），不等网络。 */
   private applyLocal(): void {
     const snapshot = Services.marks.marks();
     const tt = Services.timetable.local();
     if (tt !== undefined) {
       this.plan = TtCalendar.plan(tt, Date.now());
-      this.ttLoaded = true;
     }
     const hidden = HidePrefs.read(Services.userdata.currentSections());
     const hw = Services.homework.local();
@@ -324,7 +394,6 @@ export struct HomeScreen {
       const tt: TtResult = await ttPromise;
       if (seq === this.loadSeq) {
         this.plan = TtCalendar.plan(tt.snapshot, now);
-        this.ttLoaded = true;
       }
     } catch (e) {
       // 忽略
@@ -442,10 +511,6 @@ export struct HomeScreen {
     return parts.join(' · ');
   }
 
-  private sessionPill(state: string): string {
-    return state === 'ongoing' ? '上课中' : '';
-  }
-
   private powerPillColor(): string {
     if (this.powerState === 'low') {
       return Tokens.DANGER;
@@ -484,10 +549,27 @@ export struct HomeScreen {
     return text;
   }
 
+  private cardWidth(span: number): number {
+    const max: number = Breakpoints.contentMaxWidth(this.layoutWidth);
+    const pad: number = Breakpoints.pagePadding(this.layoutWidth);
+    const available: number = Math.min(this.layoutWidth, max) - pad * 2;
+    if (available <= 0) {
+      return HomeCards.normalizeSpan(span) === HomeCards.HALF ? 156 : 328;
+    }
+    if (HomeCards.normalizeSpan(span) === HomeCards.HALF) {
+      return Math.floor((available - Tokens.GAP) / 2);
+    }
+    return available;
+  }
+
+  private bottomSpace(): number {
+    return Breakpoints.contentBottomSpace(this.layoutWidth);
+  }
+
+
   /**
    * 工作台「今日」hero：莫奈浅色纸面（睡莲青 / 雾蓝 / 暖沙三段色条），
    * 深色只用于文字，保持与通知页、手表端一致的莫奈色系。
-   * 内容：今日课程摘要 / 周次 / 问候 / 日期与角色。
    */
   @Builder
   heroCard() {
@@ -575,173 +657,461 @@ export struct HomeScreen {
   }
 
   @Builder
-  cardHeader(eyebrow: string, action: string, onAction: () => void) {
+  iconBadge(symbol: Resource, accent: string, box: number, glyph: number) {
+    Stack({ alignContent: Alignment.Center }) {
+      SymbolGlyph(symbol)
+        .fontSize(glyph)
+        .fontWeight(FontWeight.Medium)
+        .fontColor([accent])
+        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+    }
+    .width(box)
+    .height(box)
+    .backgroundColor(Tokens.tint(accent, 0.12))
+    .border({ width: 1, color: Tokens.tint(accent, 0.18) })
+    .borderRadius(box * 0.3)
+  }
+
+  @Builder
+  cardTitleRow(symbol: Resource, accent: string, title: string, badge: string) {
     Row() {
-      Text(eyebrow)
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
+      this.iconBadge(symbol, accent, 30, 17)
+      Text(title)
+        .fontSize(Tokens.F_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .margin({ left: 8 })
         .layoutWeight(1)
-      if (action.length > 0) {
-        Row({ space: 2 }) {
-          Text(action)
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.SLATE_BLUE)
-          SymbolGlyph(AppSymbols.ARROW_RIGHT)
-            .fontSize(12)
-            .fontColor([Tokens.SLATE_BLUE])
-        }
-        .padding({ left: 8, top: 4, bottom: 4 })
-        .onClick(() => {
-          onAction();
-        })
+        .maxLines(1)
+      if (badge.length > 0) {
+        Text(badge)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor('#FFFFFF')
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .backgroundColor(accent)
+          .borderRadius(8)
       }
     }
     .width('100%')
   }
 
-  private cardItems(kind: string): HomeCardItem[] {
-    return kind === 'hw' ? this.hwItems : this.ntItems;
-  }
-
-  private cardIdx(kind: string): number {
-    return kind === 'hw' ? this.hwIdx : this.ntIdx;
-  }
-
-  private cardFade(kind: string): boolean {
-    return kind === 'hw' ? this.hwFade : this.ntFade;
-  }
-
-  private cardCount(kind: string): number {
-    return kind === 'hw' ? this.hwOpen : this.ntPending;
+  @Builder
+  ttBody(wide: boolean) {
+    this.cardTitleRow(AppSymbols.TIMETABLE, '#6E8CA8', '今日课程',
+      this.plan.hasData && this.plan.today.length > 0 ? '' + this.plan.today.length + ' 节' : '')
+    if (this.plan.hasData && this.plan.today.length > 0) {
+      Text(this.plan.today[0].name)
+        .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 10 })
+      Text(this.plan.today[0].startText + ' · ' + this.plan.today[0].span
+        + (this.plan.today[0].room.length > 0 ? ' · ' + this.plan.today[0].room : ''))
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(1)
+        .margin({ top: 4 })
+      if (this.plan.today.length > 1) {
+        Text('下一节 ' + this.plan.today[1].startText + ' ' + this.plan.today[1].name)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+          .margin({ top: 4 })
+      }
+      Blank()
+    } else if (this.plan.hasData) {
+      Text(wide ? '今天没课' : '没课')
+        .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .margin({ top: 10 })
+      Text(this.plan.next !== undefined
+        ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.name : '近期暂无课程')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(1)
+        .margin({ top: 4 })
+      Blank()
+    } else {
+      Text('课表未同步')
+        .fontSize(Tokens.F_BODY)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .margin({ top: 10 })
+      Text('打开课表拉取本周课程')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(1)
+        .margin({ top: 4 })
+      Blank()
+    }
   }
 
   @Builder
-  taskCard(kind: string, symbol: Resource, label: string, emptyText: string, accent: string, onTap: () => void) {
-    Row() {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(symbol)
-          .fontSize(22)
+  hwBody(wide: boolean) {
+    this.cardTitleRow(AppSymbols.HOMEWORK, Tokens.WARM_SAND, '作业待交',
+      this.hwOpen > 0 ? '' + this.hwOpen : '')
+    if (this.hwItems.length > 0) {
+      Text(this.hwTitle())
+        .fontSize(wide ? Tokens.F_BODY : Tokens.F_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .maxLines(wide ? 2 : 1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 10 })
+        .opacity(this.hwFade ? 0 : 1)
+        .translate({ y: this.hwFade ? -6 : 0 })
+      Text(this.hwSub())
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(1)
+        .margin({ top: 4 })
+        .opacity(this.hwFade ? 0 : 1)
+        .translate({ y: this.hwFade ? -6 : 0 })
+    } else {
+      Text('作业都完成了')
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .margin({ top: 10 })
+    }
+    Blank()
+  }
+
+  @Builder
+  ntBody(wide: boolean) {
+    this.cardTitleRow(AppSymbols.BELL, '#B06A55', '通知待处理',
+      this.ntPending > 0 ? '' + this.ntPending : '')
+    if (this.ntState === 'ok') {
+      if (this.ntItems.length > 0) {
+        Text(this.ntTitle())
+          .fontSize(wide ? Tokens.F_BODY : Tokens.F_LABEL)
           .fontWeight(FontWeight.Medium)
-          .fontColor([accent])
-          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .maxLines(wide ? 2 : 1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 10 })
+          .opacity(this.ntFade ? 0 : 1)
+          .translate({ y: this.ntFade ? -6 : 0 })
+        Text(this.ntSub())
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+          .margin({ top: 4 })
+          .opacity(this.ntFade ? 0 : 1)
+          .translate({ y: this.ntFade ? -6 : 0 })
+        if (this.ntNew) {
+          Text('新通知')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.SLATE_BLUE)
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.14))
+            .borderRadius(6)
+            .margin({ top: 6 })
+        }
+      } else {
+        Text('暂无待处理通知')
+          .fontSize(Tokens.F_LABEL)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .margin({ top: 10 })
       }
-      .width(40)
-      .height(40)
-      .backgroundColor(Tokens.tint(accent, 0.12))
-      .border({ width: 1, color: Tokens.tint(accent, 0.20) })
-      .borderRadius(12)
+    } else {
+      Text(this.ntState === 'off' ? '通知需联网同步'
+        : (this.ntState === 'error' ? '同步失败，点开重试' : '通知同步中…'))
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(2)
+        .margin({ top: 10 })
+    }
+    Blank()
+  }
+
+  @Builder
+  powerBody(wide: boolean) {
+    this.cardTitleRow(AppSymbols.POWER, '#C29A3B', '宿舍电费', '')
+    if (this.powerHas) {
+      Row() {
+        Text(this.powerQ)
+          .fontSize(wide ? 30 : 26)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.TEXT_PRIMARY)
+        Text(this.powerUnit)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .margin({ left: 2, bottom: 4 })
+      }
+      .alignItems(VerticalAlign.Bottom)
+      .margin({ top: 8 })
+      Text(this.powerLabel + (this.powerUpd.length > 0 ? ' · ' + this.powerUpd : ''))
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(1)
+        .margin({ top: 2 })
+      Text(HomeDigest.powerStateText(this.powerState))
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(this.powerPillColor())
+        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+        .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
+        .borderRadius(Tokens.RADIUS_PILL)
+        .margin({ top: 6 })
+    } else {
+      Text('关注宿舍后显示电量')
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(2)
+        .margin({ top: 10 })
+    }
+    Blank()
+  }
+
+  @Builder
+  quickBody(wide: boolean) {
+    Row() {
+      Text('常用工具')
+        .fontSize(Tokens.F_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .layoutWeight(1)
+      Row({ space: 2 }) {
+        Text('全部')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.SLATE_BLUE)
+        SymbolGlyph(AppSymbols.ARROW_RIGHT)
+          .fontSize(11)
+          .fontColor([Tokens.SLATE_BLUE])
+      }
+    }
+    .width('100%')
+
+    if (this.quick().length > 0) {
+      List({ space: 0 }) {
+        ForEach(this.quick(), (tool: ToolDef) => {
+          ListItem() {
+            Column() {
+              Stack({ alignContent: Alignment.Center }) {
+                SymbolGlyph(tool.symbol)
+                  .fontSize(wide ? 22 : 16)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor([tool.accent])
+                  .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+              }
+              .width(wide ? 34 : 26)
+              .height(wide ? 34 : 26)
+              .backgroundColor(Tokens.tint(tool.accent, 0.12))
+              .borderRadius(10)
+              Text(tool.name)
+                .fontSize(10)
+                .fontColor(Tokens.TEXT_SECONDARY)
+                .maxLines(1)
+                .margin({ top: 2 })
+            }
+            .width('100%')
+            .height(wide ? 64 : 36)
+            .justifyContent(FlexAlign.Center)
+            .onClick(() => {
+              this.onOpenTool(tool.id);
+            })
+          }
+          .transition(Motion.popIn())
+        }, (tool: ToolDef) => 'qc_' + tool.id)
+          .onMove((from: number, to: number) => {
+            this.moveQuick(from, to);
+          })
+      }
+      .lanes(wide ? 4 : 2)
+      .width('100%')
+      .height(this.quickHeight(wide))
+      .scrollBar(BarState.Off)
+      .enableScrollInteraction(false)
+      .margin({ top: 8 })
+      .accessibilityText('常用工具，长按拖动可调整顺序')
+    } else {
+      Text('去工具页勾选常用工具')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .margin({ top: 10 })
+    }
+    Blank()
+  }
+
+  @Builder
+  entryBody(def: HomeCardDef, wide: boolean) {
+    Row() {
+      this.iconBadge(def.symbol, def.accent, 36, 20)
       Column() {
-        Row() {
-          Text(label)
-            .fontSize(Tokens.F_BODY)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Tokens.TEXT_PRIMARY)
-          if (this.cardCount(kind) > 0) {
-            Text('' + this.cardCount(kind))
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor('#FFFFFF')
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-              .backgroundColor(accent)
-              .borderRadius(8)
-              .margin({ left: 8 })
-          }
-          if (kind === 'nt' && this.ntNew) {
-            Text('新通知')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.SLATE_BLUE)
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-              .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.14))
-              .borderRadius(6)
-              .margin({ left: 6 })
-          }
-        }
-        if (this.cardItems(kind).length > 0) {
-          Text(this.cardItems(kind)[Math.min(this.cardIdx(kind), this.cardItems(kind).length - 1)].title)
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_SECONDARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .opacity(this.cardFade(kind) ? 0 : 1)
-            .translate({ y: this.cardFade(kind) ? -6 : 0 })
-            .margin({ top: 4 })
-          Text(this.cardItems(kind)[Math.min(this.cardIdx(kind), this.cardItems(kind).length - 1)].sub)
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-            .maxLines(1)
-            .opacity(this.cardFade(kind) ? 0 : 1)
-            .translate({ y: this.cardFade(kind) ? -6 : 0 })
-            .margin({ top: 2 })
-        } else {
-          Text(emptyText)
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-            .margin({ top: 4 })
-        }
+        Text(def.title)
+          .fontSize(Tokens.F_BODY)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .maxLines(1)
+        Text(def.subtitle)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(wide ? 2 : 1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 3 })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: 12 })
+      .margin({ left: 10 })
       SymbolGlyph(AppSymbols.ARROW_RIGHT)
-        .fontSize(16)
+        .fontSize(15)
         .fontColor([Tokens.TEXT_TERTIARY])
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    Blank()
+  }
+
+  @Builder
+  clockBody(wide: boolean) {
+    Row() {
+      Text('时钟')
+        .fontSize(Tokens.F_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .layoutWeight(1)
+      SymbolGlyph(AppSymbols.CLOCK)
+        .fontSize(16)
+        .fontColor([Tokens.MIST_TEAL])
+    }
+    .width('100%')
+
+    Text(this.clockText)
+      .fontSize(wide ? 36 : 30)
+      .fontWeight(FontWeight.Bold)
+      .fontColor(Tokens.TEXT_PRIMARY)
+      .margin({ top: 8 })
+      .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
+
+    Text(this.clockDate)
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(Tokens.TEXT_SECONDARY)
+      .margin({ top: 2 })
+    Text(this.clockWeek + (HomeDigest.weekText(this.plan.week).length > 0
+      ? ' · ' + HomeDigest.weekText(this.plan.week) : ''))
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(Tokens.TEXT_TERTIARY)
+      .margin({ top: 2 })
+    Blank()
+  }
+
+  @Builder
+  weatherBody(wide: boolean) {
+    Row() {
+      Text('天气')
+        .fontSize(Tokens.F_LABEL)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .layoutWeight(1)
+      SymbolGlyph(AppSymbols.WEATHER)
+        .fontSize(16)
+        .fontColor(['#4A88A8'])
+        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+    }
+    .width('100%')
+
+    Row() {
+      SymbolGlyph(AppSymbols.WEATHER)
+        .fontSize(wide ? 30 : 24)
+        .fontColor(['#4A88A8'])
+        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+    }
+    .margin({ top: 12 })
+    Text('天气数据未接入')
+      .fontSize(Tokens.F_LABEL)
+      .fontColor(Tokens.TEXT_SECONDARY)
+      .maxLines(1)
+      .margin({ top: 6 })
+    Text('当前设备未提供天气服务，可在系统天气中查看')
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(Tokens.TEXT_TERTIARY)
+      .maxLines(wide ? 2 : 1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .margin({ top: 2 })
+    Blank()
+  }
+  @Builder
+  cardBody(cfg: HomeCardConfig) {
+    if (cfg.id === 'tt') {
+      this.ttBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'hw') {
+      this.hwBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'nt') {
+      this.ntBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'power') {
+      this.powerBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'quick') {
+      this.quickBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'clock') {
+      this.clockBody(cfg.span === HomeCards.FULL)
+    } else if (cfg.id === 'weather') {
+      this.weatherBody(cfg.span === HomeCards.FULL)
+    } else {
+      this.entryBody(HomeCards.defOr(cfg.id), cfg.span === HomeCards.FULL)
+    }
+  }
+
+  @Builder
+  renderCard(cfg: HomeCardConfig) {
+    Column() {
+      HomeCardShell({
+        cardWidthVp: this.cardWidth(cfg.span),
+        cardHeightVp: HOME_CARD_H,
+        accentColor: HomeCards.defOr(cfg.id).accent,
+        onCardTap: () => {
+          this.onCardTap(cfg.id);
+        }
+      }) {
+        this.cardBody(cfg)
+      }
+    }
+    .width(this.cardWidth(cfg.span))
+    .margin({ bottom: Tokens.GAP })
+  }
+
+  @Builder
+  configSheet() {
+    HomeCardConfigSheet({
+      cards: this.cards,
+      onCardsChange: (next: HomeCardConfig[]) => {
+        this.applyCards(next);
+      },
+      onDone: () => {
+        this.sheetOpen = false;
+      }
+    })
+  }
+
+  @Builder
+  emptyCards() {
+    Row() {
+      Column() {
+        Text('还没有工作台卡片')
+          .fontSize(Tokens.F_BODY)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.TEXT_PRIMARY)
+        Text('点按添加课程、作业、天气等卡片')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      Text('添加卡片')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.MIST_TEAL)
     }
     .width('100%')
     .padding(Tokens.CARD_PADDING)
     .backgroundColor(Tokens.CARD)
     .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
-    .stateStyles({
-      pressed: {
-        .scale({ x: 0.99, y: 0.99 })
-      }
-    })
-    .animation({ duration: Motion.FAST, curve: Motion.ease() })
+    .margin({ top: Tokens.GAP })
     .onClick(() => {
-      onTap();
+      this.sheetOpen = true;
     })
-  }
-  @Builder
-  quickGrid() {
-    List({ space: 0 }) {
-      ForEach(this.quick(), (tool: ToolDef) => {
-        ListItem() {
-          Column() {
-            Stack({ alignContent: Alignment.Center }) {
-              SymbolGlyph(tool.symbol)
-                .fontSize(22)
-                .fontWeight(FontWeight.Medium)
-                .fontColor([tool.accent])
-                .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
-            }
-            .width(46)
-            .height(46)
-            .backgroundColor(Tokens.tint(tool.accent, 0.12))
-            .borderRadius(14)
-            Text(tool.name)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_SECONDARY)
-              .margin({ top: 6 })
-              .maxLines(1)
-          }
-          .width('100%')
-          .height(76)
-          .justifyContent(FlexAlign.Center)
-          .onClick(() => {
-            this.onOpenTool(tool.id);
-          })
-        }
-        .width('25%')
-      }, (tool: ToolDef) => tool.id)
-        .onMove((from: number, to: number) => {
-          this.moveQuick(from, to);
-        })
-    }
-    .listDirection(Axis.Horizontal)
-    .width('100%')
-    .height(76)
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring)
-    .accessibilityText('常用工具，长按拖动可调整顺序')
   }
 
   @Builder
@@ -793,564 +1163,76 @@ export struct HomeScreen {
     .opacity(this.shimmer ? 0.55 : 1)
   }
 
-  private isWide(): boolean {
-    return Breakpoints.useTwoPane(this.layoutWidth);
-  }
-
-  private bottomSpace(): number {
-    return Breakpoints.contentBottomSpace(this.layoutWidth);
-  }
-
-  /** 宽屏二分栏左列：今天课程。 */
-  @Builder
-  todayCard() {
-    Column() {
-      this.cardHeader('今天', '课表', () => {
-        this.onOpenTool('tt');
-      })
-      if (this.plan.hasData && this.plan.today.length > 0) {
-        ForEach(this.plan.today, (session: SessionInfo) => {
-          Row() {
-            Text(session.startText)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .width(56)
-            Column() {
-              Text(session.name)
-                .fontSize(Tokens.F_BODY)
-                .fontColor(Tokens.TEXT_PRIMARY)
-                .maxLines(1)
-              Text(session.span + (session.room.length > 0 ? ' · ' + session.room : ''))
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .margin({ top: 2 })
-                .maxLines(1)
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-            if (session.state === SessionState.ONGOING) {
-              Text('上课中')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.MIST_TEAL)
-                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                .backgroundColor(Tokens.TINT_TEAL)
-                .borderRadius(Tokens.RADIUS_PILL)
-            }
-          }
-          .width('100%')
-          .padding({ top: 8, bottom: 8 })
-        }, (session: SessionInfo) => 'w_t_' + session.startAt + session.name)
-        if (this.plan.todayState === TodayState.DONE) {
-          Text('今日课程已结束' + (this.plan.next !== undefined
-            ? ' · 下次 ' + this.plan.next.dayText + ' ' + this.plan.next.name : ''))
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-            .width('100%')
-            .margin({ top: 2 })
-        }
-      } else if (this.plan.hasData) {
-        Text('今天没课')
-          .fontSize(Tokens.F_BODY)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .width('100%')
-          .margin({ top: 8 })
-        Text(this.plan.next !== undefined
-          ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.name
-          : '近期暂无课程')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
-          .width('100%')
-          .margin({ top: 4 })
-      } else {
-        Text('课表未同步')
-          .fontSize(Tokens.F_BODY)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .width('100%')
-          .margin({ top: 8 })
-        Text('打开课表即可拉取本周课程')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
-          .width('100%')
-          .margin({ top: 4 })
-      }
-    }
-    .width('100%')
-    .padding(Tokens.CARD_PADDING)
-    .backgroundColor(Tokens.CARD)
-    .border({ width: 0.5, color: Tokens.CARD_EDGE })
-    .borderRadius(Tokens.RADIUS_CARD)
-    .shadow({ radius: 18, color: '#0D1C2629', offsetX: 0, offsetY: 6 })
-    .transition(Motion.listItem())
-  }
-
-  /** 宽屏二分栏右列：宿舍电费。 */
-  @Builder
-  powerCard() {
-    Column() {
-      this.cardHeader('宿舍电费', this.powerHas ? '查看' : '', () => {
-      })
-      if (this.powerHas) {
-        Row() {
-          Column() {
-            Text(this.powerLabel)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_SECONDARY)
-            Text(this.powerUpd.length > 0 ? '更新 ' + this.powerUpd : '点开查看趋势与充值')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .margin({ top: 2 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          Row() {
-            Text(this.powerQ)
-              .fontSize(Tokens.F_TITLE)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(Tokens.TEXT_PRIMARY)
-            Text(this.powerUnit)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .margin({ left: 2, bottom: 4 })
-          }
-          .alignItems(VerticalAlign.Bottom)
-          Text(HomeDigest.powerStateText(this.powerState))
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(this.powerPillColor())
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-            .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
-            .borderRadius(Tokens.RADIUS_PILL)
-            .margin({ left: Tokens.GAP_SM })
-        }
-        .width('100%')
-        .margin({ top: 8 })
-      } else {
-        Column() {
-          Text('关注宿舍后显示剩余电量')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_SECONDARY)
-          Text('去选择关注宿舍 ›')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.SLATE_BLUE)
-            .margin({ top: 2 })
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Start)
-        .margin({ top: 8 })
-      }
-    }
-    .width('100%')
-    .padding(Tokens.CARD_PADDING)
-    .backgroundColor(Tokens.CARD)
-    .border({ width: 0.5, color: Tokens.CARD_EDGE })
-    .borderRadius(Tokens.RADIUS_CARD)
-    .stateStyles({
-      pressed: {
-        .scale({ x: 0.99, y: 0.99 })
-      }
-    })
-    .animation({ duration: Motion.FAST, curve: Motion.ease() })
-    .onClick(() => {
-      this.onOpenTool('power');
-    })
-    .transition(Motion.listItem())
-  }
-
-  /** 宽屏二分栏右列：作业 / 通知待处理。 */
-  @Builder
-  tasksSection() {
-    Column() {
-      Column() {
-        this.taskCard('hw', AppSymbols.HOMEWORK, '作业待交', '作业都完成了', Tokens.WARM_SAND, () => {
-          this.onOpenTool('hw');
-        })
-      }
-      .width('100%')
-      .margin({ top: 16 })
-      .transition(Motion.listItem())
-
-      Column() {
-        if (this.ntState === 'ok') {
-          this.taskCard('nt', AppSymbols.BELL, '通知待处理', '暂无待处理通知', '#B06A55', () => {
-            this.onOpenTool('nt');
-          })
-        } else {
-          this.taskCard('nt', AppSymbols.BELL, '通知待处理',
-            this.ntState === 'off' ? '通知需联网同步'
-              : (this.ntState === 'error' ? '通知同步失败，点开重试' : '通知同步中…'), '#B06A55', () => {
-              this.onOpenTool('nt');
-            })
-        }
-      }
-      .width('100%')
-      .margin({ top: 12 })
-      .transition(Motion.listItem())
-    }
-    .width('100%')
-  }
-
-  /** 宽屏二分栏左列：常用工具。 */
-  @Builder
-  quickSection() {
-    Column() {
-      Row() {
-        Text('常用工具')
-          .fontSize(Tokens.F_LABEL)
-          .fontColor(Tokens.TEXT_SECONDARY)
-          .layoutWeight(1)
-        Text('全部 ›')
-          .fontSize(Tokens.F_LABEL)
-          .fontColor(Tokens.SLATE_BLUE)
-          .onClick(() => {
-            this.onOpenAll();
-          })
-      }
-      .width('100%')
-      .margin({ top: Tokens.GAP_XL, bottom: Tokens.GAP_SM })
-
-      if (this.quick().length > 0) {
-        Column() {
-          this.quickGrid()
-        }
-        .width('100%')
-        .padding(Tokens.CARD_PADDING)
-        .backgroundColor(Tokens.CARD)
-        .border({ width: 0.5, color: Tokens.CARD_EDGE })
-        .borderRadius(Tokens.RADIUS_CARD)
-        .transition(Motion.listItem())
-      } else {
-        Row() {
-          Column() {
-            Text('尚未勾选常用工具')
-              .fontSize(Tokens.F_BODY)
-              .fontColor(Tokens.TEXT_PRIMARY)
-            Text('去工具页勾选想放在首页的工具（最多 4 个）')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .margin({ top: 4 })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          Text('去勾选 ›')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.SLATE_BLUE)
-        }
-        .width('100%')
-        .padding(Tokens.CARD_PADDING)
-        .backgroundColor(Tokens.CARD)
-        .border({ width: 0.5, color: Tokens.CARD_EDGE })
-        .borderRadius(Tokens.RADIUS_CARD)
-        .onClick(() => {
-          this.onEditQuick();
-        })
-      }
-    }
-    .width('100%')
-  }
-
   build() {
     Stack() {
-    Refresh({ refreshing: $$this.refreshing }) {
-      Scroll() {
-      Row() {
-      Column() {
-        this.heroCard()
-
-        if (this.isWide()) {
-          Row({ space: 16 }) {
-            Column() {
-              this.todayCard()
-              this.quickSection()
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-
-            Column() {
-              this.powerCard()
-              this.tasksSection()
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Top)
-        } else {
-        // —— 今日课程 ——
-        Column() {
-          this.cardHeader('今天', '课表', () => {
-            this.onOpenTool('tt');
-          })
-          if (this.plan.hasData && this.plan.today.length > 0) {
-            ForEach(this.plan.today, (session: SessionInfo) => {
-              Row() {
-                Text(session.startText)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_TERTIARY)
-                  .width(56)
-                Column() {
-                  Text(session.name)
-                    .fontSize(Tokens.F_BODY)
-                    .fontColor(Tokens.TEXT_PRIMARY)
-                    .maxLines(1)
-                  Text(session.span + (session.room.length > 0 ? ' · ' + session.room : ''))
-                    .fontSize(Tokens.F_CAPTION)
-                    .fontColor(Tokens.TEXT_TERTIARY)
-                    .margin({ top: 2 })
-                    .maxLines(1)
-                }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
-                if (session.state === SessionState.ONGOING) {
-                  Text('上课中')
-                    .fontSize(Tokens.F_CAPTION)
-                    .fontColor(Tokens.MIST_TEAL)
-                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                    .backgroundColor(Tokens.TINT_TEAL)
-                    .borderRadius(Tokens.RADIUS_PILL)
-                }
-              }
-              .width('100%')
-              .padding({ top: 8, bottom: 8 })
-            }, (session: SessionInfo) => 't_' + session.startAt + session.name)
-            if (this.plan.todayState === TodayState.DONE) {
-              Text('今日课程已结束' + (this.plan.next !== undefined
-                ? ' · 下次 ' + this.plan.next.dayText + ' ' + this.plan.next.name : ''))
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .width('100%')
-                .margin({ top: 2 })
-            }
-          } else if (this.plan.hasData) {
-            Text('今天没课')
-              .fontSize(Tokens.F_BODY)
-              .fontColor(Tokens.TEXT_PRIMARY)
-              .width('100%')
-              .margin({ top: 8 })
-            Text(this.plan.next !== undefined
-              ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.name
-              : '近期暂无课程')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .width('100%')
-              .margin({ top: 4 })
-          } else {
-            Text('课表未同步')
-              .fontSize(Tokens.F_BODY)
-              .fontColor(Tokens.TEXT_PRIMARY)
-              .width('100%')
-              .margin({ top: 8 })
-            Row() {
-              Text('打开课表即可拉取本周课程')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .layoutWeight(1)
-              Text('打开课表')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.MIST_TEAL)
-                .onClick(() => {
-                  this.onOpenTool('tt');
-                })
-            }
-            .width('100%')
-            .margin({ top: 6 })
-          }
-        }
-        .width('100%')
-        .padding(Tokens.CARD_PADDING)
-        .margin({ top: 20 })
-        .backgroundColor(Tokens.CARD)
-        .border({ width: 0.5, color: Tokens.CARD_EDGE })
-        .borderRadius(Tokens.RADIUS_CARD)
-        .shadow({ radius: 18, color: '#0D1C2629', offsetX: 0, offsetY: 6 })
-        .transition(Motion.listItem())
-
-        // —— 宿舍电费 ——
-        Column() {
-          this.cardHeader('宿舍电费', this.powerHas ? '查看' : '', () => {
-          })
-          if (this.powerHas) {
-            Row() {
-              Column() {
-                Text(this.powerLabel)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_SECONDARY)
-                Text(this.powerUpd.length > 0 ? '更新 ' + this.powerUpd : '点开查看趋势与充值')
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_TERTIARY)
-                  .margin({ top: 2 })
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-              Row() {
-                Text(this.powerQ)
-                  .fontSize(Tokens.F_TITLE)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(Tokens.TEXT_PRIMARY)
-                Text(this.powerUnit)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_TERTIARY)
-                  .margin({ left: 2, bottom: 4 })
-              }
-              .alignItems(VerticalAlign.Bottom)
-              Text(HomeDigest.powerStateText(this.powerState))
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(this.powerPillColor())
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
-                .borderRadius(Tokens.RADIUS_PILL)
-                .margin({ left: 10 })
-            }
-            .width('100%')
-            .margin({ top: 8 })
-          } else {
-            Row() {
-              Column() {
-                Text('关注宿舍后显示剩余电量')
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_SECONDARY)
-                Text('去选择关注宿舍 ›')
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.SLATE_BLUE)
-                  .margin({ top: 2 })
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-            }
-            .width('100%')
-            .margin({ top: 8 })
-          }
-        }
-        .width('100%')
-        .padding(Tokens.CARD_PADDING)
-        .margin({ top: 12 })
-        .backgroundColor(Tokens.CARD)
-        .border({ width: 0.5, color: Tokens.CARD_EDGE })
-        .borderRadius(Tokens.RADIUS_CARD)
-        .stateStyles({
-          pressed: {
-            .scale({ x: 0.99, y: 0.99 })
-          }
-        })
-        .animation({ duration: Motion.FAST, curve: Motion.ease() })
-        .onClick(() => {
-          this.onOpenTool('power');
-        })
-        .transition(Motion.listItem())
-
-        // —— 作业待交 ——
-        Column() {
-          this.taskCard('hw', AppSymbols.HOMEWORK, '作业待交', '作业都完成了', Tokens.WARM_SAND, () => {
-              this.onOpenTool('hw');
-            })
-        }
-        .width('100%')
-        .margin({ top: 12 })
-        .transition(Motion.listItem())
-
-        // —— 通知待处理 ——
-        Column() {
-          if (this.ntState === 'ok') {
-            this.taskCard('nt', AppSymbols.BELL, '通知待处理', '暂无待处理通知', '#B06A55', () => {
-                this.onOpenTool('nt');
-              })
-          } else {
-            this.taskCard('nt', AppSymbols.BELL, '通知待处理',
-              this.ntState === 'off' ? '通知需联网同步'
-                : (this.ntState === 'error' ? '通知同步失败，点开重试' : '通知同步中…'), '#B06A55', () => {
-                this.onOpenTool('nt');
-              })
-          }
-        }
-        .width('100%')
-        .margin({ top: 12 })
-        .transition(Motion.listItem())
-
-        // —— 常用工具 ——
-        Row() {
-          Text('常用工具')
-            .fontSize(Tokens.F_LABEL)
-            .fontColor(Tokens.TEXT_SECONDARY)
-            .layoutWeight(1)
-          Row({ space: 2 }) {
-            Text('全部')
-              .fontSize(Tokens.F_LABEL)
-              .fontColor(Tokens.SLATE_BLUE)
-            SymbolGlyph(AppSymbols.ARROW_RIGHT)
-              .fontSize(12)
-              .fontColor([Tokens.SLATE_BLUE])
-          }
-          .onClick(() => {
-            this.onOpenAll();
-          })
-        }
-        .width('100%')
-        .margin({ top: Tokens.GAP_XL, bottom: Tokens.GAP_SM })
-
-        if (this.quick().length > 0) {
-          Column() {
-            this.quickGrid()
-          }
-          .width('100%')
-          .padding(Tokens.CARD_PADDING)
-          .backgroundColor(Tokens.CARD)
-          .border({ width: 0.5, color: Tokens.CARD_EDGE })
-          .borderRadius(Tokens.RADIUS_CARD)
-          .transition(Motion.listItem())
-        } else {
+      Refresh({ refreshing: $$this.refreshing }) {
+        Scroll(this.scroller) {
           Row() {
             Column() {
-              Text('尚未勾选常用工具')
-                .fontSize(Tokens.F_BODY)
-                .fontColor(Tokens.TEXT_PRIMARY)
-              Text('去工具页勾选想放在首页的工具（最多 4 个）')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .margin({ top: 4 })
+              this.heroCard()
+
+              if (this.cards.length === 0) {
+                this.emptyCards()
+              } else {
+                Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween, alignItems: ItemAlign.Start }) {
+                  ForEach(this.cards, (cfg: HomeCardConfig) => {
+                    this.renderCard(cfg)
+                  }, (cfg: HomeCardConfig) => cfg.id)
+                }
+                .width('100%')
+                .margin({ top: Tokens.SPACE_4 })
+              }
+
+              Blank().height(this.bottomSpace())
             }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-            Text('去勾选 ›')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.SLATE_BLUE)
+            .width('100%')
+            .constraintSize({ maxWidth: Breakpoints.contentMaxWidth(this.layoutWidth) })
+            .padding({
+              left: Breakpoints.pagePadding(this.layoutWidth),
+              right: Breakpoints.pagePadding(this.layoutWidth),
+              top: Tokens.SPACE_8
+            })
           }
           .width('100%')
-          .padding(Tokens.CARD_PADDING)
-          .backgroundColor(Tokens.CARD)
-          .border({ width: 0.5, color: Tokens.CARD_EDGE })
-          .borderRadius(Tokens.RADIUS_CARD)
-          .onClick(() => {
-            this.onEditQuick();
-          })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Top)
         }
-
-        }
-        Blank().height(this.bottomSpace())
+        .width('100%')
+        .height('100%')
+        .align(Alignment.Top)
+        .scrollBar(BarState.Off)
+        .onDidScroll(() => {
+          const offset: number = this.scroller.currentOffset().yOffset;
+          const next: number = offset > 0 ? Math.min(1, offset / 48) : 0;
+          if (Math.abs(next - this.topFade) > 0.02) {
+            this.topFade = next;
+          }
+        })
       }
-      .width('100%')
-      .constraintSize({ maxWidth: Breakpoints.contentMaxWidth(this.layoutWidth) })
-      .padding({
-      left: Breakpoints.pagePadding(this.layoutWidth),
-      right: Breakpoints.pagePadding(this.layoutWidth),
-      top: Tokens.SPACE_8
-    })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Top)
-    }
       .width('100%')
       .height('100%')
-      .align(Alignment.Top)
-      .scrollBar(BarState.Off)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Color.Transparent)
-    .onRefreshing(() => {
-      this.refreshNow();
-    })
+      .backgroundColor(Color.Transparent)
+      .onRefreshing(() => {
+        this.refreshNow();
+      })
       if (this.loading) {
         this.skeletonPage()
       }
+
+      Column()
+        .width('100%')
+        .height(96)
+        .linearGradient({
+          angle: 180,
+          colors: [
+            ['#FFF6F7F8', 0.0],
+            ['#B8F6F7F8', 0.45],
+            ['#00F6F7F8', 1.0]
+          ]
+        })
+        .opacity(this.topFade)
+        .position({ x: 0, y: 0 })
+        .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
     .height('100%')
@@ -1358,6 +1240,15 @@ export struct HomeScreen {
       const next: number = Number(newArea.width);
       if (Math.abs(next - this.layoutWidth) > 1) {
         this.layoutWidth = next;
+      }
+    })
+    .bindSheet($$this.sheetOpen, this.configSheet(), {
+      height: SheetSize.LARGE,
+      dragBar: true,
+      showClose: false,
+      backgroundColor: Tokens.SHEET,
+      onDisappear: () => {
+        this.sheetOpen = false;
       }
     })
   }

@@ -13,6 +13,18 @@ export class AppSymbols {
   static readonly SETTINGS_FILL: Resource = $r('sys.symbol.gearshape_fill');
   static readonly PLUS: Resource = $r('sys.symbol.plus');
   static readonly XMARK: Resource = $r('sys.symbol.xmark');
+  static readonly MINUS: Resource = $r('sys.symbol.minus');
+  static readonly TRASH: Resource = $r('sys.symbol.trash');
+  static readonly ARROW_UP: Resource = $r('sys.symbol.arrow_up');
+  static readonly ARROW_DOWN: Resource = $r('sys.symbol.arrow_down');
+  /** 半宽 ⇄ 整行（横向缩放）。 */
+  static readonly RESIZE_WIDTH: Resource = $r('sys.symbol.arrow_left_arrow_right');
+  static readonly RESET: Resource = $r('sys.symbol.arrow_counterclockwise');
+  /** 时钟 / 天气（非学校工具卡片）。 */
+  static readonly CLOCK: Resource = $r('sys.symbol.clock');
+  static readonly WEATHER: Resource = $r('sys.symbol.cloud_sun_fill');
+  static readonly THERMOMETER: Resource = $r('sys.symbol.thermometer');
+  static readonly HUMIDITY: Resource = $r('sys.symbol.drop');
 
   static readonly ARROW_RIGHT: Resource = $r('sys.symbol.arrow_right');
   static readonly ARROW_LEFT: Resource = $r('sys.symbol.arrow_left');
