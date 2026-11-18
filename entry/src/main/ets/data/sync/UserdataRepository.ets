@@ -1,4 +1,4 @@
-import { Api } from '../net/Api';
+﻿import { Api } from '../net/Api';
 import { ApiError, ApiErrorKind, ApiResult } from '../net/ApiResult';
 import { Blob, JsonBlob, JsonValue } from './JsonBlob';
 import { UserdataV6 } from './UserdataV6';

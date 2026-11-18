@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
 import { GroupConfig, GroupMode, groupModeFromWire, GroupSource, groupSourceFromWire } from './GroupModels';
 
 /**

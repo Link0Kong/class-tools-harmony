@@ -1,4 +1,4 @@
-export enum DiagStatus {
+﻿export enum DiagStatus {
   PASS = 'pass',
   WARN = 'warn',
   FAIL = 'fail',

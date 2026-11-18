@@ -1,4 +1,4 @@
-import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
+﻿import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
 import { NoticeCard } from '../notices/NoticeCards';
 import { NoticeSection } from '../notices/NoticeRecurrence';
 import { PowerStats } from '../../data/power/PowerModels';
@@ -92,7 +92,8 @@ export class HomeDigest {
     const out: NoticeCard[] = [];
     for (let i = 0; i < cards.length; i++) {
       const card: NoticeCard = cards[i];
-      if (card.definition || card.section === NoticeSection.MATERIAL || card.section === NoticeSection.EXPIRED) {
+      if (card.definition || !card.actionable || card.section === NoticeSection.MATERIAL
+        || card.section === NoticeSection.EXPIRED) {
         continue;
       }
       if (isDone(card.key)) {

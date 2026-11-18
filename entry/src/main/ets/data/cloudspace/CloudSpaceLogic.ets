@@ -1,4 +1,4 @@
-import { CloudSpaceDefaults, CloudSpaceEvent, CloudSpaceFile } from './CloudSpaceModels';
+﻿import { CloudSpaceDefaults, CloudSpaceEvent, CloudSpaceFile } from './CloudSpaceModels';
 
 /**
  * 临时云空间的纯逻辑（无网络 / 无 ArkUI 依赖，hypium 直接覆盖）：
@@ -239,25 +239,23 @@ export class CloudSpaceLogic {
   }
 
   /** 文件类型单字字形（列表图标，避免依赖图标字体）。 */
-  static fileKindGlyph(kind: CloudSpaceFileKind): string {    if (kind === CloudSpaceFileKind.IMAGE) {
-      return '图';
+  static fileKindSymbol(kind: CloudSpaceFileKind): Resource {
+    if (kind === CloudSpaceFileKind.IMAGE) {
+      return $r('sys.symbol.ohos_photo');
     }
     if (kind === CloudSpaceFileKind.VIDEO) {
-      return '视';
+      return $r('sys.symbol.video');
     }
     if (kind === CloudSpaceFileKind.AUDIO) {
-      return '音';
+      return $r('sys.symbol.music');
     }
     if (kind === CloudSpaceFileKind.ARCHIVE) {
-      return '档';
+      return $r('sys.symbol.archivebox');
     }
-    if (kind === CloudSpaceFileKind.PDF) {
-      return 'PDF';
+    if (kind === CloudSpaceFileKind.PDF || kind === CloudSpaceFileKind.DOCUMENT) {
+      return $r('sys.symbol.doc_text');
     }
-    if (kind === CloudSpaceFileKind.DOCUMENT) {
-      return '文';
-    }
-    return '件';
+    return $r('sys.symbol.doc');
   }
 
   // ---- 事件合并 -----------------------------------------------------------

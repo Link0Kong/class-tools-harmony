@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { WatchLogic } from '../main/ets/features/watch/WatchLogic';
 
 export default function watchTest() {

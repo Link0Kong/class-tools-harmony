@@ -1,7 +1,8 @@
-import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
 import {
   NOTICE_BODY_PREFIX,
   NoticeArchiveFile,
+  NoticeExtension,
   NoticeGroup,
   NoticeMsgMeta,
   NoticeRecurrence,
@@ -49,12 +50,42 @@ export class NoticeBodyParser {
     group.summary = JsonBlob.asString(JsonBlob.get(obj, 'summary'), '');
     group.aiSummary = JsonBlob.asString(JsonBlob.get(obj, 'aiSummary'), '');
     group.deadline = JsonBlob.asString(JsonBlob.get(obj, 'deadline'), '');
+    group.deadlineAction = JsonBlob.asString(JsonBlob.get(obj, 'deadlineAction'), '');
+    group.signupStart = JsonBlob.asString(JsonBlob.get(obj, 'signupStart'), '');
+    group.signupEnd = JsonBlob.asString(JsonBlob.get(obj, 'signupEnd'), '');
     group.timeLabel = JsonBlob.asString(JsonBlob.get(obj, 'timeLabel'), '');
     group.eventAt = JsonBlob.asString(JsonBlob.get(obj, 'eventAt'), '');
+    group.eventAction = JsonBlob.asString(JsonBlob.get(obj, 'eventAction'), '');
     group.expireAt = JsonBlob.asString(JsonBlob.get(obj, 'expireAt'), '');
+    group.publishedAt = JsonBlob.asString(JsonBlob.get(obj, 'publishedAt'), '');
+    group.publishAction = JsonBlob.asString(JsonBlob.get(obj, 'publishAction'), '');
     group.updatedAt = JsonBlob.asString(JsonBlob.get(obj, 'updatedAt'), '');
     group.actionable = JsonBlob.asBoolean(JsonBlob.get(obj, 'actionable'), true);
     group.alert = JsonBlob.asBoolean(JsonBlob.get(obj, 'alert'), false);
+    group.expired = JsonBlob.asBoolean(JsonBlob.get(obj, 'expired'), false);
+    const extensions: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(obj, 'extensions'));
+    if (extensions !== undefined) {
+      for (let i = 0; i < extensions.length; i++) {
+        const extBlob: Blob | undefined = JsonBlob.asBlob(extensions[i]);
+        if (extBlob === undefined) {
+          continue;
+        }
+        const ext: NoticeExtension = new NoticeExtension();
+        ext.deadline = JsonBlob.asString(JsonBlob.get(extBlob, 'deadline'), '');
+        ext.at = JsonBlob.asString(JsonBlob.get(extBlob, 'at'), '');
+        ext.reason = JsonBlob.asString(JsonBlob.get(extBlob, 'reason'), '');
+        group.extensions.push(ext);
+      }
+    }
+    const signupWindows: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(obj, 'signupWindows'));
+    if (signupWindows !== undefined) {
+      for (let i = 0; i < signupWindows.length; i++) {
+        const win: Blob | undefined = JsonBlob.asBlob(signupWindows[i]);
+        if (win !== undefined) {
+          group.signupWindows.push(win);
+        }
+      }
+    }
     group.aiPoints = stringArray(JsonBlob.get(obj, 'aiPoints'));
     const recurrence: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(obj, 'recurrence'));
     if (recurrence !== undefined) {
@@ -288,28 +319,52 @@ export class NoticeBodyParser {
       return group;
     }
     if (JsonBlob.has(override, 'title')) {
-      group.title = JsonBlob.asString(JsonBlob.get(override, 'title'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'title'), '');
+      if (value.length > 0) {
+        group.title = value;
+      }
     }
     if (JsonBlob.has(override, 'cat')) {
-      group.cat = JsonBlob.asString(JsonBlob.get(override, 'cat'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'cat'), '');
+      if (value.length > 0) {
+        group.cat = value;
+      }
     }
     if (JsonBlob.has(override, 'summary')) {
-      group.summary = JsonBlob.asString(JsonBlob.get(override, 'summary'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'summary'), '');
+      if (value.length > 0) {
+        group.summary = value;
+      }
     }
     if (JsonBlob.has(override, 'aiSummary')) {
-      group.aiSummary = JsonBlob.asString(JsonBlob.get(override, 'aiSummary'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'aiSummary'), '');
+      if (value.length > 0) {
+        group.aiSummary = value;
+      }
     }
     if (JsonBlob.has(override, 'deadline')) {
-      group.deadline = JsonBlob.asString(JsonBlob.get(override, 'deadline'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'deadline'), '');
+      if (value.length > 0) {
+        group.deadline = value;
+      }
     }
     if (JsonBlob.has(override, 'eventAt')) {
-      group.eventAt = JsonBlob.asString(JsonBlob.get(override, 'eventAt'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'eventAt'), '');
+      if (value.length > 0) {
+        group.eventAt = value;
+      }
     }
     if (JsonBlob.has(override, 'expireAt')) {
-      group.expireAt = JsonBlob.asString(JsonBlob.get(override, 'expireAt'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'expireAt'), '');
+      if (value.length > 0) {
+        group.expireAt = value;
+      }
     }
     if (JsonBlob.has(override, 'timeLabel')) {
-      group.timeLabel = JsonBlob.asString(JsonBlob.get(override, 'timeLabel'), '');
+      const value: string = JsonBlob.asString(JsonBlob.get(override, 'timeLabel'), '');
+      if (value.length > 0) {
+        group.timeLabel = value;
+      }
     }
     return group;
   }

@@ -1,4 +1,4 @@
-import { vibrator } from '@kit.SensorServiceKit';
+﻿import { vibrator } from '@kit.SensorServiceKit';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -698,14 +698,16 @@ export struct WatchShell {
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
-                Text('✓')
-                  .fontSize(this.px(14))
-                  .fontColor('#9BC9BB')
-                  .width(this.px(30))
-                  .height(this.px(30))
-                  .textAlign(TextAlign.Center)
-                  .border({ width: 1, color: '#33424A' })
-                  .borderRadius(15)
+                Stack({ alignContent: Alignment.Center }) {
+                  SymbolGlyph($r('sys.symbol.checkmark'))
+                    .fontSize(this.px(15))
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(['#9BC9BB'])
+                }
+                .width(this.px(30))
+                .height(this.px(30))
+                .border({ width: 1, color: '#33424A' })
+                .borderRadius(15)
               }
               .width('100%')
               .padding(this.px(5))
@@ -792,9 +794,9 @@ export struct WatchShell {
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
-                Text('›')
-                  .fontSize(this.px(14))
-                  .fontColor('#4E5357')
+      SymbolGlyph($r('sys.symbol.arrow_right'))
+        .fontSize(this.px(14))
+        .fontColor(['#4E5357'])
               }
               .width('100%')
               .padding(this.px(5))
@@ -944,12 +946,17 @@ export struct WatchShell {
   }
 
   @Builder
-  actionRow(icon: string, title: string, sub: string, color: string, onTap: () => void) {
+  actionRow(icon: Resource, title: string, sub: string, color: string, onTap: () => void) {
     Row() {
-      Text(icon)
-        .fontSize(this.px(14))
-        .fontColor(color)
-        .width(this.px(28))
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(icon)
+          .fontSize(this.px(16))
+          .fontWeight(FontWeight.Medium)
+          .fontColor([color])
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+      }
+      .width(this.px(28))
+      .height(this.px(20))
       Column() {
         Text(title)
           .fontSize(this.px(12))
@@ -961,9 +968,9 @@ export struct WatchShell {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      Text('›')
+      SymbolGlyph($r('sys.symbol.arrow_right'))
         .fontSize(this.px(14))
-        .fontColor('#4E5357')
+        .fontColor(['#4E5357'])
     }
     .width('100%')
     .padding(this.px(6))
@@ -976,10 +983,15 @@ export struct WatchShell {
   @Builder
   overviewRow() {
     Row() {
-      Text('览')
-        .fontSize(this.px(14))
-        .fontColor('#9BC9BB')
-        .width(this.px(28))
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.bell'))
+          .fontSize(this.px(16))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(['#9BC9BB'])
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+      }
+      .width(this.px(28))
+      .height(this.px(20))
       Column() {
         Text('待处理概览')
           .fontSize(this.px(12))
@@ -991,9 +1003,9 @@ export struct WatchShell {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      Text('›')
+      SymbolGlyph($r('sys.symbol.arrow_right'))
         .fontSize(this.px(14))
-        .fontColor('#4E5357')
+        .fontColor(['#4E5357'])
     }
     .width('100%')
     .padding(this.px(6))
@@ -1043,15 +1055,15 @@ export struct WatchShell {
       .backgroundColor('#101418')
       .borderRadius(this.px(9))
 
-      this.actionRow('刷', '刷新全部', '作业 / 通知 / 课表 / 电费', Tokens.MIST_TEAL, () => {
+      this.actionRow($r('sys.symbol.arrow_clockwise'), '刷新全部', '作业 / 通知 / 课表 / 电费', Tokens.MIST_TEAL, () => {
         this.refresh();
       })
       this.overviewRow()
-      this.actionRow('退', '退出登录', '需要重新输入学号与姓名', '#E8A87C', () => {
+      this.actionRow($r('sys.symbol.xmark'), '退出登录', '需要重新输入学号与姓名', '#E8A87C', () => {
         this.askLogout();
       })
       Blank()
-      Text('枫丹工具箱 · 1.0.6')
+      Text('枫丹工具箱 · 1.0.7')
         .fontSize(this.px(8))
         .fontColor('#4E5357')
     }
@@ -1109,11 +1121,11 @@ export struct WatchShell {
         .fontSize(this.px(12))
         .fontColor('#9AA0A6')
         .margin({ bottom: this.px(4) })
-      this.actionRow('刷', '刷新全部', this.syncText(), Tokens.MIST_TEAL, () => {
+      this.actionRow($r('sys.symbol.arrow_clockwise'), '刷新全部', this.syncText(), Tokens.MIST_TEAL, () => {
         this.closeMenu();
         this.refresh();
       })
-      this.actionRow('取', '取消', '返回当前页面', '#9AA0A6', () => {
+      this.actionRow($r('sys.symbol.arrow_left'), '取消', '返回当前页面', '#9AA0A6', () => {
         this.closeMenu();
       })
     }

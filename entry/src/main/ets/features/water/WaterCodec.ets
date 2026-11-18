@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
 import { WaterRecord, WaterRoomState, WaterRules, WaterState } from './WaterModels';
 
 /**

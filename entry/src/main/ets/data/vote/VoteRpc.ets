@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
 import {
   Poll,
   PollAudience,

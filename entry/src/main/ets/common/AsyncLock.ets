@@ -1,4 +1,4 @@
-/** 极简异步互斥（替代 Kotlin Mutex；ArkTS 无协程）。 */
+﻿/** 极简异步互斥（替代 Kotlin Mutex；ArkTS 无协程）。 */
 export class AsyncLock {
   private tail: Promise<void> = Promise.resolve();
 

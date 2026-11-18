@@ -1,9 +1,11 @@
-import { image } from '@kit.ImageKit';
+﻿import { image } from '@kit.ImageKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { ExportCardSpec } from '../../features/export/ExportCard';
 import { ImageSaver, SaveResult } from '../../data/export/ImageSaver';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
+import { Immersive } from '../theme/Immersive';
 import { ExportCardView } from '../components/ExportCardView';
 import { Log } from '../../common/Log';
 
@@ -23,6 +25,7 @@ export struct ExportPreview {
 
   @State private status: string = '';
   @State private saving: boolean = false;
+  @State private sharing: boolean = false;
   @State private entered: boolean = false;
 
   aboutToAppear(): void {
@@ -103,6 +106,32 @@ export struct ExportPreview {
     }
   }
 
+  /** 生成图片后直接拉起系统分享面板（大卡预览，系统操作区含复制/保存等）。 */
+  private async share(): Promise<void> {
+    if (this.saving || this.sharing) {
+      return;
+    }
+    this.sharing = true;
+    this.status = '正在生成图片…';
+    try {
+      const data: ArrayBuffer | undefined = await this.capture();
+      if (data === undefined) {
+        this.status = '生成图片失败，请重试';
+        return;
+      }
+      const path: string = await ImageSaver.writeToAppFile(data, this.spec.fileName);
+      if (path.length === 0) {
+        this.status = '写入文件失败';
+        return;
+      }
+      const result: ShareResult = await NativeShare.shareImage(path, this.spec.title,
+        this.spec.subtitle.length > 0 ? this.spec.subtitle : this.spec.footer);
+      this.status = result.message;
+    } finally {
+      this.sharing = false;
+    }
+  }
+
   /** Promise 超时保护（相册确认框偶发不弹出时避免 UI 卡死）。 */
   private static async withTimeout<T>(task: Promise<T>, ms: number): Promise<T | undefined> {
     let timer: number = -1;
@@ -157,30 +186,48 @@ export struct ExportPreview {
         if (this.status.length > 0) {
           Text(this.status)
             .fontSize(Tokens.F_CAPTION)
-            .fontColor(this.saving ? Tokens.TEXT_SECONDARY : Tokens.MIST_TEAL)
+            .fontColor(this.saving || this.sharing ? Tokens.TEXT_SECONDARY : Tokens.MIST_TEAL)
             .margin({ bottom: 8 })
         }
-        Button(this.saving ? '保存中…' : '保存到相册')
-          .width('100%')
-          .height(48)
-          .backgroundColor(this.saving ? Tokens.tint(Tokens.MIST_TEAL, 0.5) : Tokens.MIST_TEAL)
-          .fontColor('#FFFFFF')
-          .borderRadius(Tokens.RADIUS_PILL)
-          .enabled(!this.saving)
-          .onClick(() => {
-            this.save();
-          })
-        Button('仅保存文件')
-          .width('100%')
-          .height(40)
-          .margin({ top: 8 })
-          .backgroundColor(Tokens.BG)
-          .fontColor(Tokens.TEXT_SECONDARY)
-          .borderRadius(Tokens.RADIUS_PILL)
-          .enabled(!this.saving)
-          .onClick(() => {
-            this.saveFileOnly();
-          })
+        Row({ space: 8 }) {
+          Button(this.saving ? '保存中…' : '保存到相册')
+            .layoutWeight(2)
+            .height(48)
+            .backgroundColor(this.saving || this.sharing ? Tokens.tint(Tokens.MIST_TEAL, 0.5) : Tokens.MIST_TEAL)
+            .fontColor('#FFFFFF')
+            .borderRadius(Tokens.RADIUS_PILL)
+            .enabled(!this.saving && !this.sharing)
+            .onClick(() => {
+              this.save();
+            })
+          Button(this.sharing ? '分享中…' : '分享')
+            .layoutWeight(1)
+            .height(48)
+            .backgroundColor(this.saving || this.sharing ? Tokens.tint(Tokens.SLATE_BLUE, 0.5) : Tokens.SLATE_BLUE)
+            .fontColor('#FFFFFF')
+            .borderRadius(Tokens.RADIUS_PILL)
+            .enabled(!this.saving && !this.sharing)
+            .onClick(() => {
+              this.share();
+            })
+          Button('更多')
+            .layoutWeight(1)
+            .height(48)
+            .backgroundColor(Tokens.CONTROL)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
+            .fontColor(Tokens.TEXT_SECONDARY)
+            .borderRadius(Tokens.RADIUS_PILL)
+            .enabled(!this.saving && !this.sharing)
+            .bindMenu([
+              {
+                value: '仅保存文件',
+                action: () => {
+                  this.saveFileOnly();
+                }
+              }
+            ], { systemMaterial: Immersive.dialogMaterial() })
+        }
+        .width('100%')
         Text('图片已同时保存到应用文件，可在无相册权限时兜底')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
@@ -188,11 +235,14 @@ export struct ExportPreview {
       }
       .width('100%')
       .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 18, top: 8 })
-      .backgroundColor(Tokens.CARD)
+      .backgroundColor(Tokens.ACTION_BAR)
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+      .border({ width: 0.5, color: Tokens.CARD_EDGE })
+      .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.BG)
+    .backgroundColor('#F2F7F8F8')
     .opacity(this.entered ? 1 : 0)
     .translate({ y: this.entered ? 0 : 26 })
   }

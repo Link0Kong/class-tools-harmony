@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { ClassMember, LeagueMember, MemberEntry } from '../main/ets/data/member/ClassMember';
 import { MemberCategory, MemberCategoryBuilder, MemberCategoryCounts } from '../main/ets/data/member/MemberCategories';

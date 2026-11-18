@@ -1,4 +1,4 @@
-import { Blob } from '../sync/JsonBlob';
+﻿import { Blob } from '../sync/JsonBlob';
 
 /** 自动通知 body 前缀（契约：`body = "[[CLASS_NOTICE_V1]]" + JSON`）。 */
 export const NOTICE_BODY_PREFIX: string = '[[CLASS_NOTICE_V1]]';
@@ -43,7 +43,14 @@ export class NoticeSegment {
   text: string = '';
 }
 
-/** 自动通知组（body 前缀后的 JSON；字段全部可选，容错）。 */
+/** 一次延期（extensions[] 的最后一项才是真实截止）。 */
+export class NoticeExtension {
+  deadline: string = '';
+  at: string = '';
+  reason: string = '';
+}
+
+/** 取通知 body 前缀后的 JSON；字段全部可选，容错）。 */
 /** 长期安排 recurrence（req + 	ime 有效才算）。 */
 export class NoticeRecurrence {
   freq: string = '';
@@ -81,13 +88,23 @@ export class NoticeGroup {
   aiPoints: string[] = [];
   aiSegments: NoticeSegment[] = [];
   deadline: string = '';
+  deadlineAction: string = '';
+  signupStart: string = '';
+  signupEnd: string = '';
   timeLabel: string = '';
   eventAt: string = '';
+  eventAction: string = '';
   expireAt: string = '';
+  publishedAt: string = '';
+  publishAction: string = '';
   actionable: boolean = true;
   alert: boolean = false;
+  expired: boolean = false;
   updatedAt: string = '';
   items: Blob[] = [];
+  extensions: NoticeExtension[] = [];
+  /** 报名窗口（旧数据可能只有 signupStart/signupEnd）。 */
+  signupWindows: Blob[] = [];
   recurrence: NoticeRecurrence | undefined = undefined;
 }
 

@@ -1,4 +1,4 @@
-import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
+﻿import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
 
 /** 提醒偏好（本机 + 可随账号同步；当前本机保存）。 */
 export class ReminderPrefs {

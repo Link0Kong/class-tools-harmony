@@ -1,4 +1,4 @@
-import request from '@ohos.request';
+﻿import request from '@ohos.request';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import {
@@ -22,6 +22,10 @@ import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { PptUploadRepository } from '../../data/ppt/PptUploadRepository';
 import { PptUploader } from '../../data/ppt/PptUploader';
 import { Motion } from '../theme/Motion';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { PageHeader } from '../components/PageHeader';
 
 /**
@@ -45,6 +49,7 @@ export struct PptScreen {
   @State private detailLoading: boolean = false;
   @State private detail: PptDeckDetail = new PptDeckDetail();
   @State private detailError: string = '';
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
   @State private notice: string = '';
   @State private downloading: string = '';
   @State private playerOpen: boolean = false;
@@ -60,6 +65,8 @@ export struct PptScreen {
   @State private savingAs: boolean = false;
   @State private deleteConfirm: boolean = false;
   @State private deleteNotice: string = '';
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.reload();
@@ -76,6 +83,12 @@ export struct PptScreen {
     }
     this.decks = result.decks;
     this.agentOnline = result.agentOnline;
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.reload();
+    this.refreshing = false;
   }
 
   private closeDetail(): void {
@@ -344,7 +357,7 @@ export struct PptScreen {
     Text(text)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(color)
-      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .backgroundColor(Tokens.tint(color, 0.12))
       .borderRadius(6)
       .margin({ right: 4 })
@@ -406,6 +419,7 @@ export struct PptScreen {
     .width('100%')
     .padding(12)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .onClick(() => {
       this.openDetail(deck.id);
@@ -437,7 +451,7 @@ export struct PptScreen {
       Button(file !== undefined ? (this.downloading.length > 0 ? '下载中…' : '下载') : '—')
         .height(34)
         .fontSize(Tokens.F_CAPTION)
-        .backgroundColor(file !== undefined ? Tokens.MIST_TEAL : Tokens.BG)
+        .backgroundColor(file !== undefined ? Tokens.MIST_TEAL : Tokens.CONTROL)
         .fontColor(file !== undefined ? '#FFFFFF' : Tokens.TEXT_TERTIARY)
         .borderRadius(Tokens.RADIUS_PILL)
         .enabled(file !== undefined && this.downloading.length === 0)
@@ -451,6 +465,29 @@ export struct PptScreen {
     .padding({ top: 10, bottom: 10 })
   }
 
+  /** 演示详情 → 分享卡图片 → 系统图片分享。 */
+  private shareDetail(): void {
+    const deck: PptDeck = this.detail.deck;
+    if (deck.id.length === 0) {
+      return;
+    }
+    this.shareSpec = ShareSpecs.ppt(deck, Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
   @Builder
   detailPanel() {
     Column() {
@@ -460,6 +497,13 @@ export struct PptScreen {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Blank()
+        Text('分享')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.SLATE_BLUE)
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.shareDetail();
+          })
         Text('关闭')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.SLATE_BLUE)
@@ -506,7 +550,7 @@ export struct PptScreen {
             .width('100%')
             .padding({ left: 14, right: 14 })
             .margin({ top: 10 })
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .borderRadius(Tokens.RADIUS_CARD)
 
             if (this.detail.warnings.length > 0) {
@@ -523,29 +567,34 @@ export struct PptScreen {
               .margin({ top: 8 })
             }
 
-            if (this.detail.slides.length > 0) {
-              Button('在线预览（分步图）')
-                .width('100%')
-                .height(42)
-                .margin({ top: 10 })
-                .backgroundColor(Tokens.SLATE_BLUE)
-                .fontColor('#FFFFFF')
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.openPlayer();
-                })
-            }
-            if (this.detail.video !== undefined) {
-              Button('原样播放（视频）')
-                .width('100%')
-                .height(42)
-                .margin({ top: 8 })
-                .backgroundColor(Tokens.MIST_TEAL)
-                .fontColor('#FFFFFF')
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.openVideo();
-                })
+            if (this.detail.slides.length > 0 || this.detail.video !== undefined) {
+              Row({ space: 8 }) {
+                if (this.detail.slides.length > 0) {
+                  Button('在线预览（分步图）')
+                    .layoutWeight(1)
+                    .height(42)
+                    .backgroundColor(Tokens.SLATE_BLUE)
+                    .fontColor('#FFFFFF')
+                    .borderRadius(Tokens.RADIUS_PILL)
+                    .onClick(() => {
+                      this.openPlayer();
+                    })
+                }
+                if (this.detail.video !== undefined) {
+                  Button('原样播放')
+                    .layoutWeight(1)
+                    .height(42)
+                    .backgroundColor(Tokens.CONTROL)
+                    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+                    .fontColor(Tokens.TEXT_PRIMARY)
+                    .borderRadius(Tokens.RADIUS_PILL)
+                    .onClick(() => {
+                      this.openVideo();
+                    })
+                }
+              }
+              .width('100%')
+              .margin({ top: 10 })
             }
             if (this.detail.mediaFiles.length > 0) {
               Text('视频 / 音频单独下载')
@@ -581,7 +630,7 @@ export struct PptScreen {
               .width('100%')
               .padding({ left: 12, right: 12 })
               .margin({ top: 6 })
-              .backgroundColor(Tokens.BG)
+              .backgroundColor(Tokens.CONTROL)
               .borderRadius(Tokens.RADIUS_CARD)
             }
 
@@ -590,7 +639,7 @@ export struct PptScreen {
                 .width('100%')
                 .height(40)
                 .margin({ top: 10 })
-                .backgroundColor(Tokens.BG)
+                .backgroundColor(Tokens.CONTROL)
                 .fontColor(Tokens.DANGER)
                 .borderRadius(Tokens.RADIUS_PILL)
                 .onClick(() => {
@@ -610,7 +659,7 @@ export struct PptScreen {
                 .width('100%')
                 .height(40)
                 .margin({ top: 10 })
-                .backgroundColor(Tokens.BG)
+                .backgroundColor(Tokens.CONTROL)
                 .fontColor(Tokens.SLATE_BLUE)
                 .borderRadius(Tokens.RADIUS_PILL)
                 .enabled(!this.savingAs)
@@ -632,30 +681,43 @@ export struct PptScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       }
     }
     .width('100%')
     .height('76%')
     .padding(16)
-    .backgroundColor(Tokens.CARD)
-    .borderRadius(Tokens.RADIUS_CARD)
+    .backgroundColor(Tokens.SHEET)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '演示',
-          actionText: this.loading ? '' : '刷新',
-          onBack: () => {
-            this.onClose();
-          },
-          onAction: () => {
-            this.reload();
+      PageHeader({
+      progress: this.headerFade,
+        title: '演示',
+        actionText: this.loading ? '' : (this.uploading ? '上传中' : '上传'),
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        },
+        onAction: () => {
+          if (!this.uploading) {
+            this.pickAndUpload();
           }
-        })
-
+        }
+      }) {
+        Column() {
         Row() {
           Text((this.agentOnline ? '转换机在线' : '转换机离线（只能下载已转换文件）')
             + ' · ' + this.decks.length + ' 个演示')
@@ -666,14 +728,6 @@ export struct PptScreen {
             Text(this.uploadTotal > 0 ? '上传中 ' + this.uploadDone + '/' + this.uploadTotal : '上传中…')
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.SLATE_BLUE)
-          } else {
-            Text('上传')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.SLATE_BLUE)
-              .padding({ left: 8, right: 2 })
-              .onClick(() => {
-                this.pickAndUpload();
-              })
           }
         }
         .width('100%')
@@ -710,24 +764,37 @@ export struct PptScreen {
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
           } else {
-            List({ space: 10 }) {
-              ForEach(this.decks, (deck: PptDeck) => {
-                ListItem() {
-                  this.deckCard(deck)
+            Refresh({ refreshing: $$this.refreshing }) {
+              List({ scroller: this.scroller, space: 10 }) {
+                ForEach(this.decks, (deck: PptDeck) => {
+                  ListItem() {
+                    this.deckCard(deck)
+                  }
+                }, (deck: PptDeck) => deck.id + '_' + deck.status + '_' + (deck.hasCompat ? '1' : '0') + (deck.hasPdf ? '1' : '0'))
+              }
+              .width('100%')
+              .height('100%')
+              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .scrollBar(BarState.Off)
+              .onDidScroll((offset: number) => {
+                const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+                if (Math.abs(next - this.headerFade) > 0.03) {
+                  this.headerFade = next;
                 }
-              }, (deck: PptDeck) => deck.id + '_' + deck.status + '_' + (deck.hasCompat ? '1' : '0') + (deck.hasPdf ? '1' : '0'))
+              })
             }
-            .width('100%')
             .layoutWeight(1)
             .margin({ top: 10 })
-            .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
-            .scrollBar(BarState.Off)
+            .onRefreshing(() => {
+              this.pullRefresh();
+            })
           }
         }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.detailOpen) {
         Column() {
@@ -735,7 +802,7 @@ export struct PptScreen {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .transition(Motion.scrim())
         .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
@@ -828,7 +895,7 @@ export struct PptScreen {
                   Text(chapter.title.length > 0 ? chapter.title : ('第 ' + (chapter.index + 1) + ' 章'))
                     .fontSize(11)
                     .fontColor('#FFFFFF')
-                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
                     .backgroundColor('#33FFFFFF')
                     .borderRadius(12)
                     .onClick(() => {
@@ -842,6 +909,12 @@ export struct PptScreen {
             .margin({ top: 56 })
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
+            .onDidScroll((offset: number) => {
+              const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+              if (Math.abs(next - this.headerFade) > 0.03) {
+                this.headerFade = next;
+              }
+            })
             .padding({ left: 12 })
           }
         }

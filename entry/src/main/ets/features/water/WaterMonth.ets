@@ -1,4 +1,4 @@
-import { WaterCodec } from './WaterCodec';
+﻿import { WaterCodec } from './WaterCodec';
 
 /** 月份工具（`YYYY-MM`，本地时区）。 */
 export class WaterMonth {

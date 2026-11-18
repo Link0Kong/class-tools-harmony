@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import {
   NOTICE_BODY_PREFIX,
   NoticeFilter,

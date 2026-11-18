@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { DrawSession } from '../../app/DrawSession';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { DrawEntry, DrawResult } from '../../features/draw/DrawModels';
@@ -21,6 +21,7 @@ import { GroupConfigCodec } from '../../features/group/GroupCodec';
 import { GroupExportFactory, ExportCardSpec, ExportNaming } from '../../features/export/ExportCard';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
+import { GlassBar } from '../components/GlassBar';
 import { ExportPreview } from './ExportPreview';
 
 /**
@@ -35,6 +36,7 @@ export struct GroupScreen {
   };
 
   @State private step: GroupStep = GroupStep.CONFIG;
+  private scroller: Scroller = new Scroller();
   @State private source: GroupSource = GroupSource.PREV;
   @State private mode: GroupMode = GroupMode.GROUPS;
   @State private n: number = GroupConfig.DEFAULT_N;
@@ -178,8 +180,8 @@ export struct GroupScreen {
     Text(groupSourceLabel(source))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.source === source ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-      .backgroundColor(this.source === source ? Tokens.MIST_TEAL : Tokens.BG)
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.source === source ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
@@ -197,8 +199,8 @@ export struct GroupScreen {
     Text(groupModeLabel(mode))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.mode === mode ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-      .backgroundColor(this.mode === mode ? Tokens.MIST_TEAL : Tokens.BG)
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.mode === mode ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
@@ -215,7 +217,7 @@ export struct GroupScreen {
       .width(44)
       .height(34)
       .textAlign(TextAlign.Center)
-      .backgroundColor(this.selected.indexOf(seat) >= 0 ? Tokens.SLATE_BLUE : Tokens.BG)
+      .backgroundColor(this.selected.indexOf(seat) >= 0 ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(8)
       .margin({ right: 6, bottom: 6 })
       .onClick(() => {
@@ -257,12 +259,13 @@ export struct GroupScreen {
     .padding(12)
     .margin({ bottom: 10 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
   }
 
   @Builder
   configStep() {
-    Scroll() {
+    Scroll(this.scroller) {
       Column() {
         Column() {
           Text('成员来源')
@@ -319,6 +322,7 @@ export struct GroupScreen {
         .width('100%')
         .padding(16)
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         Column() {
@@ -342,7 +346,7 @@ export struct GroupScreen {
                 .type(InputType.Number)
                 .height(44)
                 .margin({ top: 4 })
-                .backgroundColor(Tokens.BG)
+                .backgroundColor(Tokens.CONTROL)
                 .borderRadius(10)
                 .fontSize(Tokens.F_BODY)
                 .onChange((text: string) => {
@@ -384,6 +388,7 @@ export struct GroupScreen {
         .padding(16)
         .margin({ top: 14 })
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         if (this.errorMsg.length > 0) {
@@ -412,12 +417,18 @@ export struct GroupScreen {
     .layoutWeight(1)
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
+    .onDidScroll((offset: number) => {
+      const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+      if (Math.abs(next - this.headerFade) > 0.03) {
+        this.headerFade = next;
+      }
+    })
   }
 
   @Builder
   resultStep() {
     Column() {
-      Scroll() {
+      Scroll(this.scroller) {
         Column() {
           Text(this.groups !== undefined
             ? '共 ' + this.groups.snapshot.total + ' 人 · ' + this.groups.snapshot.groupCount + ' 组'
@@ -448,28 +459,26 @@ export struct GroupScreen {
       .layoutWeight(1)
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .onDidScroll((offset: number) => {
+        const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+        if (Math.abs(next - this.headerFade) > 0.03) {
+          this.headerFade = next;
+        }
+      })
 
-      Row({ space: 10 }) {
-        Button('调整参数')
-          .layoutWeight(1)
-          .height(48)
-          .backgroundColor(Tokens.CARD)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .borderRadius(Tokens.RADIUS_PILL)
-          .onClick(() => {
-            this.step = GroupStep.CONFIG;
-          })
+      GlassBar() {
         Button('重新分组')
           .layoutWeight(1)
           .height(48)
-          .backgroundColor(Tokens.CARD)
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .fontColor(Tokens.TEXT_PRIMARY)
           .borderRadius(Tokens.RADIUS_PILL)
           .onClick(() => {
             this.regroup();
           })
         Button('导出图片')
-          .layoutWeight(1)
+          .layoutWeight(2)
           .height(48)
           .backgroundColor(Tokens.MIST_TEAL)
           .fontColor('#FFFFFF')
@@ -478,35 +487,41 @@ export struct GroupScreen {
             this.openExport();
           })
       }
-      .width('100%')
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 16, top: 10 })
     }
     .layoutWeight(1)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: this.step === GroupStep.CONFIG ? '分组 · 配置' : '分组 · 结果',
-          onBack: () => {
-            if (this.step === GroupStep.RESULT) {
-              this.step = GroupStep.CONFIG;
-            } else {
-              this.onClose();
-            }
+      PageHeader({
+      progress: this.headerFade,
+        title: this.step === GroupStep.CONFIG ? '分组 · 配置' : '分组 · 结果',
+        actionText: this.step === GroupStep.RESULT ? '调整参数' : '',
+        scroller: this.scroller,
+        onBack: () => {
+          if (this.step === GroupStep.RESULT) {
+            this.step = GroupStep.CONFIG;
+          } else {
+            this.onClose();
           }
-        })
-
-        if (this.step === GroupStep.CONFIG) {
-          this.configStep()
-        } else {
-          this.resultStep()
+        },
+        onAction: () => {
+          this.step = GroupStep.CONFIG;
         }
+      }) {
+        Column() {
+          if (this.step === GroupStep.CONFIG) {
+            this.configStep()
+          } else {
+            this.resultStep()
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.showExport) {
         ExportPreview({

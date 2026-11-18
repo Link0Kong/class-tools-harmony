@@ -1,4 +1,4 @@
-/** 请求失败的分类，UI 据此给不同文案/行为。 */
+﻿/** 请求失败的分类，UI 据此给不同文案/行为。 */
 export enum ApiErrorKind {
   Network = 'network',
   Http = 'http',

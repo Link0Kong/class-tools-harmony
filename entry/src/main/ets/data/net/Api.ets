@@ -1,4 +1,4 @@
-import { ApiResult } from './ApiResult';
+﻿import { ApiResult } from './ApiResult';
 
 /**
  * 数据层依赖的最小网络接口（便于单测注入假实现）。

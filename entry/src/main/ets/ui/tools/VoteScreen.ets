@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { ClassMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
 import {
@@ -23,8 +23,13 @@ import {
 import { PollOptionRow, VoteLogic } from '../../data/vote/VoteLogic';
 import { VoteRepository } from '../../data/vote/VoteRepository';
 import { VoteImage } from '../../data/vote/VoteImage';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
+import { Immersive } from '../theme/Immersive';
 import { PageHeader } from '../components/PageHeader';
 
 /**
@@ -41,6 +46,8 @@ export struct VoteScreen {
   @State private polls: PollSummary[] = [];
   @State private showClosed: boolean = false;
   @State private loading: boolean = true;
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
   @State private errorMsg: string = '';
   @State private now: number = Date.now();
 
@@ -69,6 +76,7 @@ export struct VoteScreen {
   @State private members: ClassMember[] = [];
   @State private extendOpen: boolean = false;
   @State private extendMinutes: number = 30;
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
   private timerId: number = -1;
   private tickCount: number = 0;
 
@@ -122,6 +130,12 @@ export struct VoteScreen {
     return VoteLogic.filterForTab(this.polls, this.showClosed, this.now);
   }
 
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.reload();
+    this.refreshing = false;
+  }
+
   private closeDetail(): void {
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.detailOpen = false;
@@ -164,6 +178,42 @@ export struct VoteScreen {
 
   private detailClosed(): boolean {
     return VoteLogic.effectiveClosed(this.detail.poll, this.now);
+  }
+
+  /** 发起人管理动作收进次级菜单，避免详情页堆叠一排危险按钮。 */
+  private manageMenuItems(): MenuElement[] {
+    const items: MenuElement[] = [];
+    if (!this.detailClosed()) {
+      items.push({
+        value: '延长投票',
+        action: () => {
+          this.openExtend();
+        }
+      });
+    }
+    if (this.detail.total === 0) {
+      items.push({
+        value: '编辑选项',
+        action: () => {
+          this.openEdit();
+        }
+      });
+    }
+    if (!this.detailClosed()) {
+      items.push({
+        value: '结束投票',
+        action: () => {
+          this.manage('close', 0, undefined);
+        }
+      });
+    }
+    items.push({
+      value: '删除投票',
+      action: () => {
+        this.manage('delete', 0, undefined);
+      }
+    });
+    return items;
   }
 
   private resultsVisible(): boolean {
@@ -452,7 +502,7 @@ export struct VoteScreen {
     Text(text)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(tint)
-      .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .backgroundColor(Tokens.tint(tint, 0.12))
       .borderRadius(6)
       .margin({ right: 4 })
@@ -510,6 +560,7 @@ export struct VoteScreen {
     .width('100%')
     .padding(14)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .onClick(() => {
       this.openDetail(poll.id);
@@ -521,15 +572,17 @@ export struct VoteScreen {
     Column() {
       Row() {
         if (this.chosen.indexOf(row.option.id) >= 0) {
-          Text('✓')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor('#FFFFFF')
-            .width(20)
-            .height(20)
-            .textAlign(TextAlign.Center)
-            .backgroundColor(Tokens.MIST_TEAL)
-            .borderRadius(10)
-            .margin({ right: 8 })
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph($r('sys.symbol.checkmark'))
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(['#FFFFFF'])
+          }
+          .width(20)
+          .height(20)
+          .backgroundColor(Tokens.MIST_TEAL)
+          .borderRadius(10)
+          .margin({ right: 8 })
         } else {
           Text('')
             .width(20)
@@ -595,7 +648,7 @@ export struct VoteScreen {
       .fontSize(Tokens.F_CAPTION)
       .fontColor(active ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .backgroundColor(active ? Tokens.SLATE_BLUE : Tokens.BG)
+      .backgroundColor(active ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 6, bottom: 6 })
       .onClick(() => {
@@ -626,6 +679,29 @@ export struct VoteScreen {
     }
   }
 
+  /** 投票详情 → 分享卡图片 → 系统图片分享。 */
+  private shareDetail(): void {
+    const poll: Poll = this.detail.poll;
+    if (poll.id.length === 0) {
+      return;
+    }
+    this.shareSpec = ShareSpecs.vote(this.detail, this.resultsVisible(), Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
   @Builder
   detailPanel() {
     Column() {
@@ -635,6 +711,13 @@ export struct VoteScreen {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Blank()
+        Text('分享')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.SLATE_BLUE)
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.shareDetail();
+          })
         Text('关闭')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.SLATE_BLUE)
@@ -697,7 +780,7 @@ export struct VoteScreen {
             .width('100%')
             .padding({ left: 14, right: 14 })
             .margin({ top: 10 })
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .borderRadius(Tokens.RADIUS_CARD)
 
             Text(this.detail.total + ' 人已投' + (this.detail.hasVoted ? ' · 你已投票' : ''))
@@ -719,7 +802,7 @@ export struct VoteScreen {
               .height(44)
               .margin({ top: 10 })
               .enabled(this.canSubmit() && !this.busy)
-              .backgroundColor(this.canSubmit() ? Tokens.MIST_TEAL : Tokens.BG)
+              .backgroundColor(this.canSubmit() ? Tokens.MIST_TEAL : Tokens.CONTROL)
               .fontColor(this.canSubmit() ? '#FFFFFF' : Tokens.TEXT_TERTIARY)
               .borderRadius(Tokens.RADIUS_PILL)
               .onClick(() => {
@@ -727,49 +810,20 @@ export struct VoteScreen {
               })
 
             if (this.detail.canManage) {
-              Flex({ wrap: FlexWrap.Wrap }) {
-                if (!this.detailClosed()) {
-                  Button('延长')
-                    .height(38)
-                    .margin({ right: 8, bottom: 8 })
-                    .backgroundColor(Tokens.CARD)
-                    .fontColor(Tokens.SLATE_BLUE)
-                    .borderRadius(Tokens.RADIUS_PILL)
-                    .onClick(() => {
-                      this.openExtend();
-                    })
-                }
-                if (this.detail.total === 0) {
-                  Button('编辑')
-                    .height(38)
-                    .margin({ right: 8, bottom: 8 })
-                    .backgroundColor(Tokens.CARD)
-                    .fontColor(Tokens.SLATE_BLUE)
-                    .borderRadius(Tokens.RADIUS_PILL)
-                    .onClick(() => {
-                      this.openEdit();
-                    })
-                }
-                if (!this.detailClosed()) {
-                  Button('结束投票')
-                    .height(38)
-                    .margin({ right: 8, bottom: 8 })
-                    .backgroundColor(Tokens.CARD)
-                    .fontColor(Tokens.WARM_SAND)
-                    .borderRadius(Tokens.RADIUS_PILL)
-                    .onClick(() => {
-                      this.manage('close', 0, undefined);
-                    })
-                }
-                Button('删除')
-                  .height(38)
-                  .margin({ bottom: 8 })
-                  .backgroundColor(Tokens.CARD)
-                  .fontColor(Tokens.DANGER)
+              Row({ space: 10 }) {
+                Text('由发起人管理：延长、结束或删除投票')
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(Tokens.TEXT_TERTIARY)
+                  .layoutWeight(1)
+                Button('管理')
+                  .height(36)
+                  .padding({ left: 18, right: 18 })
+                  .backgroundColor(Tokens.CONTROL)
+                  .border({ width: 0.5, color: Tokens.CARD_EDGE })
+                  .fontColor(Tokens.SLATE_BLUE)
+                  .fontSize(Tokens.F_CAPTION)
                   .borderRadius(Tokens.RADIUS_PILL)
-                  .onClick(() => {
-                    this.manage('delete', 0, undefined);
-                  })
+                  .bindMenu(this.manageMenuItems(), { systemMaterial: Immersive.dialogMaterial() })
               }
               .width('100%')
               .margin({ top: 10 })
@@ -781,13 +835,21 @@ export struct VoteScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       }
     }
     .width('100%')
     .height('88%')
     .padding(16)
-    .backgroundColor(Tokens.CARD)
-    .borderRadius(Tokens.RADIUS_CARD)
+    .backgroundColor(Tokens.SHEET)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
@@ -819,7 +881,7 @@ export struct VoteScreen {
       TextInput({ text: this.fOptions[index], placeholder: '选项 ' + (index + 1) })
         .layoutWeight(1)
         .height(40)
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(8)
         .fontSize(Tokens.F_CAPTION)
         .onChange((value: string) => {
@@ -878,7 +940,7 @@ export struct VoteScreen {
         Column() {
           TextInput({ text: this.fTitle, placeholder: '投票标题（≤80 字）' })
             .height(44)
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .borderRadius(8)
             .fontSize(Tokens.F_BODY)
             .margin({ top: 10 })
@@ -889,7 +951,7 @@ export struct VoteScreen {
 
           TextInput({ text: this.fDesc, placeholder: '说明（可选，≤500 字）' })
             .height(40)
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .borderRadius(8)
             .fontSize(Tokens.F_CAPTION)
             .margin({ top: 8 })
@@ -916,7 +978,7 @@ export struct VoteScreen {
             Button('加选项')
               .layoutWeight(1)
               .height(36)
-              .backgroundColor(Tokens.BG)
+              .backgroundColor(Tokens.CONTROL)
               .fontColor(Tokens.TEXT_SECONDARY)
               .borderRadius(8)
               .onClick(() => {
@@ -925,7 +987,7 @@ export struct VoteScreen {
             Button('减选项')
               .layoutWeight(1)
               .height(36)
-              .backgroundColor(Tokens.BG)
+              .backgroundColor(Tokens.CONTROL)
               .fontColor(Tokens.TEXT_SECONDARY)
               .borderRadius(8)
               .onClick(() => {
@@ -1022,7 +1084,7 @@ export struct VoteScreen {
                   .fontColor(this.fSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
                   .padding({ left: 8, right: 8, top: 4, bottom: 4 })
                   .margin({ right: 6, bottom: 6 })
-                  .backgroundColor(this.fSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.BG)
+                  .backgroundColor(this.fSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
                   .borderRadius(8)
                   .onClick(() => {
                     this.toggleSeat(member.seat);
@@ -1074,39 +1136,44 @@ export struct VoteScreen {
       .layoutWeight(1)
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .onDidScroll((offset: number) => {
+        const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+        if (Math.abs(next - this.headerFade) > 0.03) {
+          this.headerFade = next;
+        }
+      })
     }
     .width('100%')
     .height('92%')
     .padding(16)
-    .backgroundColor(Tokens.CARD)
-    .borderRadius(Tokens.RADIUS_CARD)
+    .backgroundColor(Tokens.SHEET)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '投票',
-          actionText: '发起',
-          onBack: () => {
-            this.onClose();
-          },
-          onAction: () => {
-            this.openCreate();
-          }
-        })
-
+      PageHeader({
+      progress: this.headerFade,
+        title: '投票',
+        actionText: '发起',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        },
+        onAction: () => {
+          this.openCreate();
+        }
+      }) {
+        Column() {
         Row({ space: 8 }) {
           this.selectChip('进行中', !this.showClosed, 'tab', '0')
           this.selectChip('已结束', this.showClosed, 'tab', '1')
           Blank()
-          Text('刷新')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.SLATE_BLUE)
-            .onClick(() => {
-              this.reload();
-            })
         }
         .width('100%')
         .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
@@ -1134,24 +1201,37 @@ export struct VoteScreen {
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
           } else {
-            List({ space: 10 }) {
-              ForEach(this.visiblePolls(), (poll: PollSummary) => {
-                ListItem() {
-                  this.pollCard(poll)
+            Refresh({ refreshing: $$this.refreshing }) {
+              List({ scroller: this.scroller, space: 10 }) {
+                ForEach(this.visiblePolls(), (poll: PollSummary) => {
+                  ListItem() {
+                    this.pollCard(poll)
+                  }
+                }, (poll: PollSummary) => poll.id + '_' + poll.total + '_' + (poll.hasVoted ? 'y' : 'n'))
+              }
+              .width('100%')
+              .height('100%')
+              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .scrollBar(BarState.Off)
+              .onDidScroll((offset: number) => {
+                const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+                if (Math.abs(next - this.headerFade) > 0.03) {
+                  this.headerFade = next;
                 }
-              }, (poll: PollSummary) => poll.id + '_' + poll.total + '_' + (poll.hasVoted ? 'y' : 'n'))
+              })
             }
-            .width('100%')
             .layoutWeight(1)
             .margin({ top: 10 })
-            .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
-            .scrollBar(BarState.Off)
+            .onRefreshing(() => {
+              this.pullRefresh();
+            })
           }
         }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.detailOpen) {
         Column() {
@@ -1159,7 +1239,7 @@ export struct VoteScreen {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .padding({ left: 0, right: 0, bottom: 0 })
         .transition(Motion.scrim())
@@ -1171,7 +1251,7 @@ export struct VoteScreen {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .transition(Motion.scrim())
         .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
@@ -1222,13 +1302,14 @@ export struct VoteScreen {
           }
           .width('100%')
           .padding(18)
-          .backgroundColor(Tokens.CARD)
-          .borderRadius({ topLeft: Tokens.RADIUS_CARD, topRight: Tokens.RADIUS_CARD })
+          .backgroundColor(Tokens.SHEET)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
           .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .transition(Motion.scrim())
         .animation({ duration: Motion.NORMAL, curve: Motion.ease() })

@@ -1,4 +1,4 @@
-import { AuthRepository } from '../data/auth/AuthRepository';
+﻿import { AuthRepository } from '../data/auth/AuthRepository';
 import { HttpClient } from '../data/net/HttpClient';
 import { SessionStore } from '../data/session/SessionStore';
 import { UserdataRepository } from '../data/sync/UserdataRepository';
@@ -28,6 +28,8 @@ import { Blob, JsonBlob } from '../data/sync/JsonBlob';
 export class Services {
   static currentSid: string = '';
   static currentName: string = '';
+  /** 当前身份是否管理员（用于通知 audience 的客户端兜底）。 */
+  static currentIsAdmin: boolean = false;
   /** 班级 token（身份会话凭据）：只供请求头使用，禁止打印/持久化到日志或业务数据。 */
   static currentToken: string = '';
 
@@ -60,7 +62,12 @@ export class Services {
 
   static readonly homework: HomeworkRepository = new HomeworkRepository(Services.api);
 
-  static readonly notices: NoticesRepository = new NoticesRepository(Services.api);
+  static readonly notices: NoticesRepository = new NoticesRepository(
+    Services.api,
+    () => Date.now(),
+    10 * 60 * 1000,
+    () => Services.currentSid,
+    () => Services.currentIsAdmin);
 
   static readonly power: PowerRepository = new PowerRepository(Services.api);
 

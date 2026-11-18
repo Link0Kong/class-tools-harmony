@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
 import { ClassLeagueResult } from '../../data/member/ClassLeagueRepository';
@@ -7,7 +7,9 @@ import { ExportCardSpec, ExportNaming, ExportParam } from '../../features/export
 import { RollCodec, RollCounts, RollLogic, RollRow, RollScope, RollState, RollStatus } from '../../features/roll/RollModels';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
+import { Immersive } from '../theme/Immersive';
 import { PageHeader } from '../components/PageHeader';
+import { GlassSheet } from '../components/GlassSheet';
 import { ExportPreview } from './ExportPreview';
 
 /**
@@ -34,6 +36,7 @@ export struct RollScreen {
   @State private resetConfirm: boolean = false;
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
 
+  private scroller: Scroller = new Scroller();
   private persistTimer: number = -1;
 
   aboutToAppear(): void {
@@ -128,18 +131,31 @@ export struct RollScreen {
   }
 
   private reset(): void {
-    if (!this.resetConfirm) {
-      this.resetConfirm = true;
-      this.notice = '再点一次「重置」确认清空当前范围';
-      setTimeout(() => {
-        this.resetConfirm = false;
-      }, 3000);
-      return;
-    }
     this.resetConfirm = false;
     this.statuses = RollLogic.clear(this.statuses, this.scopeSeats());
     this.notice = '已重置' + this.scope;
     this.schedulePersist();
+  }
+
+  private confirmReset(): void {
+    this.getUIContext().showAlertDialog({
+      title: '重置点名',
+      message: '清空「' + this.scope + '」范围的到 / 假记录？',
+      autoCancel: true,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '重置',
+        fontColor: Tokens.DANGER,
+        action: () => {
+          this.reset();
+        }
+      },
+      systemMaterial: Immersive.dialogMaterial()
+    });
   }
 
   private openExport(): void {
@@ -193,7 +209,7 @@ export struct RollScreen {
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.scope === scope ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-      .backgroundColor(this.scope === scope ? Tokens.SLATE_BLUE : Tokens.BG)
+      .backgroundColor(this.scope === scope ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -217,6 +233,7 @@ export struct RollScreen {
     .layoutWeight(1)
     .padding({ top: 10, bottom: 10 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .margin({ left: 6, right: 6 })
   }
@@ -269,7 +286,7 @@ export struct RollScreen {
         .fontSize(Tokens.F_CAPTION)
         .fontColor(row.status === RollStatus.DONE ? '#FFFFFF' : Tokens.MIST_TEAL)
         .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-        .backgroundColor(row.status === RollStatus.DONE ? Tokens.MIST_TEAL : Tokens.BG)
+        .backgroundColor(row.status === RollStatus.DONE ? Tokens.MIST_TEAL : Tokens.CONTROL)
         .borderRadius(8)
         .margin({ right: 6 })
         .onClick(() => {
@@ -279,30 +296,37 @@ export struct RollScreen {
         .fontSize(Tokens.F_CAPTION)
         .fontColor(row.status === RollStatus.ABSENT ? '#FFFFFF' : Tokens.WARM_SAND)
         .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-        .backgroundColor(row.status === RollStatus.ABSENT ? Tokens.WARM_SAND : Tokens.BG)
+        .backgroundColor(row.status === RollStatus.ABSENT ? Tokens.WARM_SAND : Tokens.CONTROL)
         .borderRadius(8)
         .onClick(() => {
           this.mark(row.seat, RollStatus.ABSENT);
         })
     }
     .width('100%')
-    .padding({ top: 9, bottom: 9 })
+    .padding({ top: 8, bottom: 8 })
   }
+
+  @State private headerFade: number = 0;
 
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '点名',
-          actionText: '导出',
-          onBack: () => {
-            this.onClose();
-          },
-          onAction: () => {
-            this.openExport();
-          }
-        })
-
+      PageHeader({
+      progress: this.headerFade,
+        title: '点名',
+        actionText: '导出',
+        actionText2: '重置',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        },
+        onAction: () => {
+          this.openExport();
+        },
+        onAction2: () => {
+          this.confirmReset();
+        }
+      }) {
+        Column() {
         Row({ space: 6 }) {
           this.scopeChip(RollScope.ALL)
           this.scopeChip(RollScope.COMMITTEE)
@@ -311,15 +335,12 @@ export struct RollScreen {
           Text('名单' + (this.selSeats.length > 0 ? ' ' + this.selSeats.length : ''))
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.SLATE_BLUE)
-            .padding({ left: 6, right: 10 } )
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .backgroundColor(Tokens.CONTROL)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
+            .borderRadius(Tokens.RADIUS_PILL)
             .onClick(() => {
               this.openPicker();
-            })
-          Text('重置')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(this.resetConfirm ? Tokens.DANGER : Tokens.TEXT_SECONDARY)
-            .onClick(() => {
-              this.reset();
             })
         }
         .width('100%')
@@ -370,7 +391,7 @@ export struct RollScreen {
             .width('100%')
             .padding(Tokens.PAGE_PADDING)
         } else {
-          List() {
+          List({ scroller: this.scroller }) {
             ForEach(this.rows(), (row: RollRow) => {
               ListItem() {
                 this.rowItem(row)
@@ -384,96 +405,102 @@ export struct RollScreen {
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
           .divider({ strokeWidth: 0.5, color: Tokens.DIVIDER })
           .scrollBar(BarState.Off)
+          .onDidScroll((offset: number) => {
+            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+            if (Math.abs(next - this.headerFade) > 0.03) {
+              this.headerFade = next;
+            }
+          })
         }
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
-
-      if (this.pickerOpen) {
-        Column() {
-          Column() {
-            Row() {
-              Text('点名名单')
-                .fontSize(Tokens.F_LABEL)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(Tokens.TEXT_PRIMARY)
-              Text(' 已选 ' + this.selSeats.length + ' 人')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.SLATE_BLUE)
-              Blank()
-              Text('关闭')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.SLATE_BLUE)
-                .onClick(() => {
-                  this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
-                    this.pickerOpen = false;
-                  });
-                })
-            }
-            .width('100%')
-            Row({ space: 10 }) {
-              Text('全部')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(this.selSeats.length === 0 ? Tokens.MIST_TEAL : Tokens.TEXT_SECONDARY)
-                .onClick(() => {
-                  this.openRosterAll();
-                })
-              Text('清空')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_SECONDARY)
-                .onClick(() => {
-                  this.selSeats = [];
-                  this.schedulePersist();
-                })
-              Blank()
-              Button('确定')
-                .height(32)
-                .fontSize(Tokens.F_CAPTION)
-                .backgroundColor(Tokens.MIST_TEAL)
-                .fontColor('#FFFFFF')
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.saveRoster();
-                })
-            }
-            .width('100%')
-            .margin({ top: 8 })
-            Scroll() {
-              Flex({ wrap: FlexWrap.Wrap }) {
-                ForEach(this.members, (member: ClassMember) => {
-                  Text(member.name)
-                    .fontSize(Tokens.F_CAPTION)
-                    .fontColor(this.selSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-                    .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                    .margin({ right: 6, bottom: 6 })
-                    .backgroundColor(this.selSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.BG)
-                    .borderRadius(8)
-                    .onClick(() => {
-                      this.toggleSelSeat(member.seat);
-                    })
-                }, (member: ClassMember) => 'rs_' + member.seat + (this.selSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
-              }
-              .width('100%')
-            }
-            .layoutWeight(1)
-            .align(Alignment.Top)
-            .scrollBar(BarState.Off)
-            .margin({ top: 6 })
-          }
-          .width('100%')
-          .height('80%')
-          .padding(16)
-          .backgroundColor(Tokens.CARD)
-          .borderRadius(Tokens.RADIUS_CARD)
-          .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
-        .justifyContent(FlexAlign.End)
-        .transition(Motion.scrim())
-        .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
+        .padding({ top: 0 })
+      }
+
+      if (this.pickerOpen) {
+        GlassSheet({ panelHeight: '80%' }) {
+          Row() {
+            Text('点名名单')
+              .fontSize(Tokens.F_LABEL)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(Tokens.TEXT_PRIMARY)
+            Text(' 已选 ' + this.selSeats.length + ' 人')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.SLATE_BLUE)
+            Blank()
+            Text('关闭')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.SLATE_BLUE)
+              .padding({ left: 10, right: 4, top: 4, bottom: 4 })
+              .onClick(() => {
+                this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
+                  this.pickerOpen = false;
+                });
+              })
+          }
+          .width('100%')
+          Row({ space: 10 }) {
+            Text('全部')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(this.selSeats.length === 0 ? Tokens.MIST_TEAL : Tokens.TEXT_SECONDARY)
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .backgroundColor(Tokens.CONTROL)
+              .borderRadius(Tokens.RADIUS_PILL)
+              .onClick(() => {
+                this.openRosterAll();
+              })
+            Text('清空')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.TEXT_SECONDARY)
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .backgroundColor(Tokens.CONTROL)
+              .borderRadius(Tokens.RADIUS_PILL)
+              .onClick(() => {
+                this.selSeats = [];
+                this.schedulePersist();
+              })
+            Blank()
+            Button('确定')
+              .height(32)
+              .fontSize(Tokens.F_CAPTION)
+              .backgroundColor(Tokens.MIST_TEAL)
+              .fontColor('#FFFFFF')
+              .borderRadius(Tokens.RADIUS_PILL)
+              .onClick(() => {
+                this.saveRoster();
+              })
+          }
+          .width('100%')
+          .margin({ top: 8 })
+          Scroll() {
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.members, (member: ClassMember) => {
+                Text(member.name)
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(this.selSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                  .margin({ right: 6, bottom: 6 })
+                  .backgroundColor(this.selSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
+                  .borderRadius(8)
+                  .onClick(() => {
+                    this.toggleSelSeat(member.seat);
+                  })
+              }, (member: ClassMember) => 'rs_' + member.seat + (this.selSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
+            }
+            .width('100%')
+          }
+          .layoutWeight(1)
+          .align(Alignment.Top)
+          .scrollBar(BarState.Off)
+          .onDidScroll((offset: number) => {
+            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+            if (Math.abs(next - this.headerFade) > 0.03) {
+              this.headerFade = next;
+            }
+          })
+          .margin({ top: 6 })
+        }
       }
 
       if (this.showExport) {

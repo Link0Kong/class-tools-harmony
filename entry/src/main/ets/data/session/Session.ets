@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 已通过班级身份核验的会话（字段对齐网页/小程序/安卓本机身份）。
  *
  * 隐私：`sid`/`name`/`token` 只在本机使用，**不写日志、不导出、不上报**。
@@ -40,15 +40,9 @@ export class Session {
     return this.sid.substring(0, 2) + '***' + this.sid.substring(this.sid.length - 2);
   }
 
-  /** 与网页一致的 29 天本地判定：未过期且签发不满 29 天可直接进主界面。 */
+  /** 登录状态长期保持：只要本机有 token 就直接进入，不再做本地期限判定。 */
   isLikelyValid(now: number): boolean {
-    if (this.expiresAt > 0 && now > this.expiresAt) {
-      return false;
-    }
-    if (this.issuedAt <= 0) {
-      return true;
-    }
-    return now - this.issuedAt < 29 * 24 * 60 * 60 * 1000;
+    return this.token.trim().length > 0;
   }
 
   toJson(): string {

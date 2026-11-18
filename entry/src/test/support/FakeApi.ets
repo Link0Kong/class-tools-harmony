@@ -1,4 +1,4 @@
-import { Api } from '../../main/ets/data/net/Api';
+﻿import { Api } from '../../main/ets/data/net/Api';
 import { ApiError, ApiErrorKind, ApiResult } from '../../main/ets/data/net/ApiResult';
 import { Blob } from '../../main/ets/data/sync/JsonBlob';
 

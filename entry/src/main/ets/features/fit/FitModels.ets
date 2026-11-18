@@ -1,4 +1,4 @@
-/** 性别。 */
+﻿/** 性别。 */
 export enum FitSex {
   MALE = 'm',
   FEMALE = 'f'

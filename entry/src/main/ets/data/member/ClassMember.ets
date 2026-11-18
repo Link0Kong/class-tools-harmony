@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 
 /**
  * 班级名单一行（`POST rpc/class_members` → `[{seat,sid,name,role,badge,is_admin}]`）。

@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { JW_URL, JwCardDef, JwEntries, JwLogic } from '../main/ets/features/jw/JwModels';
 
 export default function jwTest() {

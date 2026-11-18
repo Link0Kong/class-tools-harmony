@@ -1,4 +1,4 @@
-/** 手表端纯逻辑：倒计时、时间、离线判断（可单测）。 */
+﻿/** 手表端纯逻辑：倒计时、时间、离线判断（可单测）。 */
 export class WatchLogic {
   /** 距上课还有几分钟；<=0 表示已开始。 */
   static minutesUntil(atMs: number, nowMs: number): number {

@@ -1,4 +1,4 @@
-import { FitCalc, FitFieldSpec, FitGrade, FitInput, FitRow, FitSex } from './FitModels';
+﻿import { FitCalc, FitFieldSpec, FitGrade, FitInput, FitRow, FitSex } from './FitModels';
 import { FitPlusTable, FitScoreTable, FitTables } from './FitTables';
 
 /**

@@ -1,11 +1,12 @@
-import { Services } from '../app/Services';
+﻿import { Services } from '../app/Services';
 import { AppGlobal } from '../app/AppGlobal';
 import { Session } from '../data/session/Session';
 import { Blob, JsonBlob } from '../data/sync/JsonBlob';
 import { UserdataPullResult } from '../data/sync/UserdataRepository';
 import { Tokens } from '../ui/theme/Tokens';
 import { Motion } from '../ui/theme/Motion';
-import { BrandMark } from '../ui/components/BrandMark';
+import { BootSplash } from '../ui/components/BootSplash';
+import { AmbientBackdrop } from '../ui/components/AmbientBackdrop';
 import { IdentityScreen } from '../ui/screens/IdentityScreen';
 import { AppShell } from '../ui/shell/AppShell';
 import { Device } from '../common/Device';
@@ -14,6 +15,8 @@ import { WatchLogin } from '../ui/watch/WatchLogin';
 import { ToolScreen } from '../ui/tools/ToolScreen';
 import { Log } from '../common/Log';
 import { AppPush } from '../features/push/AppPush';
+import { NotifyCenter } from '../data/notify/NotifyCenter';
+import { AppUpdate } from '../features/update/AppUpdate';
 
 const TAG: string = 'Index';
 
@@ -36,8 +39,12 @@ struct Index {
   @State private wearable: boolean = Device.isWearable();
   @State private quickIds: string[] = [];
   @State private syncState: string = '未同步';
+  @State private splashOn: boolean = true;
+  @State private splashLeaving: boolean = false;
 
   private session: Session | undefined = undefined;
+  private homeMounted: boolean = false;
+  private appReady: boolean = false;
 
   aboutToAppear(): void {
     Services.api.setTokenProvider(() => this.session !== undefined ? this.session.token : '');
@@ -54,13 +61,35 @@ struct Index {
   }
 
   private async bootstrap(): Promise<void> {
+    const started: number = Date.now();
     const saved: Session | undefined = await Services.sessionStore.load();
+    // 冷启动仅保留短暂衔接，加载动画期间不空等
+    const wait: number = 260 - (Date.now() - started);
+    if (wait > 0) {
+      await new Promise<void>((resolve: () => void) => {
+        setTimeout(resolve, wait);
+      });
+    }
     if (saved !== undefined && saved.isLikelyValid(Date.now())) {
       Log.i(TAG, '已恢复本机会话，直接进入');
       await this.enterApp(saved);
       return;
     }
-    this.phase = 'auth';
+    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
+      this.phase = 'auth';
+    });
+    setTimeout(() => {
+      if (this.phase === 'auth') {
+        this.splashOn = false;
+      }
+    }, 260);
+  }
+
+  private maybeLeaveSplash(): void {
+    if (!this.splashOn || this.splashLeaving || !this.homeMounted || !this.appReady) {
+      return;
+    }
+    this.splashLeaving = true;
   }
 
   private async enterApp(session: Session): Promise<void> {
@@ -77,12 +106,28 @@ struct Index {
     Services.currentSid = session.sid;
     Services.currentName = session.name;
     Services.currentToken = session.token;
-    AppPush.syncOnLaunch();
+    Services.currentIsAdmin = session.isAdmin;
     // 先恢复本机偏好（离线/未同步时 UI 也看到上次设置），再后台拉云端
     await Services.userdata.hydrateFromLocal();
+    await Services.notices.hydrate();
     this.applySections(Services.userdata.currentSections());
     this.syncNow();
+    this.appReady = true;
+    if (this.wearable) {
+      this.homeMounted = true;
+    }
+    this.maybeLeaveSplash();
+    setTimeout(() => {
+      this.homeMounted = true;
+      this.maybeLeaveSplash();
+    }, 900);
+    // 用户偏好恢复后再申请通知权限/续订 token，避免启动早期写入被 hydrate 覆盖
+    AppPush.syncOnLaunch();
+    NotifyCenter.syncAll();
     Services.visits.reportOnce();
+    setTimeout(() => {
+      AppUpdate.check(false);
+    }, 2000);
   }
 
   private applySections(sections: Blob): void {
@@ -121,6 +166,9 @@ struct Index {
       return;
     }
     this.syncState = '同步中';
+    // 名单/班级信息与 userdata 拉取并行，不阻塞首页
+    Services.members.load(false);
+    Services.league.load(false);
     const pull: UserdataPullResult = await Services.userdata.pull(false);
     if (!pull.ok()) {
       this.syncState = pull.status === 'disabled' ? '云同步已关闭' : '离线';
@@ -128,18 +176,17 @@ struct Index {
     }
     this.applySections(Services.userdata.currentSections());
     this.syncState = '已同步';
-    // 顺带刷新 marks / 名单（失败不影响界面）
-    Services.marks.refresh(false);
-    Services.members.load(false);
-    Services.league.load(false);
   }
 
-  private handleTokenInvalid(): void {
+  private async handleTokenInvalid(): Promise<void> {
     Log.w(TAG, '身份失效，清除会话并回到身份页');
     this.session = undefined;
+    // 先按旧 sid 清掉通知缓存，再重置身份，避免下一位登录者看到上一位的通知
+    await Services.notices.clearLocal();
     Services.currentSid = '';
     Services.currentName = '';
     Services.currentToken = '';
+    Services.currentIsAdmin = false;
     Services.cloudspace.reset();
     Services.sessionStore.clear();
     AppGlobal.openToolId = '';
@@ -154,12 +201,14 @@ struct Index {
     // 退出前尽力把本机改动推上去，再清空本机数据桶（合规：不留班级数据）
     await Services.userdata.flush();
     this.session = undefined;
+    await Services.notices.clearLocal();
     await Services.userdata.clearLocal();
     await Services.members.clear();
     await Services.league.clear();
     Services.currentSid = '';
     Services.currentName = '';
     Services.currentToken = '';
+    Services.currentIsAdmin = false;
     Services.cloudspace.reset();
     await Services.sessionStore.clear();
     AppGlobal.openToolId = '';
@@ -203,6 +252,7 @@ struct Index {
 
   build() {
     Stack() {
+      AmbientBackdrop()
       if (this.phase === 'auth') {
         if (this.wearable) {
           WatchLogin({
@@ -239,6 +289,10 @@ struct Index {
           onOpenTool: (id: string) => {
             this.openTool(id);
           },
+          onHomeReady: () => {
+            this.homeMounted = true;
+            this.maybeLeaveSplash();
+          },
           onSetHomeTools: (ids: string[]) => {
             this.setHomeTools(ids);
           },
@@ -250,16 +304,17 @@ struct Index {
           }
         })
         }
-      } else {
-        Column({ space: 16 }) {
-          BrandMark({ markSize: 34 })
-          Text('班级工具站')
-            .fontSize(Tokens.F_LABEL)
-            .fontColor(Tokens.TEXT_TERTIARY)
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
+      }
+
+      if (this.splashOn) {
+        BootSplash({
+          leaving: this.splashLeaving,
+          barHandoff: !this.wearable,
+          onDone: () => {
+            this.splashOn = false;
+          }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ duration: 180, curve: Motion.ease() }))
       }
 
       if (this.openToolId.length > 0) {
@@ -274,6 +329,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.BG)
+    .backgroundColor(Color.Transparent)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

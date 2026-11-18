@@ -1,4 +1,4 @@
-import { DrawResult } from '../features/draw/DrawModels';
+﻿import { DrawResult } from '../features/draw/DrawModels';
 
 /**
  * 本次会话的抽签结果（内存单例，不落盘）。

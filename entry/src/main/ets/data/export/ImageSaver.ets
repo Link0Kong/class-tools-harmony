@@ -1,4 +1,4 @@
-import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
+﻿import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { AppGlobal } from '../../app/AppGlobal';

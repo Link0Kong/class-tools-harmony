@@ -1,4 +1,4 @@
-import { asset } from '@kit.AssetStoreKit';
+﻿import { asset } from '@kit.AssetStoreKit';
 import { util } from '@kit.ArkTS';
 import { JwCredentialLogic } from '../../features/jw/JwCredentialLogic';
 import { Log } from '../../common/Log';

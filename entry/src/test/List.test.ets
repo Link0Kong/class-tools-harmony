@@ -1,4 +1,4 @@
-import sessionTest from './Session.test';
+﻿import sessionTest from './Session.test';
 import homeToolsTest from './HomeTools.test';
 import userdataMergeTest from './UserdataMerge.test';
 import waterNormalizerTest from './WaterNormalizer.test';
@@ -26,9 +26,11 @@ import fitRecsTest from './FitRecs.test';
 import timetableLoginTest from './TimetableLogin.test';
 import watchTest from './Watch.test';
 import accountBindingTest from './AccountBinding.test';
+import hwQuickLoginTest from './HwQuickLogin.test';
 import mapTest from './Map.test';
 import cloudSpaceTest from './CloudSpace.test';
 import breakpointsTest from './Breakpoints.test';
+import notifyTest from './Notify.test';
 
 export default function testsuite() {
   sessionTest();
@@ -59,7 +61,9 @@ export default function testsuite() {
   timetableLoginTest();
   watchTest();
   accountBindingTest();
+  hwQuickLoginTest();
   mapTest();
   cloudSpaceTest();
   breakpointsTest();
+  notifyTest();
 }

@@ -1,4 +1,4 @@
-import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
+﻿import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
 
 const DAY_MS: number = 24 * 60 * 60 * 1000;
 

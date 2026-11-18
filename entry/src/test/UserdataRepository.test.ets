@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { InMemoryUserdataLocalStore } from '../main/ets/data/sync/UserdataLocalStore';
 import { UserdataRepository, UserdataPullResult, UserdataPushResult } from '../main/ets/data/sync/UserdataRepository';

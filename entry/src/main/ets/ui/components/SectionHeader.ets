@@ -1,4 +1,4 @@
-import { Tokens } from '../theme/Tokens';
+﻿import { Tokens } from '../theme/Tokens';
 
 /** 分组小标题：左侧标题 + 右侧可选操作。 */
 @Component
@@ -26,6 +26,6 @@ export struct SectionHeader {
       }
     }
     .width('100%')
-    .margin({ bottom: 10 })
+    .margin({ bottom: Tokens.GAP_SM })
   }
 }

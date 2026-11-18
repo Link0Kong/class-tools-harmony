@@ -1,4 +1,4 @@
-import { deviceInfo } from '@kit.BasicServicesKit';
+﻿import { deviceInfo } from '@kit.BasicServicesKit';
 
 /** 设备形态判断（手表端走独立 UI）。 */
 export class Device {

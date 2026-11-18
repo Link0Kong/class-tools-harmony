@@ -1,5 +1,6 @@
-import { CloudConfig } from '../../config/CloudConfig';
+﻿import { CloudConfig } from '../../config/CloudConfig';
 import { Tokens } from '../theme/Tokens';
+import { Breakpoints } from '../theme/Breakpoints';
 import { common } from '@kit.AbilityKit';
 import { HuaweiAccount } from '../../data/account/HuaweiAccount';
 import { AccountBindingRepository, BindItem } from '../../data/account/AccountBindingRepository';
@@ -8,6 +9,9 @@ import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { NickLogic } from '../../features/home/NickLogic';
 import { AppPush } from '../../features/push/AppPush';
+import { NotifyCenter } from '../../data/notify/NotifyCenter';
+import { NotifySettings } from '../../features/notify/NotifySettings';
+import { AppUpdate, UpdateCheckResult } from '../../features/update/AppUpdate';
 
 /** 我的：身份卡 + 设置项 + 退出登录。 */
 @Component
@@ -19,6 +23,8 @@ export struct MeScreen {
   @Prop syncState: string = '';
   onSyncNow: () => void = () => {
   };
+  onOpenTool: (id: string) => void = () => {
+  };
   onLogout: () => void = () => {
   };
 
@@ -27,18 +33,57 @@ export struct MeScreen {
   @State private nickDraft: string = '';
   @State private nickNotice: string = '';
   @State private pushOn: boolean = false;
+  @State private pushSysOn: boolean = false;
   @State private pushBusy: boolean = false;
   @State private pushNotice: string = '';
+  @State private notifyOpen: boolean = false;
+  @State private notifySettings: NotifySettings = new NotifySettings();
+  @State private testBusy: boolean = false;
+  @State private testNotice: string = '';
+  private settingsTouched: boolean = false;
   @State private hwItems: BindItem[] = [];
   @State private hwBusy: boolean = false;
   @State private hwNotice: string = '';
+  @State private updateBusy: boolean = false;
+  @State private updateNotice: string = '';
+  @State private layoutWidth: number = 0;
+
+  private async checkUpdate(): Promise<void> {
+    if (this.updateBusy) {
+      return;
+    }
+    this.updateBusy = true;
+    this.updateNotice = '正在检查…';
+    const result: UpdateCheckResult = await AppUpdate.check(true);
+    this.updateBusy = false;
+    this.updateNotice = result.message;
+  }
 
   aboutToAppear(): void {
     const sections: Blob = Services.userdata.currentSections();
     const value = sections['nick'];
     this.nick = value === undefined ? '' : String(value);
-    this.pushOn = AppPush.enabled();
+    this.pushOn = AppPush.want();
+    this.refreshPushPermission();
+    this.loadNotifySettings();
     this.loadBindings();
+  }
+
+  private async loadNotifySettings(): Promise<void> {
+    const loaded: NotifySettings = await NotifyCenter.currentSettings();
+    if (this.settingsTouched) {
+      return;
+    }
+    this.notifySettings = loaded;
+    this.pushOn = loaded.master;
+    this.pushSysOn = await AppPush.systemEnabled();
+  }
+
+  private async refreshPushPermission(): Promise<void> {
+    this.pushSysOn = await AppPush.systemEnabled();
+    if (!this.pushSysOn) {
+      this.pushNotice = '系统通知权限未开启，打开开关可重新申请';
+    }
   }
 
   private async loadBindings(): Promise<void> {
@@ -63,13 +108,38 @@ export struct MeScreen {
     this.hwBusy = false;
   }
 
+  private confirmUnbind(item: BindItem): void {
+    if (this.hwBusy) {
+      return;
+    }
+    AlertDialog.show({
+      title: '解绑华为账号',
+      message: '解绑后该华为账号将无法一键登录，需要使用学号 + 姓名重新绑定。',
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '解绑',
+        fontColor: Tokens.DANGER,
+        action: () => {
+          this.unbindHuawei(item.openId);
+        }
+      }
+    });
+  }
+
   private async unbindHuawei(openId: string): Promise<void> {
     if (this.hwBusy) {
       return;
     }
     this.hwBusy = true;
+    this.hwNotice = '';
     const ok: boolean = await AccountBindingRepository.unbind(openId);
-    this.hwNotice = ok ? '已解绑' : '解绑失败';
+    this.hwNotice = ok ? '已解绑，可重新绑定当前华为账号' : '解绑失败，请稍后重试';
     await this.loadBindings();
     this.hwBusy = false;
   }
@@ -78,19 +148,146 @@ export struct MeScreen {
     if (this.pushBusy) {
       return;
     }
+    this.settingsTouched = true;
     this.pushBusy = true;
     this.pushOn = next;
     if (next) {
-      const ok: boolean = await AppPush.register();
-      this.pushNotice = ok ? '已开启系统推送' : '推送开通失败，请确认已开通推送服务';
-      if (!ok) {
+      const allowed: boolean = await NotifyCenter.ensurePermission();
+      this.pushSysOn = allowed;
+      if (!allowed) {
         this.pushOn = false;
+        this.pushNotice = '系统通知权限未开启，请允许后再试';
+        this.pushBusy = false;
+        return;
       }
+      const ok: boolean = await AppPush.enable();
+      const settings: NotifySettings = this.notifySettings.copy();
+      settings.master = true;
+      this.notifySettings = settings;
+      await NotifyCenter.saveSettings(settings);
+      this.pushOn = true;
+      await NotifyCenter.syncAll(true);
+      this.pushNotice = ok ? '已开启系统推送并开始监听'
+        : '通知已开启；推送 token 暂不可用，本地提醒仍可用';
     } else {
       await AppPush.disable();
-      this.pushNotice = '已关闭系统推送';
+      const settings: NotifySettings = this.notifySettings.copy();
+      settings.master = false;
+      this.notifySettings = settings;
+      await NotifyCenter.saveSettings(settings);
+      this.pushOn = false;
+      this.pushNotice = '已关闭系统推送与本地提醒';
     }
     this.pushBusy = false;
+  }
+
+  private notifyValue(key: string): boolean {
+    if (key === 'homeworkNew') {
+      return this.notifySettings.homeworkNew;
+    }
+    if (key === 'homeworkDue') {
+      return this.notifySettings.homeworkDue;
+    }
+    if (key === 'classRemind') {
+      return this.notifySettings.classRemind;
+    }
+    if (key === 'noticeNew') {
+      return this.notifySettings.noticeNew;
+    }
+    if (key === 'noticeDeadline') {
+      return this.notifySettings.noticeDeadline;
+    }
+    if (key === 'noticeSignup') {
+      return this.notifySettings.noticeSignup;
+    }
+    if (key === 'voteNew') {
+      return this.notifySettings.voteNew;
+    }
+    if (key === 'voteResult') {
+      return this.notifySettings.voteResult;
+    }
+    return this.notifySettings.waterDeduct;
+  }
+
+  private async setNotifyField(key: string, value: boolean): Promise<void> {
+    this.settingsTouched = true;
+    const settings: NotifySettings = this.notifySettings.copy();
+    if (key === 'homeworkNew') {
+      settings.homeworkNew = value;
+    } else if (key === 'homeworkDue') {
+      settings.homeworkDue = value;
+    } else if (key === 'classRemind') {
+      settings.classRemind = value;
+    } else if (key === 'noticeNew') {
+      settings.noticeNew = value;
+    } else if (key === 'noticeDeadline') {
+      settings.noticeDeadline = value;
+    } else if (key === 'noticeSignup') {
+      settings.noticeSignup = value;
+    } else if (key === 'voteNew') {
+      settings.voteNew = value;
+    } else if (key === 'voteResult') {
+      settings.voteResult = value;
+    } else {
+      settings.waterDeduct = value;
+    }
+    this.notifySettings = settings;
+    await NotifyCenter.saveSettings(settings);
+    await NotifyCenter.syncAll(true);
+  }
+
+  private async setNotifyLead(minutes: number): Promise<void> {
+    this.settingsTouched = true;
+    const settings: NotifySettings = this.notifySettings.copy();
+    settings.leadMinutes = NotifySettings.normalizeLead(minutes);
+    this.notifySettings = settings;
+    await NotifyCenter.saveSettings(settings);
+  }
+
+  private async setClassLead(minutes: number): Promise<void> {
+    if (!this.notifySettings.master || !this.notifySettings.classRemind) {
+      return;
+    }
+    this.settingsTouched = true;
+    const settings: NotifySettings = this.notifySettings.copy();
+    settings.classLeadMinutes = NotifySettings.normalizeClassLead(minutes);
+    this.notifySettings = settings;
+    await NotifyCenter.saveSettings(settings);
+  }
+
+  private async sendTestNotice(): Promise<void> {
+    if (this.testBusy) {
+      return;
+    }
+    this.testBusy = true;
+    this.testNotice = '';
+    const allowed: boolean = await NotifyCenter.ensurePermission();
+    this.pushSysOn = allowed;
+    if (!allowed) {
+      this.testNotice = '请先在系统设置中允许通知，再发送测试';
+      this.testBusy = false;
+      return;
+    }
+    const ok: boolean = await NotifyCenter.sendTest();
+    this.testNotice = ok ? '测试通知已发送，请下拉通知中心查看' : '发送失败，请稍后重试';
+    this.testBusy = false;
+  }
+
+  private notifySummary(): string {
+    if (!this.notifySettings.master) {
+      return '未开启';
+    }
+    return '已开启 ' + this.notifySettings.enabledCount() + ' 项';
+  }
+
+  private pushStatusText(): string {
+    if (!this.pushSysOn) {
+      return '系统通知未授权，打开开关将请求授权';
+    }
+    if (this.pushOn && !AppPush.enabled()) {
+      return '已开启；推送服务注册中或暂不可用';
+    }
+    return '新通知/作业到达时由系统推送';
   }
 
   private async saveNick(): Promise<void> {
@@ -107,6 +304,27 @@ export struct MeScreen {
   }
 
   @Builder
+  linkRow(title: string, value: string, onTap: () => void) {
+    Row() {
+      Text(title)
+        .fontSize(Tokens.F_BODY)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .layoutWeight(1)
+      Text(value)
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .margin({ right: Tokens.SPACE_4 })
+      SymbolGlyph($r('sys.symbol.arrow_right'))
+        .fontSize(16)
+        .fontColor([Tokens.TEXT_TERTIARY])
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+    .onClick(onTap)
+  }
+
+  @Builder
   row(title: string, value: string, danger: boolean) {
     Row() {
       Text(title)
@@ -119,19 +337,325 @@ export struct MeScreen {
     }
     .width('100%')
     .height(52)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+  }
+
+  @Builder
+  notifySettingsRow() {
+    Row() {
+      Text('通知设置')
+        .fontSize(Tokens.F_BODY)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .layoutWeight(1)
+      Text(this.notifySummary())
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(this.notifySettings.master ? Tokens.MIST_TEAL : Tokens.TEXT_TERTIARY)
+        .margin({ right: Tokens.SPACE_4 })
+      SymbolGlyph($r('sys.symbol.arrow_right'))
+        .fontSize(16)
+        .fontColor([Tokens.TEXT_TERTIARY])
+    }
+    .width('100%')
+    .height(52)
+    .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+    .onClick(() => {
+      this.notifyOpen = true;
+    })
+  }
+
+  @Builder
+  notifySwitch(key: string, label: string, sub: string) {
+    Row() {
+      Column() {
+        Text(label)
+          .fontSize(Tokens.F_BODY)
+          .fontColor(Tokens.TEXT_PRIMARY)
+        Text(sub)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .margin({ top: 2 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      .margin({ right: 10 })
+      Toggle({ type: ToggleType.Switch, isOn: this.notifyValue(key) })
+        .selectedColor(Tokens.MIST_TEAL)
+        .enabled(this.notifySettings.master)
+        .onChange((on: boolean) => {
+          this.setNotifyField(key, on);
+        })
+    }
+    .width('100%')
+    .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, top: Tokens.SPACE_12, bottom: Tokens.SPACE_12 })
+    .opacity(this.notifySettings.master ? 1 : 0.55)
+  }
+
+  @Builder
+  notifySection(title: string) {
+    Text(title)
+      .fontSize(Tokens.F_CAPTION)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(Tokens.TEXT_SECONDARY)
+      .width('100%')
+      .padding({ left: Tokens.SPACE_16, top: Tokens.SPACE_16, bottom: Tokens.GAP_SM })
+  }
+
+  @Builder
+  notifyDivider() {
+    Divider()
+      .color(Tokens.DIVIDER)
+      .strokeWidth(0.5)
+      .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+  }
+
+  @Builder
+  classLeadRow() {
+    Column() {
+      Text('提前时间')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .width('100%')
+        .margin({ bottom: 8 })
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(NotifySettings.CLASS_LEAD_OPTIONS, (minutes: number, i: number) => {
+          Text(minutes + ' 分钟')
+            .fontSize(Tokens.F_LABEL)
+            .fontColor(this.notifySettings.classLeadMinutes === minutes ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+            .backgroundColor(this.notifySettings.classLeadMinutes === minutes ? Tokens.MIST_TEAL : '#FFFFFF')
+            .border({ width: 1, color: this.notifySettings.classLeadMinutes === minutes
+              ? Tokens.MIST_TEAL : Tokens.DIVIDER })
+            .borderRadius(Tokens.RADIUS_PILL)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .margin({ right: Tokens.GAP_SM, bottom: Tokens.GAP_SM })
+            .onClick(() => {
+              this.setClassLead(minutes);
+            })
+        }, (minutes: number, i: number) => 'class_lead_' + minutes)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, top: Tokens.SPACE_12, bottom: Tokens.SPACE_12 })
+    .opacity(this.notifySettings.master && this.notifySettings.classRemind ? 1 : 0.55)
+  }
+
+  @Builder
+  notifyPanel() {
+    Column() {
+      Row()
+        .width(38)
+        .height(4)
+        .borderRadius(2)
+        .backgroundColor('#DDE5E1')
+        .margin({ top: 8 })
+
+      Row() {
+        Column() {
+          Text('通知设置')
+            .fontSize(Tokens.F_HEADING)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Tokens.TEXT_PRIMARY)
+          Text('只接收你关心的班级提醒')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Text('完成')
+          .fontSize(Tokens.F_LABEL)
+          .fontColor(Tokens.MIST_TEAL)
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, top: Tokens.GAP_SM, bottom: Tokens.GAP_SM })
+          .backgroundColor('#EEF5F2')
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.notifyOpen = false;
+          })
+      }
+      .width('100%')
+      .padding({ left: Tokens.SPACE_20, right: Tokens.SPACE_16, top: Tokens.SPACE_12, bottom: Tokens.GAP_SM })
+
+      Scroll() {
+        Column() {
+          Row() {
+            Column() {
+              Row({ space: 6 }) {
+                Text('允许通知')
+                  .fontSize(Tokens.F_BODY)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(Tokens.TEXT_PRIMARY)
+                Text(this.pushOn ? '已开启' : '已关闭')
+                  .fontSize(10)
+                  .fontColor(this.pushOn ? '#3F6F66' : Tokens.TEXT_TERTIARY)
+                  .backgroundColor(this.pushOn ? '#E4F0EB' : '#ECEFED')
+                  .borderRadius(Tokens.RADIUS_PILL)
+                  .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              }
+              Text(this.pushStatusText())
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.TEXT_TERTIARY)
+                .margin({ top: 4 })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            .margin({ right: 10 })
+            Toggle({ type: ToggleType.Switch, isOn: this.pushOn })
+              .selectedColor(Tokens.MIST_TEAL)
+              .enabled(!this.pushBusy)
+              .onChange((on: boolean) => {
+                this.togglePush(on);
+              })
+          }
+          .width('100%')
+          .padding(Tokens.SPACE_16)
+          .backgroundColor(this.pushOn ? '#F1F7F4' : '#F5F7F6')
+          .borderRadius(18)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, top: Tokens.SPACE_4 })
+
+          this.notifySection('作业提醒')
+          Column() {
+            this.notifySwitch('homeworkNew', '新作业通知', '有新的作业发布时提醒')
+            this.notifyDivider()
+            this.notifySwitch('homeworkDue', '作业即将截止', '按下方提前时间提醒')
+          }
+          .width('100%')
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .clip(true)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          this.notifySection('上课提醒')
+          Column() {
+            this.notifySwitch('classRemind', '上课提醒', '按课表在课前提醒')
+            this.notifyDivider()
+            this.classLeadRow()
+          }
+          .width('100%')
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .clip(true)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          this.notifySection('通知提醒')
+          Column() {
+            this.notifySwitch('noticeNew', '新通知提醒', '班委发布新通知时提醒')
+            this.notifyDivider()
+            this.notifySwitch('noticeDeadline', '活动截止提醒', '活动/报名截止前提醒')
+            this.notifyDivider()
+            this.notifySwitch('noticeSignup', '活动开抢提醒', '报名开始时提前 5 分钟提醒')
+          }
+          .width('100%')
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .clip(true)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          this.notifySection('投票与水费')
+          Column() {
+            this.notifySwitch('voteNew', '新投票提醒', '发起新投票时提醒')
+            this.notifyDivider()
+            this.notifySwitch('voteResult', '投票结果可查看', '投票结束后提醒查看结果')
+            this.notifyDivider()
+            this.notifySwitch('waterDeduct', '水费扣除提醒', '抄表产生用量/水费时提醒')
+          }
+          .width('100%')
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .clip(true)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          this.notifySection('提醒时间')
+          Column() {
+            Text('截止类提醒统一提前')
+              .fontSize(Tokens.F_BODY)
+              .fontColor(Tokens.TEXT_PRIMARY)
+              .width('100%')
+            Text('对新作业截止、通知截止生效')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.TEXT_TERTIARY)
+              .width('100%')
+              .margin({ top: Tokens.TEXT_GAP, bottom: Tokens.SPACE_10 })
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(NotifySettings.LEAD_OPTIONS, (minutes: number, i: number) => {
+                Text(minutes >= 1440 ? '1 天' : (minutes >= 60 ? (minutes / 60) + ' 小时' : minutes + ' 分钟'))
+                  .fontSize(Tokens.F_LABEL)
+                  .fontColor(this.notifySettings.leadMinutes === minutes ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+                  .backgroundColor(this.notifySettings.leadMinutes === minutes ? Tokens.MIST_TEAL : '#FFFFFF')
+                  .border({ width: 1, color: this.notifySettings.leadMinutes === minutes
+                    ? Tokens.MIST_TEAL : Tokens.DIVIDER })
+                  .borderRadius(Tokens.RADIUS_PILL)
+                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                  .margin({ right: 8, bottom: 8 })
+                  .onClick(() => {
+                    this.setNotifyLead(minutes);
+                  })
+              }, (minutes: number, i: number) => 'lead_' + minutes)
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .padding(Tokens.SPACE_16)
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          this.notifySection('确认提醒效果')
+          Column() {
+            Button(this.testBusy ? '正在发送…' : '发送测试通知')
+              .type(ButtonType.Capsule)
+              .width('100%')
+              .height(42)
+              .fontSize(Tokens.F_LABEL)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#FFFFFF')
+              .backgroundColor(this.testBusy ? '#9DBDB4' : Tokens.MIST_TEAL)
+              .enabled(!this.testBusy)
+              .onClick(() => {
+                this.sendTestNotice();
+              })
+            if (this.testNotice.length > 0) {
+              Text(this.testNotice)
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(this.testNotice.indexOf('已发送') >= 0 ? Tokens.MIST_TEAL : '#9C5147')
+                .width('100%')
+                .margin({ top: 8 })
+            }
+            Text('立即发出一条本地通知，用于检查系统权限和通知样式。')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.TEXT_TERTIARY)
+              .width('100%')
+              .margin({ top: 8 })
+          }
+          .width('100%')
+          .padding(Tokens.SPACE_16)
+          .backgroundColor('#F7F8F8')
+          .borderRadius(16)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
+          Text('系统通知权限只会在你首次开启通知或发送测试时请求。')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 14, bottom: 32 })
+        }
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .height('88%')
+    .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: 26, topRight: 26 })
   }
 
   build() {
-    Scroll() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Stack({ alignContent: Alignment.Top }) {
+      Scroll() {
       Column() {
-        Text('我的')
-          .fontSize(Tokens.F_TITLE)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .width('100%')
-          .margin({ top: 24, bottom: 18 })
-
         Column() {
           Row() {
             Text(this.userName.length > 0 ? this.userName.substring(0, 1) : '?')
@@ -168,13 +692,14 @@ export struct MeScreen {
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
-            .margin({ left: 14 })
+            .margin({ left: Tokens.SPACE_16 })
           }
           .width('100%')
           .padding(16)
         }
         .width('100%')
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         Column() {
@@ -189,14 +714,14 @@ export struct MeScreen {
             Text('立即同步')
               .fontSize(Tokens.F_LABEL)
               .fontColor(Tokens.MIST_TEAL)
-              .margin({ left: 14 })
+              .margin({ left: Tokens.SPACE_16 })
               .onClick(() => {
                 this.onSyncNow();
               })
           }
           .width('100%')
           .height(52)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           Row() {
             Text('昵称')
@@ -209,7 +734,7 @@ export struct MeScreen {
             Text(this.nickEditing ? '取消' : '编辑')
               .fontSize(Tokens.F_LABEL)
               .fontColor(Tokens.MIST_TEAL)
-              .margin({ left: 14 })
+              .margin({ left: Tokens.SPACE_16 })
               .onClick(() => {
                 this.nickEditing = !this.nickEditing;
                 this.nickDraft = this.nick;
@@ -217,10 +742,10 @@ export struct MeScreen {
           }
           .width('100%')
           .height(52)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
 
           if (this.nickEditing) {
-            Row({ space: 10 }) {
+            Row({ space: Tokens.GAP_SM }) {
               TextInput({ text: this.nickDraft, placeholder: '昵称（≤16 字，可留空清除）' })
                 .layoutWeight(1)
                 .height(40)
@@ -241,14 +766,14 @@ export struct MeScreen {
                 })
             }
             .width('100%')
-            .padding({ left: 16, right: 16, bottom: 12 })
+            .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_12 })
           }
           if (this.nickNotice.length > 0) {
             Text(this.nickNotice)
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.MIST_TEAL)
               .width('100%')
-              .padding({ left: 16, right: 16, bottom: 10 })
+              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
           }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.row('通知与提醒', '「通知」工具', false)
@@ -258,7 +783,7 @@ export struct MeScreen {
               Text('消息推送')
                 .fontSize(Tokens.F_BODY)
                 .fontColor(Tokens.TEXT_PRIMARY)
-              Text('新通知/作业到达时由系统推送')
+              Text(this.pushStatusText())
                 .fontSize(Tokens.F_CAPTION)
                 .fontColor(Tokens.TEXT_TERTIARY)
                 .margin({ top: 2 })
@@ -274,24 +799,34 @@ export struct MeScreen {
           }
           .width('100%')
           .height(64)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
           if (this.pushNotice.length > 0) {
             Text(this.pushNotice)
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.MIST_TEAL)
               .width('100%')
-              .padding({ left: 16, right: 16, bottom: 10 })
+              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
           }
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.notifySettingsRow()
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           Row() {
             Column() {
-              Text('华为账号')
-                .fontSize(Tokens.F_BODY)
-                .fontColor(Tokens.TEXT_PRIMARY)
-              Text('绑定后手表可免学号登录，最多 3 个')
+              Row({ space: 6 }) {
+                Text('华为账号')
+                  .fontSize(Tokens.F_BODY)
+                  .fontColor(Tokens.TEXT_PRIMARY)
+                Text(this.hwItems.length > 0 ? '已绑定 ' + this.hwItems.length + ' 个' : '未绑定')
+                  .fontSize(10)
+                  .fontColor(this.hwItems.length > 0 ? '#3F6F66' : Tokens.TEXT_TERTIARY)
+                  .backgroundColor(this.hwItems.length > 0 ? '#E4F0EB' : '#ECEFED')
+                  .borderRadius(Tokens.RADIUS_PILL)
+                  .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              }
+              Text('绑定后可用华为账号一键登录，最多 3 个')
                 .fontSize(Tokens.F_CAPTION)
                 .fontColor(Tokens.TEXT_TERTIARY)
-                .margin({ top: 2 })
+                .margin({ top: 4 })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
@@ -308,40 +843,66 @@ export struct MeScreen {
           }
           .width('100%')
           .height(64)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+          if (this.hwItems.length === 0) {
+            Text('暂未绑定华为账号，绑定后可免输学号快捷登录。')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.TEXT_TERTIARY)
+              .width('100%')
+              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_12 })
+          }
           ForEach(this.hwItems, (item: BindItem) => {
             Row() {
-              Text(item.masked())
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_SECONDARY)
-                .layoutWeight(1)
-              Text('解绑')
+              Column() {
+                Text(item.masked())
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(Tokens.TEXT_PRIMARY)
+                Text(item.device.length > 0 ? item.device : '华为账号')
+                  .fontSize(10)
+                  .fontColor(Tokens.TEXT_TERTIARY)
+                  .margin({ top: 2 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              Text(this.hwBusy ? '请稍候' : '解绑')
                 .fontSize(12)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                .fontColor(Tokens.DANGER)
+                .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                .backgroundColor('#FBEFEC')
+                .borderRadius(Tokens.RADIUS_PILL)
                 .onClick(() => {
-                  this.unbindHuawei(item.openId);
+                  this.confirmUnbind(item);
                 })
             }
             .width('100%')
-            .height(34)
-            .padding({ left: 16, right: 16 })
+            .height(48)
+            .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
           }, (item: BindItem) => item.openId)
           if (this.hwNotice.length > 0) {
             Text(this.hwNotice)
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.MIST_TEAL)
               .width('100%')
-              .padding({ left: 16, right: 16, bottom: 10 })
+              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
           }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
-          this.row('诊断', '「诊断」工具', false)
+          this.linkRow('诊断', '服务健康 · 设备自检', () => {
+            this.onOpenTool('diag');
+          })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
-          this.row('使用说明', 'docs/ACCEPTANCE.md', false)
+          this.linkRow('使用说明', '各功能用法速览', () => {
+            this.onOpenTool('usage');
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow(this.updateBusy ? '检查更新中…' : '检查更新',
+            this.updateNotice.length > 0 ? this.updateNotice : 'v' + CloudConfig.APP_VERSION, () => {
+              this.checkUpdate();
+            })
         }
         .width('100%')
-        .margin({ top: 14 })
+        .margin({ top: Tokens.SPACE_16 })
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         Column() {
@@ -358,8 +919,9 @@ export struct MeScreen {
           })
         }
         .width('100%')
-        .margin({ top: 14 })
+        .margin({ top: Tokens.SPACE_16 })
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         Row() {
@@ -374,13 +936,41 @@ export struct MeScreen {
         .margin({ top: 24, bottom: 12 })
       }
       .width('100%')
-      .constraintSize({ maxWidth: 720 })
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+      .constraintSize({ maxWidth: Breakpoints.isWide(this.layoutWidth) ? 880 : 720 })
+      .padding({
+        left: Breakpoints.pagePadding(this.layoutWidth),
+        right: Breakpoints.pagePadding(this.layoutWidth),
+        top: Tokens.SPACE_12,
+        bottom: Breakpoints.contentBottomSpace(this.layoutWidth)
+      })
+    }
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+      .backgroundColor(Color.Transparent)
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        const next: number = Number(newArea.width);
+        if (Math.abs(next - this.layoutWidth) > 1) {
+          this.layoutWidth = next;
+        }
+      })
+      }
+      if (this.notifyOpen) {
+        Column() {
+          this.notifyPanel()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+        .backgroundColor('#55000000')
+        .onClick(() => {
+          this.notifyOpen = false;
+        })
+      }
     }
     .width('100%')
     .height('100%')
-    .align(Alignment.Top)
-    .scrollBar(BarState.Off)
-    .backgroundColor(Tokens.BG)
+    .backgroundColor(Color.Transparent)
   }
 }

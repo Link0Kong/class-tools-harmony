@@ -1,5 +1,5 @@
-import { NoticeEntry } from '../../data/notices/NoticesRepository';
-import { NoticeGroup, NoticeRecurrence } from '../../data/notices/NoticeModels';
+﻿import { NoticeEntry } from '../../data/notices/NoticesRepository';
+import { NoticeGroup } from '../../data/notices/NoticeModels';
 import { NoticeRecurrenceLogic } from './NoticeRecurrence';
 
 /** 状态胶囊（与小程序 `utils/notice.js statusOf` 同口径）。 */
@@ -48,13 +48,13 @@ export class NoticeStatus {
       return NoticeStatus.shortTime(ts);
     }
     if (left < HOUR_MS) {
-      return Math.max(1, Math.round(left / 60000)) + ' 分钟后';
+      return Math.max(1, Math.ceil(left / 60000)) + ' 分钟后';
     }
     if (left < DAY_MS) {
-      return Math.max(1, Math.round(left / HOUR_MS)) + ' 小时后';
+      return Math.max(1, Math.ceil(left / HOUR_MS)) + ' 小时后';
     }
     if (left < 7 * DAY_MS) {
-      return Math.max(1, Math.round(left / DAY_MS)) + ' 天后';
+      return Math.max(1, Math.ceil(left / DAY_MS)) + ' 天后';
     }
     return NoticeStatus.shortTime(ts);
   }
@@ -102,17 +102,19 @@ export class NoticeStatus {
     return info;
   }
 
+  /**
+   * 与网页 `utils/notice.js statusOf` 同口径：
+   * 长期安排 → until 判定；AI expired → 已过期；有截止/延期 → 只按真实截止；
+   * 报名窗口优先于截止；仅有活动时间 → 活动结束（expireAt）才算结束；
+   * 无任何时间锚点 → 发布时间 + 「发布」（参与主列表与待处理）。
+   */
   static statusOf(group: NoticeGroup | undefined, now: number): NoticeStatusInfo {
+    const info: NoticeStatusInfo = new NoticeStatusInfo();
     if (group === undefined) {
-      return new NoticeStatusInfo();
+      return info;
     }
-    const recur: NoticeRecurrence | undefined = NoticeRecurrenceLogic.effectiveRecurrence(group);
-    if (recur !== undefined) {
-      const until: number = NoticeRecurrenceLogic.recurUntil(group);
-      const next: number = NoticeRecurrenceLogic.recurNext(group, now);
-      const ended: boolean = (until > 0 && now > until) || (until > 0 && next > until);
-      const info: NoticeStatusInfo = new NoticeStatusInfo();
-      if (ended) {
+    if (NoticeRecurrenceLogic.isLongterm(group)) {
+      if (NoticeRecurrenceLogic.isRecurEnded(group, now)) {
         info.key = 'expired';
         info.cls = 'expired';
         info.expired = true;
@@ -122,48 +124,109 @@ export class NoticeStatus {
       info.key = 'recurring';
       info.cls = 'recurring';
       info.expired = false;
-      info.whenAt = next;
-      const label: string = recur.label.trim();
+      info.whenAt = NoticeRecurrenceLogic.recurNext(group, now);
+      const label: string = group.recurrence !== undefined ? group.recurrence.label.trim() : '';
       info.label = label.length > 0 ? ('长期安排 · ' + label) : '长期安排';
       return info;
     }
-    const deadline: number = NoticeRecurrenceLogic.parseTs(group.deadline);
-    if (deadline > 0) {
-      const action: string = group.alert ? '截止' : '截止';
-      if (now > deadline) {
-        const info: NoticeStatusInfo = new NoticeStatusInfo();
-        info.key = group.alert ? 'alert' : 'expired';
-        info.cls = group.alert ? 'alert' : 'expired';
-        info.expired = !group.alert;
-        info.label = NoticeStatus.fmtWhen(deadline, now) + ' ' + NoticeStatus.conciseAction(action);
-        info.whenAt = deadline;
+    const real: number = NoticeRecurrenceLogic.deadlineTs(group);
+    const hasExtension: boolean = group.extensions.length > 0 && real > 0;
+    const signupStart: number = NoticeRecurrenceLogic.signupStartTs(group);
+    const signupEnd: number = NoticeRecurrenceLogic.signupEndTs(group);
+    if (group.expired) {
+      info.expired = true;
+      info.cls = 'expired';
+      info.key = hasExtension ? 'extended_past' : 'expired';
+      info.whenAt = real;
+      if (group.alert) {
+        info.key = 'alert';
+        info.cls = 'alert';
+        info.expired = false;
+        info.label = '已截止 · 有新名单';
+      } else {
+        info.label = real > 0 ? (NoticeStatus.fmtWhen(real, now) + ' '
+          + NoticeStatus.conciseAction(NoticeStatus.deadlineActionOf(group))) : '已过期';
+      }
+      return info;
+    }
+    if (real > 0 && now > real && group.alert) {
+      info.key = 'alert';
+      info.cls = 'alert';
+      info.expired = false;
+      info.whenAt = real;
+      info.label = '已截止 · 有新名单';
+      return info;
+    }
+    // 报名窗口优先（只有 signupStart 且已开始 → 退回截止/活动时间）
+    const hasSignup: boolean = signupStart > 0 || signupEnd > 0;
+    const signupStartedOnly: boolean = signupStart > 0 && signupEnd <= 0 && now >= signupStart;
+    if (hasSignup && !signupStartedOnly) {
+      if (signupStart > 0 && now < signupStart) {
+        return NoticeStatus.bucketOf(signupStart, '报名开始', now);
+      }
+      if (signupEnd > 0 && now < signupEnd) {
+        return NoticeStatus.bucketOf(signupEnd, '报名截止', now);
+      }
+      const stop: number = signupEnd > 0 ? signupEnd : signupStart;
+      info.key = 'expired';
+      info.cls = 'expired';
+      info.expired = true;
+      info.whenAt = stop;
+      info.label = NoticeStatus.fmtWhen(stop, now) + ' 报名截止';
+      return info;
+    }
+    if (real > 0) {
+      const action: string = NoticeStatus.deadlineActionOf(group);
+      if (now > real) {
+        info.key = hasExtension ? 'extended_past' : 'expired';
+        info.cls = 'expired';
+        info.expired = true;
+        info.whenAt = real;
+        info.label = NoticeStatus.fmtWhen(real, now) + ' ' + action;
         return info;
       }
-      return NoticeStatus.bucketOf(deadline, action, now);
+      const bucket: NoticeStatusInfo = NoticeStatus.bucketOf(real, action, now);
+      if (hasExtension) {
+        bucket.key = 'extended';
+        bucket.cls = 'extended';
+      }
+      return bucket;
     }
-    const eventAt: number = NoticeRecurrenceLogic.parseTs(group.eventAt);
+    const eventAt: number = NoticeRecurrenceLogic.eventTs(group);
     if (eventAt > 0) {
-      const end: number = Math.max(eventAt, NoticeRecurrenceLogic.parseTs(group.expireAt));
+      const action: string = group.eventAction.trim().length > 0
+        ? NoticeStatus.conciseAction(group.eventAction) : '开始';
+      const end: number = Math.max(eventAt, NoticeRecurrenceLogic.expireTs(group));
+      info.whenAt = eventAt;
+      info.label = NoticeStatus.fmtWhen(eventAt, now) + ' ' + action;
       if (now > end) {
-        const info: NoticeStatusInfo = new NoticeStatusInfo();
         info.key = 'expired';
         info.cls = 'expired';
         info.expired = true;
-        info.label = NoticeStatus.fmtWhen(eventAt, now) + ' 开始';
-        info.whenAt = eventAt;
-        return info;
+      } else {
+        info.key = 'active';
+        info.cls = 'active';
+        info.expired = false;
       }
-      const info: NoticeStatusInfo = new NoticeStatusInfo();
-      info.key = 'active';
-      info.cls = 'active';
-      info.expired = false;
-      info.label = NoticeStatus.fmtWhen(eventAt, now) + ' 开始';
-      info.whenAt = eventAt;
       return info;
     }
-    const none: NoticeStatusInfo = new NoticeStatusInfo();
-    none.whenAt = 0;
-    return none;
+    const published: number = NoticeRecurrenceLogic.publishedTs(group, now);
+    if (published > 0) {
+      info.key = 'published';
+      info.cls = 'active';
+      info.expired = false;
+      info.whenAt = published;
+      const action: string = group.publishAction.trim().length > 0
+        ? NoticeStatus.conciseAction(group.publishAction) : '发布';
+      info.label = NoticeStatus.fmtWhen(published, now) + ' ' + action;
+      return info;
+    }
+    return info;
+  }
+
+  static deadlineActionOf(group: NoticeGroup): string {
+    const action: string = group.deadlineAction.trim();
+    return action.length > 0 ? NoticeStatus.conciseAction(action) : '截止';
   }
 
   /** 状态（含手动通知兜底：无 group 按「无时间」）。 */

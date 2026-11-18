@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { WaterNormalizer } from '../main/ets/data/sync/WaterNormalizer';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 

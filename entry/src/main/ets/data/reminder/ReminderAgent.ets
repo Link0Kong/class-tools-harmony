@@ -1,4 +1,4 @@
-import reminderAgentManager from '@ohos.reminderAgentManager';
+﻿import reminderAgentManager from '@ohos.reminderAgentManager';
 import notificationManager from '@ohos.notificationManager';
 import { common } from '@kit.AbilityKit';
 import { AppGlobal } from '../../app/AppGlobal';

@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from './JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from './JsonBlob';
 
 /**
  * `userdata` v6 blob 结构与默认值（契约：BACKEND_CONTRACT.md §4 + mp `utils/privacy.js` DEFAULTS）。

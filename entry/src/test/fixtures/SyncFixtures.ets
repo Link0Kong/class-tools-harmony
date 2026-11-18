@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 同步契约 fixture（来源：mp-class-tools-tests/_sync_fixtures/，oracle = merge_ref.js）。
  * 本文件由 scripts/gen_sync_fixtures.ps1 生成，请勿手改。
  */

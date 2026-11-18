@@ -1,4 +1,4 @@
-import { photoAccessHelper } from '@kit.MediaLibraryKit';
+﻿import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { image } from '@kit.ImageKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';

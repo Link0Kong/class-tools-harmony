@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 
 /** marks 三种 kind（契约 §5）：作业完成 / 通知置顶 / 通知已处理。 */
 export enum MarkKind {

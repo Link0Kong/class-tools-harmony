@@ -1,4 +1,4 @@
-import { AppGlobal } from '../../app/AppGlobal';
+﻿import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksRefreshResult, MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -19,15 +19,20 @@ import { ReminderRecord, ReminderStore } from '../../data/reminder/ReminderStore
 import { ReminderPlanner } from '../../features/reminder/ReminderModels';
 import { HidePrefs } from '../../data/home/HidePrefs';
 import { Blob } from '../../data/sync/JsonBlob';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
+import { Immersive } from '../theme/Immersive';
 import { PageHeader } from '../components/PageHeader';
 
 /**
  * 作业工具：列表 + 截止倒计时 + 详情（全文/附件）+ 完成勾选 + 截止提醒。
  *
  * - 数据：`GET homework`（10 分钟 TTL）；完成状态 marks kind='hw'（乐观更新 + 补发）；
- * - 提醒：`reminderAgentManager` 系统日历提醒（失败降级为立即通知），本机按 homeworkId 记录提醒 id；
+ * - 提醒：`reminderAgentManager` 系统日历提醒（失败降级为立即通知），本机按 homeworkId 记录提醒 id。
  * - 附件：图片内联预览、URL 文件可打开，data URI 文件只展示元信息。
  */
 @Component
@@ -40,6 +45,10 @@ export struct HomeworkScreen {
   @State private filter: HomeworkFilter = HomeworkFilter.UNFINISHED;
   @State private loading: boolean = true;
   @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
+  private refreshTimer: number = -1;
+  private refreshRunning: boolean = false;
+  private refreshSeq: number = 0;
   @State private errorMsg: string = '';
   @State private notice: string = '';
   @State private now: number = Date.now();
@@ -51,6 +60,7 @@ export struct HomeworkScreen {
   @State private previewOpen: boolean = false;
   @State private previewSrc: string = '';
   @State private hiddenCount: number = 0;
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   aboutToAppear(): void {
     this.reload(false);
@@ -68,6 +78,43 @@ export struct HomeworkScreen {
     record.advance = this.advance;
     record.ids = this.reminderIds;
     await ReminderStore.save(Services.currentSid, record);
+  }
+
+  /** 每次 onRefreshing 都独立安排收起，避免上一次未结束时第二次下拉永远停住。 */
+  private refreshNow(): void {
+    const token: number = this.refreshSeq + 1;
+    this.refreshSeq = token;
+    if (this.refreshTimer >= 0) {
+      clearTimeout(this.refreshTimer);
+    }
+    this.refreshTimer = setTimeout(() => {
+      if (token === this.refreshSeq) {
+        this.refreshing = false;
+        this.refreshTimer = -1;
+      }
+    }, 1200);
+    if (this.refreshRunning) {
+      return;
+    }
+    this.refreshRunning = true;
+    this.runRefresh(token);
+  }
+
+  private async runRefresh(token: number): Promise<void> {
+    try {
+      await this.reload(true);
+    } catch (e) {
+      this.errorMsg = '刷新失败，请稍后重试';
+    } finally {
+      this.refreshRunning = false;
+      if (token === this.refreshSeq) {
+        if (this.refreshTimer >= 0) {
+          clearTimeout(this.refreshTimer);
+          this.refreshTimer = -1;
+        }
+        this.refreshing = false;
+      }
+    }
   }
 
   private async reload(force: boolean): Promise<void> {
@@ -322,8 +369,8 @@ export struct HomeworkScreen {
         .fontSize(Tokens.F_CAPTION)
         .fontColor(this.filter === filter ? '#E8F2EF' : Tokens.TEXT_TERTIARY)
     }
-    .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-    .backgroundColor(this.filter === filter ? Tokens.MIST_TEAL : Tokens.CARD)
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .backgroundColor(this.filter === filter ? Tokens.MIST_TEAL : Tokens.CONTROL)
     .borderRadius(Tokens.RADIUS_PILL)
     .onClick(() => {
       this.filter = filter;
@@ -335,8 +382,8 @@ export struct HomeworkScreen {
     Text('提前 ' + (value >= 60 ? (value / 60) + ' 小时' : value + ' 分钟'))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.advance === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .backgroundColor(this.advance === value ? Tokens.SLATE_BLUE : Tokens.BG)
+      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+      .backgroundColor(this.advance === value ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(8)
       .margin({ right: 6, bottom: 6 })
       .onClick(() => {
@@ -354,7 +401,7 @@ export struct HomeworkScreen {
             Text(ReminderPlanner.urgency(item.due !== undefined ? item.due.atMillis : undefined, this.now))
               .fontSize(Tokens.F_CAPTION)
               .fontColor('#FFFFFF')
-              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
               .backgroundColor(Tokens.WARM_SAND)
               .borderRadius(6)
               .margin({ right: 6 })
@@ -408,16 +455,18 @@ export struct HomeworkScreen {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Text(item.done ? '✓' : '')
-        .fontSize(15)
-        .fontColor('#FFFFFF')
-        .width(28)
-        .height(28)
-        .textAlign(TextAlign.Center)
-        .backgroundColor(item.done ? Tokens.MIST_TEAL : Tokens.BG)
-        .border({ width: 1, color: item.done ? Tokens.MIST_TEAL : Tokens.DIVIDER })
-        .borderRadius(14)
-        .margin({ left: 12 })
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.checkmark'))
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor([item.done ? '#FFFFFF' : Color.Transparent])
+      }
+      .width(28)
+      .height(28)
+      .backgroundColor(item.done ? Tokens.MIST_TEAL : Tokens.CONTROL)
+      .border({ width: 1, color: item.done ? Tokens.MIST_TEAL : Tokens.DIVIDER })
+      .borderRadius(14)
+      .margin({ left: 12 })
         .onClick(() => {
           this.toggle(item);
         })
@@ -425,6 +474,7 @@ export struct HomeworkScreen {
     .width('100%')
     .padding(14)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .stateStyles({
       pressed: {
@@ -449,6 +499,7 @@ export struct HomeworkScreen {
           .borderRadius(10)
           .objectFit(ImageFit.Cover)
           .backgroundColor(Tokens.CARD)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .onClick(() => {
             this.openPreview(HomeworkAttachments.dataOf((this.detail as HomeworkItem).row.attachments, meta.index));
           })
@@ -471,6 +522,29 @@ export struct HomeworkScreen {
     .padding({ top: 4, bottom: 4 })
   }
 
+  /** 作业详情 → 分享卡图片 → 系统图片分享。 */
+  private shareDetail(): void {
+    if (this.detail === undefined) {
+      return;
+    }
+    const item: HomeworkItem = this.detail;
+    this.shareSpec = ShareSpecs.homework(item, Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
   @Builder
   detailPanel() {
     Column() {
@@ -480,6 +554,13 @@ export struct HomeworkScreen {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Blank()
+        Text('分享')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.SLATE_BLUE)
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.shareDetail();
+          })
         Text('关闭')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.SLATE_BLUE)
@@ -534,7 +615,7 @@ export struct HomeworkScreen {
               .width('100%')
               .padding({ left: 14, right: 14 })
               .margin({ top: 6 })
-              .backgroundColor(Tokens.BG)
+              .backgroundColor(Tokens.CONTROL)
               .borderRadius(Tokens.RADIUS_CARD)
             }
 
@@ -567,7 +648,7 @@ export struct HomeworkScreen {
                 Button('取消提醒')
                   .layoutWeight(1)
                   .height(42)
-                  .backgroundColor(Tokens.BG)
+                  .backgroundColor(Tokens.CONTROL)
                   .fontColor(Tokens.DANGER)
                   .borderRadius(Tokens.RADIUS_PILL)
                   .onClick(() => {
@@ -586,26 +667,34 @@ export struct HomeworkScreen {
                 .margin({ top: 8 })
             }
 
-            Button(this.detail.done ? '标记为未完成' : '标记为已完成')
-              .width('100%')
-              .height(44)
-              .margin({ top: 10 })
-              .backgroundColor(this.detail.done ? Tokens.BG : Tokens.MIST_TEAL)
-              .fontColor(this.detail.done ? Tokens.TEXT_SECONDARY : '#FFFFFF')
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.toggle(this.detail as HomeworkItem);
-              })
-            Button('隐藏（仅自己不可见）')
-              .width('100%')
-              .height(40)
-              .margin({ top: 8, bottom: 12 })
-              .backgroundColor(Tokens.BG)
-              .fontColor(Tokens.TEXT_TERTIARY)
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.hideCurrent();
-              })
+            Row({ space: 10 }) {
+              Button(this.detail.done ? '标记为未完成' : '标记为已完成')
+                .layoutWeight(2)
+                .height(44)
+                .backgroundColor(this.detail.done ? Tokens.CONTROL : Tokens.MIST_TEAL)
+                .fontColor(this.detail.done ? Tokens.TEXT_SECONDARY : '#FFFFFF')
+                .borderRadius(Tokens.RADIUS_PILL)
+                .onClick(() => {
+                  this.toggle(this.detail as HomeworkItem);
+                })
+              Button('更多')
+                .layoutWeight(1)
+                .height(44)
+                .backgroundColor(Tokens.CONTROL)
+                .border({ width: 0.5, color: Tokens.CARD_EDGE })
+                .fontColor(Tokens.TEXT_TERTIARY)
+                .borderRadius(Tokens.RADIUS_PILL)
+                .bindMenu([
+                  {
+                    value: '隐藏（仅自己不可见）',
+                    action: () => {
+                      this.hideCurrent();
+                    }
+                  }
+                ], { systemMaterial: Immersive.dialogMaterial() })
+            }
+            .width('100%')
+            .margin({ top: 10, bottom: 12 })
           }
           .width('100%')
           .padding({ bottom: 8 })
@@ -613,31 +702,38 @@ export struct HomeworkScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       }
     }
     .width('100%')
     .height('80%')
     .padding(16)
-    .backgroundColor(Tokens.CARD)
-    .borderRadius(Tokens.RADIUS_CARD)
+    .backgroundColor(Tokens.SHEET)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '作业',
-          actionText: this.loading ? '' : '刷新',
-          onBack: () => {
-            this.onClose();
-          },
-          onAction: () => {
-            this.reload(true);
-          }
-        })
-
-        if (this.loading) {
+      PageHeader({
+      progress: this.headerFade,
+        title: '作业',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        }
+      }) {
+        Column() {
+          if (this.loading) {
           Column({ space: 10 }) {
             LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
             Text('加载作业…').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_TERTIARY)
@@ -708,7 +804,7 @@ export struct HomeworkScreen {
             .justifyContent(FlexAlign.Center)
           } else {
             Refresh({ refreshing: $$this.refreshing }) {
-              List({ space: 10 }) {
+              List({ scroller: this.scroller, space: 10 }) {
                 ForEach(this.visibleItems(), (item: HomeworkItem) => {
                   ListItem() {
                     this.itemCard(item)
@@ -718,21 +814,26 @@ export struct HomeworkScreen {
               .width('100%')
               .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
               .scrollBar(BarState.Off)
+              .onDidScroll((offset: number) => {
+                const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+                if (Math.abs(next - this.headerFade) > 0.03) {
+                  this.headerFade = next;
+                }
+              })
               .transition(Motion.listItem())
             }
             .layoutWeight(1)
             .margin({ top: 10 })
             .onRefreshing(() => {
-              this.reload(true).then(() => {
-                this.refreshing = false;
-              });
+              this.refreshNow();
             })
           }
+          }
         }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.detailOpen) {
         Column() {
@@ -740,7 +841,7 @@ export struct HomeworkScreen {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .transition(Motion.scrim())
         .animation({ duration: Motion.NORMAL, curve: Motion.ease() })

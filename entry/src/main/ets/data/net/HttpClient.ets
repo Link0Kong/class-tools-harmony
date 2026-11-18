@@ -1,4 +1,4 @@
-import { http } from '@kit.NetworkKit';
+﻿import { http } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { CloudConfig } from '../../config/CloudConfig';
 import { Log } from '../../common/Log';

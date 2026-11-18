@@ -1,5 +1,6 @@
-import { Tokens } from '../theme/Tokens';
+﻿import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
+import { AppSymbols } from '../theme/AppSymbols';
 
 /**
  * 工具卡：单字字形 + 名称 + 副标题（2 行）。
@@ -8,7 +9,7 @@ import { Motion } from '../theme/Motion';
  */
 @Component
 export struct ToolTile {
-  @Prop glyph: string = '';
+  symbol: Resource = AppSymbols.INFO;
   @Prop name: string = '';
   @Prop subtitle: string = '';
   @Prop accent: string = Tokens.MIST_TEAL;
@@ -22,15 +23,17 @@ export struct ToolTile {
 
   build() {
     Row() {
-      Text(this.glyph)
-        .fontSize(this.compact ? 16 : 18)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.accent)
-        .width(this.compact ? 34 : 40)
-        .height(this.compact ? 34 : 40)
-        .textAlign(TextAlign.Center)
-        .backgroundColor(Tokens.tint(this.accent, 0.12))
-        .borderRadius(12)
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(this.symbol)
+          .fontSize(this.compact ? 20 : 24)
+          .fontWeight(FontWeight.Medium)
+          .fontColor([this.accent])
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+      }
+      .width(this.compact ? 34 : 40)
+      .height(this.compact ? 34 : 40)
+      .backgroundColor(Tokens.tint(this.accent, 0.12))
+      .borderRadius(12)
 
       Column() {
         Text(this.name)
@@ -44,17 +47,19 @@ export struct ToolTile {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .lineHeight(this.compact ? 15 : 17)
-          .margin({ top: 3 })
+          .margin({ top: Tokens.TEXT_GAP })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      .margin({ left: 10 })
+      .margin({ left: Tokens.GAP })
     }
     .width('100%')
     .constraintSize({ minHeight: this.minHeight() })
-    .padding(this.compact ? 10 : 12)
+    .padding(this.compact ? Tokens.SPACE_10 : Tokens.SPACE_12)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
+    .shadow({ radius: 18, color: Tokens.CARD_SHADOW, offsetX: 0, offsetY: 6 })
     .stateStyles({
       normal: {
         .scale({ x: 1, y: 1 })

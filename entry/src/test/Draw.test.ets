@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { DrawConfig, DrawEntry, DrawPoolSource, DrawSortMode } from '../main/ets/features/draw/DrawModels';
 import { DrawRandom, SeededDrawRandom, shuffledInts } from '../main/ets/features/draw/DrawRandom';
 import { DrawValidator, ExcludedParse } from '../main/ets/features/draw/DrawValidator';

@@ -1,4 +1,4 @@
-/** 成员来源。 */
+﻿/** 成员来源。 */
 export enum GroupSource {
   /** 上一步抽签结果（带序号/可选姓名）。 */
   PREV = 'prev',

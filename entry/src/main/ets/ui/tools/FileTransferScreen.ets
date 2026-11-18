@@ -1,9 +1,11 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { CloudSpaceFile, CloudSpaceSnapshot, CloudSpaceResult } from '../../data/cloudspace/CloudSpaceModels';
 import { CloudSpaceLogic } from '../../data/cloudspace/CloudSpaceLogic';
 import { CloudSpaceRepository, PickedFile } from '../../data/cloudspace/CloudSpaceRepository';
 import { Tokens } from '../theme/Tokens';
+import { Immersive } from '../theme/Immersive';
 import { Breakpoints } from '../theme/Breakpoints';
+import { PageHeader } from '../components/PageHeader';
 
 /**
  * 文件传输 / 临时云空间（对齐网页 `#s-file`、安卓 CloudSpaceScreen）。
@@ -31,6 +33,8 @@ export struct FileTransferScreen {
   @State private uploadStateText: string = '';
   @State private downloadingId: string = '';
   @State private layoutWidth: number = 0;
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
   private pollTimer: number = -1;
   private repo(): CloudSpaceRepository {
     return Services.cloudspace;
@@ -138,6 +142,7 @@ export struct FileTransferScreen {
     AlertDialog.show({
       title: '删除文件',
       message: '「' + file.name + '」将从同账号所有设备移除，删除后不可恢复。',
+      systemMaterial: Immersive.dialogMaterial(),
       primaryButton: {
         value: '取消',
         action: () => {
@@ -167,6 +172,7 @@ export struct FileTransferScreen {
     AlertDialog.show({
       title: '清空云空间',
       message: '将删除本账号云空间内的全部文件（同账号所有设备）并重新开一个空空间。',
+      systemMaterial: Immersive.dialogMaterial(),
       primaryButton: {
         value: '取消',
         action: () => {
@@ -209,41 +215,6 @@ export struct FileTransferScreen {
     return Breakpoints.contentMaxWidth(this.layoutWidth);
   }
 
-  @Builder
-  header() {
-    Row() {
-      Text('‹')
-        .fontSize(28)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .width(44)
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.onClose();
-        })
-        .accessibilityText('返回')
-
-      Text('文件传输')
-        .fontSize(Tokens.F_HEADING)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .layoutWeight(1)
-
-      Text('刷新')
-        .fontSize(Tokens.F_LABEL)
-        .fontColor(Tokens.MIST_TEAL)
-        .padding({ left: 8, right: 10 })
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.refresh(true);
-        })
-    }
-    .width('100%')
-    .height(56)
-    .padding({ left: 4, right: 8 })
-    .backgroundColor(Tokens.BG)
-  }
 
   @Builder
   uploadBar() {
@@ -311,6 +282,7 @@ export struct FileTransferScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -318,15 +290,17 @@ export struct FileTransferScreen {
   @Builder
   fileRow(file: CloudSpaceFile) {
     Row() {
-      Text(CloudSpaceLogic.fileKindGlyph(CloudSpaceLogic.fileKind(file.mimeType, file.name)))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.SLATE_BLUE)
-        .width(40)
-        .height(40)
-        .textAlign(TextAlign.Center)
-        .backgroundColor(Tokens.TINT_BLUE)
-        .borderRadius(12)
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(CloudSpaceLogic.fileKindSymbol(CloudSpaceLogic.fileKind(file.mimeType, file.name)))
+          .fontSize(20)
+          .fontWeight(FontWeight.Medium)
+          .fontColor([Tokens.SLATE_BLUE])
+          .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+      }
+      .width(40)
+      .height(40)
+      .backgroundColor(Tokens.TINT_BLUE)
+      .borderRadius(12)
 
       Column() {
         Text(file.name)
@@ -338,31 +312,37 @@ export struct FileTransferScreen {
         Text(this.fileMeta(file))
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
-          .margin({ top: 3 })
+          .margin({ top: 4 })
           .width('100%')
         if (this.downloadingId === file.id) {
           Text(this.uploadStateText.length > 0 ? this.uploadStateText : '下载中…')
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.MIST_TEAL)
-            .margin({ top: 3 })
+            .margin({ top: 4 })
         }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       .margin({ left: 10 })
 
-      Column() {
+      Column({ space: 6 }) {
         Text('下载')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.MIST_TEAL)
-          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
+          .borderRadius(Tokens.RADIUS_PILL)
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .onClick(() => {
             this.downloadFile(file);
           })
         Text('删除')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.DANGER)
-          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
+          .borderRadius(Tokens.RADIUS_PILL)
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
           .onClick(() => {
             this.confirmDelete(file);
           })
@@ -372,6 +352,7 @@ export struct FileTransferScreen {
     .width('100%')
     .padding({ top: 10, bottom: 10 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
   }
 
   @Builder
@@ -415,30 +396,34 @@ export struct FileTransferScreen {
           .width('100%')
           .margin({ top: 6 })
       }
-
-      Button('清空云空间')
-        .width('100%')
-        .height(40)
-        .margin({ top: 12 })
-        .backgroundColor(Tokens.BG)
-        .fontColor(Tokens.DANGER)
-        .fontSize(Tokens.F_LABEL)
-        .borderRadius(Tokens.RADIUS_PILL)
-        .onClick(() => {
-          this.confirmClear();
-        })
     }
     .width('100%')
     .padding(16)
     .margin({ top: 12 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Column() {
-      this.header()
-      Scroll() {
+      PageHeader({
+      progress: this.headerFade,
+        title: '文件传输',
+        actionText2: '清空空间',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        },
+        onAction2: () => {
+          this.confirmClear();
+        }
+      }) {
+        Column() {
+          Refresh({ refreshing: $$this.refreshing }) {
+            Scroll(this.scroller) {
         Column() {
           this.uploadBar()
           this.fileList()
@@ -466,15 +451,33 @@ export struct FileTransferScreen {
         }
         .width('100%')
         .constraintSize({ maxWidth: this.contentMax() })
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+        .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth) })
+            }
+            .width('100%')
+            .height('100%')
+            .align(Alignment.Top)
+            .scrollBar(BarState.Off)
+            .onDidScroll((offset: number) => {
+              const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+              if (Math.abs(next - this.headerFade) > 0.03) {
+                this.headerFade = next;
+              }
+            })
+          }
+          .width('100%')
+          .height('100%')
+          .onRefreshing(() => {
+            this.pullRefresh();
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .layoutWeight(1)
-      .align(Alignment.Top)
-      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.BG)
+    .backgroundColor(Color.Transparent)
     .padding({ top: Breakpoints.BREATH_TOP })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const next: number = Number(newArea.width);
@@ -482,5 +485,11 @@ export struct FileTransferScreen {
         this.layoutWidth = next;
       }
     })
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.refresh(true);
+    this.refreshing = false;
   }
 }

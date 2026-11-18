@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { PowerRooms, RoomInfo } from '../../data/power/PowerModels';
 import {
@@ -13,6 +13,10 @@ import { WaterCalculator } from '../../features/water/WaterCalculator';
 import { WaterCodec } from '../../features/water/WaterCodec';
 import { WaterMonth } from '../../features/water/WaterMonth';
 import { WaterMutator } from '../../features/water/WaterMutator';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
 
@@ -38,6 +42,8 @@ export struct WaterScreen {
   @State private picking: boolean = true;
   @State private pickBuilding: string = '13号楼';
   @State private now: number = Date.now();
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
+  private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.now = Date.now();
@@ -134,8 +140,8 @@ export struct WaterScreen {
     Text(building)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.pickBuilding === building ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-      .backgroundColor(this.pickBuilding === building ? Tokens.MIST_TEAL : Tokens.CARD)
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.pickBuilding === building ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -158,7 +164,7 @@ export struct WaterScreen {
     .width('31%')
     .padding({ top: 12, bottom: 12 })
     .margin({ bottom: 8 })
-    .backgroundColor(this.sel === info.rv ? Tokens.MIST_TEAL : Tokens.CARD)
+    .backgroundColor(this.sel === info.rv ? Tokens.MIST_TEAL : Tokens.CONTROL)
     .borderRadius(Tokens.RADIUS_CARD)
     .onClick(() => {
       this.pickRoom(info.rv);
@@ -171,7 +177,7 @@ export struct WaterScreen {
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.persons === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-      .backgroundColor(this.persons === value ? Tokens.SLATE_BLUE : Tokens.BG)
+      .backgroundColor(this.persons === value ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -245,7 +251,11 @@ export struct WaterScreen {
       Text('删除')
         .fontSize(Tokens.F_CAPTION)
         .fontColor(Tokens.DANGER)
-        .padding({ left: 12, top: 6, bottom: 6 })
+        .backgroundColor(Tokens.CONTROL)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
+        .borderRadius(Tokens.RADIUS_PILL)
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .margin({ left: 10 })
         .onClick(() => {
           this.deleteRecord(record.month);
         })
@@ -319,7 +329,7 @@ export struct WaterScreen {
         TextInput({ text: this.monthText, placeholder: 'YYYY-MM' })
           .height(40)
           .layoutWeight(1)
-          .backgroundColor(Tokens.BG)
+          .backgroundColor(Tokens.CONTROL)
           .borderRadius(8)
           .fontSize(Tokens.F_BODY)
           .onChange((text: string) => {
@@ -331,7 +341,7 @@ export struct WaterScreen {
           .type(InputType.NUMBER_DECIMAL)
           .height(40)
           .layoutWeight(1)
-          .backgroundColor(Tokens.BG)
+          .backgroundColor(Tokens.CONTROL)
           .borderRadius(8)
           .fontSize(Tokens.F_BODY)
           .onChange((text: string) => {
@@ -372,6 +382,7 @@ export struct WaterScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -409,6 +420,7 @@ export struct WaterScreen {
     .padding(16)
     .margin({ top: 12 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -462,6 +474,7 @@ export struct WaterScreen {
     .padding(16)
     .margin({ top: 12 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -504,25 +517,56 @@ export struct WaterScreen {
     .padding(16)
     .margin({ top: 12 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
 
-  build() {
-    Column() {
-      PageHeader({
-        title: '水量',
-        actionText: this.picking ? '' : '切换',
-        onBack: () => {
-          this.onClose();
-        },
-        onAction: () => {
-          this.picking = true;
-        }
-      })
+  /** 当前月份水量 → 分享卡图片 → 系统图片分享。 */
+  private shareSummary(): void {
+    if (this.picking) {
+      return;
+    }
+    const stats: WaterMonthStats = this.stats();
+    this.shareSpec = ShareSpecs.water(stats, this.roomLabel(), Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
 
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
+  @State private headerFade: number = 0;
+
+  build() {
+    PageHeader({
+      progress: this.headerFade,
+      title: '水量',
+      actionText: this.picking ? '返回水量' : '切换',
+      actionText2: this.picking ? '' : '分享',
+      scroller: this.scroller,
+      onBack: () => {
+        this.onClose();
+      },
+      onAction: () => {
+        this.picking = !this.picking;
+      },
+      onAction2: () => {
+        this.shareSummary();
+      }
+    }) {
+      Column() {
       if (this.picking) {
-        Scroll() {
+        Scroll(this.scroller) {
           Column() {
             Text('选择宿舍')
               .fontSize(Tokens.F_LABEL)
@@ -553,18 +597,6 @@ export struct WaterScreen {
             .width('100%')
             .margin({ top: 10 })
 
-            if (this.sel.length > 0) {
-              Button('返回水量')
-                .width('100%')
-                .height(44)
-                .margin({ top: 12 })
-                .backgroundColor(Tokens.CARD)
-                .fontColor(Tokens.TEXT_SECONDARY)
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.picking = false;
-                })
-            }
           }
           .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
@@ -572,6 +604,12 @@ export struct WaterScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       } else {
         Scroll() {
           Column() {
@@ -598,11 +636,18 @@ export struct WaterScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       }
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ top: 0 })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Tokens.BG)
   }
 }
 

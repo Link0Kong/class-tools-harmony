@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { formatSlot, InMemoryVisitsStore, VisitsReporter } from '../main/ets/data/visits/VisitsReporter';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';

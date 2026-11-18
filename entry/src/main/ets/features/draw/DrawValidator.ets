@@ -1,4 +1,4 @@
-import { DrawConfig, DrawError, DrawErrorCode, DrawPoolSource } from './DrawModels';
+﻿import { DrawConfig, DrawError, DrawErrorCode, DrawPoolSource } from './DrawModels';
 
 /** 排除序号解析结果。 */
 export class ExcludedParse {

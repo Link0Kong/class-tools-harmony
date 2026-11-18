@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { Blob } from '../../data/sync/JsonBlob';
 import {
   PowerPoint,
@@ -16,6 +16,10 @@ import {
 import { PowerHistoryResult, PowerRepository, PowerRowResult } from '../../data/power/PowerRepository';
 import { PowerPrefs, PowerPrefsData } from '../../data/power/PowerPrefs';
 import { PowerNotifier } from '../../data/power/PowerNotifier';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
 
@@ -37,11 +41,13 @@ export struct PowerScreen {
   @State private stats: RangeStats = new RangeStats();
   @State private rangeKey: string = PowerRangeKey.D7;
   @State private loading: boolean = false;
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
   @State private errorMsg: string = '';
   @State private picking: boolean = true;
   @State private pickBuilding: string = '13号楼';
   @State private chartW: number = 0;
-  @State private chartH: number = 170;
+  @State private chartH: number = 196;
   @State private comparePoints: PowerPoint[] = [];
   @State private compare: PowerCompare = new PowerCompare();
   @State private slow: SlowEstimate = new SlowEstimate();
@@ -50,6 +56,7 @@ export struct PowerScreen {
   @State private cursor: number = -1;
   @State private cursorText: string = '';
   @State private now: number = Date.now();
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
 
@@ -203,13 +210,65 @@ export struct PowerScreen {
     return out;
   }
 
-  /** 趋势绘制（Canvas，单位 vp）。 */
+  /**
+   * 单调三次曲线路径：保证不过冲，得到连续平滑曲线。
+   * close=true 时闭合到基线（用于渐变面积）。
+   */
+  private traceSmooth(xs: number[], ys: number[], baseY: number, close: boolean): void {
+    const n: number = xs.length;
+    this.ctx.beginPath();
+    this.ctx.moveTo(xs[0], ys[0]);
+    if (n === 2) {
+      this.ctx.lineTo(xs[1], ys[1]);
+    } else if (n > 2) {
+      const deltas: number[] = [];
+      for (let i = 0; i < n - 1; i++) {
+        const step: number = xs[i + 1] - xs[i];
+        deltas.push(step === 0 ? 0 : (ys[i + 1] - ys[i]) / step);
+      }
+      const slopes: number[] = [];
+      slopes.push(deltas[0]);
+      for (let i = 1; i < n - 1; i++) {
+        const prev: number = deltas[i - 1];
+        const next: number = deltas[i];
+        slopes.push(prev * next <= 0 ? 0 : (prev + next) / 2);
+      }
+      slopes.push(deltas[n - 2]);
+      for (let i = 0; i < n - 1; i++) {
+        const d: number = deltas[i];
+        if (d === 0) {
+          slopes[i] = 0;
+          slopes[i + 1] = 0;
+          continue;
+        }
+        const limit: number = 3 * d;
+        if (Math.abs(slopes[i]) > Math.abs(limit)) {
+          slopes[i] = limit;
+        }
+        if (Math.abs(slopes[i + 1]) > Math.abs(limit)) {
+          slopes[i + 1] = limit;
+        }
+      }
+      for (let i = 0; i < n - 1; i++) {
+        const step: number = xs[i + 1] - xs[i];
+        this.ctx.bezierCurveTo(xs[i] + step / 3, ys[i] + slopes[i] * step / 3,
+          xs[i + 1] - step / 3, ys[i + 1] - slopes[i + 1] * step / 3, xs[i + 1], ys[i + 1]);
+      }
+    }
+    if (close) {
+      this.ctx.lineTo(xs[n - 1], baseY);
+      this.ctx.lineTo(xs[0], baseY);
+      this.ctx.closePath();
+    }
+  }
+
+  /** 趋势绘制（Canvas，单位 vp）：连续平滑曲线 + 渐变面积 + 网格刻度。 */
   private drawChart(): void {
     const w: number = this.chartW > 0 ? this.chartW : 320;
     const h: number = this.chartH;
     this.ctx.clearRect(0, 0, w, h);
     const view: PowerPoint[] = PowerStats.windowPoints(this.points, this.range(), this.now);
-    if (view.length < 2) {
+    if (view.length === 0) {
       this.ctx.fillStyle = Tokens.TEXT_TERTIARY;
       this.ctx.font = '12vp sans-serif';
       this.ctx.textAlign = 'center';
@@ -222,13 +281,14 @@ export struct PowerScreen {
       minQ = Math.min(minQ, view[i].q);
       maxQ = Math.max(maxQ, view[i].q);
     }
-    if (maxQ - minQ < 0.01) {
-      maxQ = minQ + 0.01;
+    if (maxQ - minQ < 0.05) {
+      maxQ = maxQ + 0.05;
+      minQ = Math.max(0, minQ - 0.05);
     }
-    const padLeft: number = 34;
-    const padRight: number = 8;
-    const padTop: number = 8;
-    const padBottom: number = 18;
+    const padLeft: number = 38;
+    const padRight: number = 12;
+    const padTop: number = 12;
+    const padBottom: number = 20;
     const plotW: number = w - padLeft - padRight;
     const plotH: number = h - padTop - padBottom;
     const t0: number = view[0].t;
@@ -236,73 +296,130 @@ export struct PowerScreen {
     const span: number = Math.max(1, t1 - t0);
     const xOf = (t: number): number => padLeft + (t - t0) / span * plotW;
     const yOf = (q: number): number => padTop + (1 - (q - minQ) / (maxQ - minQ)) * plotH;
+    const baseY: number = padTop + plotH;
 
-    // 坐标轴与网格
-    this.ctx.strokeStyle = Tokens.DIVIDER;
+    // 水平网格 + 纵轴刻度
+    this.ctx.font = '10vp sans-serif';
     this.ctx.lineWidth = 0.5;
-    this.ctx.beginPath();
-    this.ctx.moveTo(padLeft, padTop);
-    this.ctx.lineTo(padLeft, padTop + plotH);
-    this.ctx.lineTo(padLeft + plotW, padTop + plotH);
-    this.ctx.stroke();
-
-    // 折线
-    this.ctx.strokeStyle = Tokens.MIST_TEAL;
-    this.ctx.lineWidth = 1.6;
-    this.ctx.beginPath();
-    for (let i = 0; i < view.length; i++) {
-      const px: number = xOf(view[i].t);
-      const py: number = yOf(view[i].q);
-      if (i === 0) {
-        this.ctx.moveTo(px, py);
-      } else {
-        this.ctx.lineTo(px, py);
-      }
+    for (let i = 0; i <= 3; i++) {
+      const ratio: number = i / 3;
+      const gy: number = padTop + plotH * ratio;
+      this.ctx.setLineDash([2, 4]);
+      this.ctx.strokeStyle = Tokens.DIVIDER;
+      this.ctx.beginPath();
+      this.ctx.moveTo(padLeft, gy);
+      this.ctx.lineTo(padLeft + plotW, gy);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+      this.ctx.fillStyle = Tokens.TEXT_TERTIARY;
+      this.ctx.textAlign = 'right';
+      this.ctx.fillText(axisLabel(maxQ - (maxQ - minQ) * ratio), padLeft - 6, gy + 3);
     }
-    this.ctx.stroke();
 
-    // 最后一点
-    const last: PowerPoint = view[view.length - 1];
-    this.ctx.fillStyle = Tokens.MIST_TEAL;
-    this.ctx.beginPath();
-    this.ctx.arc(xOf(last.t), yOf(last.q), 3, 0, Math.PI * 2);
-    this.ctx.fill();
+    // 采样点坐标
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let i = 0; i < view.length; i++) {
+      xs.push(xOf(view[i].t));
+      ys.push(yOf(view[i].q));
+    }
+
+    if (xs.length === 1) {
+      this.ctx.fillStyle = Tokens.MIST_TEAL;
+      this.ctx.beginPath();
+      this.ctx.arc(xs[0], ys[0], 4.5, 0, Math.PI * 2);
+      this.ctx.fill();
+    } else {
+      // 渐变面积
+      const area: CanvasGradient = this.ctx.createLinearGradient(0, padTop, 0, baseY);
+      area.addColorStop(0, Tokens.tint(Tokens.MIST_TEAL, 0.22));
+      area.addColorStop(1, Tokens.tint(Tokens.MIST_TEAL, 0.01));
+      this.traceSmooth(xs, ys, baseY, true);
+      this.ctx.fillStyle = area;
+      this.ctx.fill();
+
+      // 连续平滑主线
+      this.traceSmooth(xs, ys, baseY, false);
+      this.ctx.strokeStyle = Tokens.MIST_TEAL;
+      this.ctx.lineWidth = 2;
+      this.ctx.lineJoin = 'round';
+      this.ctx.lineCap = 'round';
+      this.ctx.stroke();
+    }
 
     // 充值/上调事件标记
     const rises: PowerPoint[] = PowerStats.recharges(view);
-    this.ctx.fillStyle = Tokens.WARM_SAND;
     for (let i = 0; i < rises.length; i++) {
+      const rx: number = xOf(rises[i].t);
+      const ry: number = yOf(rises[i].q);
+      this.ctx.fillStyle = '#FFFFFF';
       this.ctx.beginPath();
-      this.ctx.arc(xOf(rises[i].t), yOf(rises[i].q), 2.5, 0, Math.PI * 2);
+      this.ctx.arc(rx, ry, 4, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.strokeStyle = Tokens.WARM_SAND;
+      this.ctx.lineWidth = 1.6;
+      this.ctx.stroke();
+      this.ctx.fillStyle = Tokens.WARM_SAND;
+      this.ctx.beginPath();
+      this.ctx.arc(rx, ry, 1.8, 0, Math.PI * 2);
       this.ctx.fill();
     }
 
-    // 触摸游标：竖线 + 圆点
+    // 最后一点：实心点 + 白芯
+    const last: PowerPoint = view[view.length - 1];
+    const lx: number = xOf(last.t);
+    const ly: number = yOf(last.q);
+    this.ctx.fillStyle = Tokens.MIST_TEAL;
+    this.ctx.beginPath();
+    this.ctx.arc(lx, ly, 4.5, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.beginPath();
+    this.ctx.arc(lx, ly, 2, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // 触摸游标：虚线 + 圆点 + 数值气泡
     if (this.cursor >= 0 && this.cursor < view.length) {
       const cursorPoint: PowerPoint = view[this.cursor];
       const cx: number = xOf(cursorPoint.t);
-      this.ctx.strokeStyle = Tokens.tint(Tokens.SLATE_BLUE, 0.5);
+      const cy: number = yOf(cursorPoint.q);
+      this.ctx.strokeStyle = Tokens.tint(Tokens.SLATE_BLUE, 0.65);
       this.ctx.lineWidth = 1;
+      this.ctx.setLineDash([3, 3]);
       this.ctx.beginPath();
       this.ctx.moveTo(cx, padTop);
-      this.ctx.lineTo(cx, padTop + plotH);
+      this.ctx.lineTo(cx, baseY);
       this.ctx.stroke();
-      this.ctx.fillStyle = Tokens.SLATE_BLUE;
+      this.ctx.setLineDash([]);
+      this.ctx.fillStyle = '#FFFFFF';
       this.ctx.beginPath();
-      this.ctx.arc(cx, yOf(cursorPoint.q), 3.5, 0, Math.PI * 2);
+      this.ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
       this.ctx.fill();
+      this.ctx.strokeStyle = Tokens.SLATE_BLUE;
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      const bubble: string = cursorPoint.q.toFixed(2) + ' 度';
+      this.ctx.font = '10vp sans-serif';
+      const bubbleW: number = this.ctx.measureText(bubble).width + 14;
+      const bubbleH: number = 20;
+      let bx: number = cx - bubbleW / 2;
+      bx = Math.max(padLeft, Math.min(padLeft + plotW - bubbleW, bx));
+      const by: number = Math.max(0, cy - bubbleH - 12);
+      this.ctx.fillStyle = Tokens.tint(Tokens.TEXT_PRIMARY, 0.88);
+      this.ctx.fillRect(bx, by, bubbleW, bubbleH);
+      this.ctx.fillStyle = '#FFFFFF';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(bubble, bx + bubbleW / 2, by + 14);
     }
 
-    // 轴标签
+    // 横轴标签
     this.ctx.fillStyle = Tokens.TEXT_TERTIARY;
     this.ctx.font = '10vp sans-serif';
-    this.ctx.textAlign = 'right';
-    this.ctx.fillText(maxQ.toFixed(1), padLeft - 4, padTop + 8);
-    this.ctx.fillText(minQ.toFixed(1), padLeft - 4, padTop + plotH);
     this.ctx.textAlign = 'left';
-    this.ctx.fillText(shortTime(t0), padLeft, h - 4);
+    this.ctx.fillText(shortTime(t0), padLeft, h - 5);
     this.ctx.textAlign = 'right';
-    this.ctx.fillText(shortTime(t1), w - padRight, h - 4);
+    this.ctx.fillText(shortTime(t1), padLeft + plotW, h - 5);
   }
 
   @Builder
@@ -310,8 +427,8 @@ export struct PowerScreen {
     Text(building)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.pickBuilding === building ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-      .backgroundColor(this.pickBuilding === building ? Tokens.MIST_TEAL : Tokens.CARD)
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.pickBuilding === building ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -334,7 +451,7 @@ export struct PowerScreen {
     .width('31%')
     .padding({ top: 12, bottom: 12 })
     .margin({ bottom: 8 })
-    .backgroundColor(this.sel === info.rv ? Tokens.MIST_TEAL : Tokens.CARD)
+    .backgroundColor(this.sel === info.rv ? Tokens.MIST_TEAL : Tokens.CONTROL)
     .borderRadius(Tokens.RADIUS_CARD)
     .onClick(() => {
       this.pickRoom(info.rv);
@@ -346,10 +463,12 @@ export struct PowerScreen {
     Text(range.label)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.rangeKey === range.key ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-      .backgroundColor(this.rangeKey === range.key ? Tokens.SLATE_BLUE : Tokens.BG)
+      .fontWeight(this.rangeKey === range.key ? FontWeight.Medium : FontWeight.Normal)
+      .textAlign(TextAlign.Center)
+      .height(30)
+      .layoutWeight(1)
+      .backgroundColor(this.rangeKey === range.key ? Tokens.SLATE_BLUE : Color.Transparent)
       .borderRadius(Tokens.RADIUS_PILL)
-      .margin({ right: 8 })
       .onClick(() => {
         this.onRange(range.key);
       })
@@ -360,13 +479,85 @@ export struct PowerScreen {
     Text('' + value)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.low === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .backgroundColor(this.low === value ? Tokens.WARM_SAND : Tokens.BG)
-      .borderRadius(8)
-      .margin({ right: 6 })
+      .textAlign(TextAlign.Center)
+      .constraintSize({ minWidth: 42 })
+      .height(30)
+      .backgroundColor(this.low === value ? Tokens.WARM_SAND : Tokens.CONTROL_SOFT)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 6, bottom: 6 })
       .onClick(() => {
         this.onLow(value);
       })
+  }
+
+  @Builder
+  metricTile(caption: string, value: string, unit: string, bg: string, fg: string) {
+    Column() {
+      Row() {
+        Text(value)
+          .fontSize(Tokens.F_HEADING)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(fg)
+        if (unit.length > 0) {
+          Text(unit)
+            .fontSize(10)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .margin({ left: 2, bottom: 2 })
+        }
+      }
+      .alignItems(VerticalAlign.Bottom)
+
+      Text(caption)
+        .fontSize(10)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 4 })
+    }
+    .alignItems(HorizontalAlign.Start)
+    .layoutWeight(1)
+    .padding({ left: 10, right: 10, top: 10, bottom: 10 })
+    .backgroundColor(bg)
+    .borderRadius(12)
+  }
+
+  @Builder
+  metaTag(text: string, fg: string, bg: string) {
+    Text(text)
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(fg)
+      .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+      .backgroundColor(bg)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 6, bottom: 6 })
+  }
+
+  private compareText(): string {
+    if (this.compare.label.length === 0) {
+      return '';
+    }
+    if (!this.compare.valid) {
+      return this.compare.label + ' · 历史数据不足';
+    }
+    return this.compare.label + ' ' + (this.compare.deltaPct >= 0 ? '+' : '')
+      + this.compare.deltaPct.toFixed(1) + '%';
+  }
+
+  private lastRechargeText(): string {
+    const rises: PowerPoint[] = this.rechargePoints();
+    if (rises.length === 0) {
+      return '';
+    }
+    const lastPoint: PowerPoint = rises[rises.length - 1];
+    return '最近充值 ' + shortTime(lastPoint.t) + ' · ' + lastPoint.q.toFixed(2) + ' 度';
+  }
+
+  private slowText(): string {
+    if (!this.slow.valid) {
+      return '';
+    }
+    return '慢频估算 日均 ' + this.slow.perDay.toFixed(2) + ' 度'
+      + (this.slow.ref ? '（参考）' : '（' + this.slow.segments + ' 段）');
   }
 
   @Builder
@@ -418,6 +609,7 @@ export struct PowerScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
   }
 
@@ -448,7 +640,7 @@ export struct PowerScreen {
       Canvas(this.ctx)
         .width('100%')
         .height(this.chartH)
-        .margin({ top: 8 })
+        .margin({ top: 6 })
         .onReady(() => {
           this.drawChart();
         })
@@ -464,11 +656,11 @@ export struct PowerScreen {
             return;
           }
           const w: number = this.chartW > 0 ? this.chartW : 320;
-          const plotW: number = w - 34 - 8;
+          const plotW: number = w - 38 - 12;
           if (plotW <= 0) {
             return;
           }
-          const ratio: number = (event.touches[0].x - 34) / plotW;
+          const ratio: number = (event.touches[0].x - 38) / plotW;
           const view: PowerPoint[] = PowerStats.windowPoints(this.points, this.range(), this.now);
           const idx: number = PowerStats.cursorIndex(view, ratio);
           if (idx >= 0 && idx < view.length) {
@@ -479,110 +671,150 @@ export struct PowerScreen {
           }
         })
 
-      Row() {
-        Column() {
-          Text(PowerStats.fmtDrop(this.stats.drop, this.stats.valid))
-            .fontSize(Tokens.F_TITLE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Tokens.TEXT_PRIMARY)
-          Text(this.range().dropLabel + '（度）')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-
-        Column() {
-          Text(PowerStats.fmtRate(this.estimate.valid ? this.estimate.ratePerDay : this.stats.perDay,
-          this.estimate.valid || this.stats.valid))
-            .fontSize(Tokens.F_TITLE)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(Tokens.TEXT_PRIMARY)
-          Text('日均（度）')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
+      Row({ space: 8 }) {
+        this.metricTile(this.range().dropLabel, PowerStats.fmtDrop(this.stats.drop, this.stats.valid),
+          '度', Tokens.TINT_TEAL, Tokens.MIST_TEAL)
+        this.metricTile('日均消耗',
+          PowerStats.fmtRate(this.estimate.valid ? this.estimate.ratePerDay : this.stats.perDay,
+            this.estimate.valid || this.stats.valid), '度/天', Tokens.TINT_SAND, Tokens.WARM_SAND)
+        this.metricTile('预计可用', this.estimate.valid ? this.estimateDays.toFixed(1) : '—',
+          this.estimate.valid ? '天' : '', Tokens.TINT_BLUE, Tokens.SLATE_BLUE)
       }
       .width('100%')
-      .margin({ top: 8 })
+      .margin({ top: 10 })
 
-      if (this.rechargePoints().length > 0) {
-        Text('最近充值 ' + shortTime(this.rechargePoints()[this.rechargePoints().length - 1].t)
-          + ' · 当前 ' + this.rechargePoints()[this.rechargePoints().length - 1].q.toFixed(2) + ' 度')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.WARM_SAND)
-          .width('100%')
-          .margin({ top: 4 })
-      }
-      if (this.estimate.valid) {
-        Text('预计可用 ' + this.estimateDays.toFixed(1) + ' 天 · 日均 ' + this.estimate.ratePerDay.toFixed(2) + ' 度')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
-          .width('100%')
-          .margin({ top: 4 })
-      }
-      if (this.estimate.deductCount > 0) {
-        Text('异常扣减 ' + this.estimate.deductCount + ' 次 · ' + this.estimate.deductDeg.toFixed(2) + ' 度（已忽略不计入日耗）')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.WARM_SAND)
-          .width('100%')
-          .margin({ top: 4 })
-      }
-      if (this.slow.valid) {
-        Text('慢频估算 日均 ' + this.slow.perDay.toFixed(2) + ' 度'
-          + (this.slow.ref ? '（参考）' : '（' + this.slow.segments + ' 段）'))
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
-          .width('100%')
-          .margin({ top: 4 })
-      }
-      if (this.compare.label.length > 0) {
-        Row({ space: 8 }) {
-          Text(this.compare.valid
-            ? (this.compare.label + ' ' + (this.compare.deltaPct >= 0 ? '+' : '')
-              + this.compare.deltaPct.toFixed(1) + '% · 上期 ' + this.compare.previousText)
-            : (this.compare.label + ' · 历史数据不足'))
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(this.compare.valid
-              ? (this.compare.deltaPct <= 0 ? Tokens.MIST_TEAL : Tokens.WARM_SAND)
-              : Tokens.TEXT_TERTIARY)
+      if (this.lastRechargeText().length > 0 || this.compareText().length > 0
+        || this.estimate.deductCount > 0 || this.slowText().length > 0 || !this.stats.valid) {
+        Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
+          if (this.lastRechargeText().length > 0) {
+            this.metaTag(this.lastRechargeText(), Tokens.WARM_SAND, Tokens.tint(Tokens.WARM_SAND, 0.12))
+          }
+          if (this.compareText().length > 0) {
+            this.metaTag(this.compareText(),
+              this.compare.valid
+                ? (this.compare.deltaPct <= 0 ? Tokens.MIST_TEAL : Tokens.WARM_SAND)
+                : Tokens.TEXT_TERTIARY,
+              this.compare.valid
+                ? (this.compare.deltaPct <= 0 ? Tokens.TINT_TEAL : Tokens.tint(Tokens.WARM_SAND, 0.12))
+                : Tokens.CONTROL_SOFT)
+          }
+          if (this.estimate.deductCount > 0) {
+            this.metaTag('异常扣减 ' + this.estimate.deductCount + ' 次 · '
+              + this.estimate.deductDeg.toFixed(2) + ' 度',
+              Tokens.WARM_SAND, Tokens.tint(Tokens.WARM_SAND, 0.12))
+          }
+          if (this.slowText().length > 0) {
+            this.metaTag(this.slowText(), Tokens.TEXT_SECONDARY, Tokens.CONTROL_SOFT)
+          }
+          if (!this.stats.valid) {
+            this.metaTag('样本不足，暂不估算用电速度', Tokens.WARM_SAND, Tokens.tint(Tokens.WARM_SAND, 0.12))
+          }
         }
         .width('100%')
-        .margin({ top: 6 })
-      }
-      if (!this.stats.valid) {
-        Text('样本不足，暂不估算用电速度')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.WARM_SAND)
-          .width('100%')
-          .margin({ top: 4 })
+        .margin({ top: 10 })
       }
     }
     .width('100%')
     .padding(16)
     .margin({ top: 12 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
 
-  build() {
+  @Builder
+  lowCard() {
     Column() {
-      PageHeader({
-        title: '电费',
-        actionText: this.picking ? '' : (this.loading ? '' : '刷新'),
-        onBack: () => {
-          this.onClose();
-        },
-        onAction: () => {
-          this.load(true);
+      Row() {
+        Column() {
+          Text('低电提醒阈值')
+            .fontSize(Tokens.F_LABEL)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Tokens.TEXT_PRIMARY)
+          Text('剩余电量低于该值时推送提醒')
+            .fontSize(10)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .margin({ top: 2 })
         }
-      })
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
-      if (this.picking) {
-        Scroll() {
+        Text(this.low + ' 度')
+          .fontSize(Tokens.F_TITLE)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.WARM_SAND)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
+        ForEach(PowerStats.LOW_OPTIONS, (value: number) => {
+          this.lowChip(value)
+        }, (value: number) => 'low_' + value)
+      }
+      .width('100%')
+      .margin({ top: 12 })
+    }
+    .width('100%')
+    .padding(16)
+    .margin({ top: 12 })
+    .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius(Tokens.RADIUS_CARD)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 当前宿舍电费 → 分享卡图片 → 系统图片分享。 */
+  private shareSummary(): void {
+    if (this.picking) {
+      return;
+    }
+    const unit: string = this.row !== undefined ? this.row.unit : '度';
+    this.shareSpec = ShareSpecs.power(PowerRooms.labelOf(this.sel),
+      PowerStats.fmtMain(this.quantity(), this.hasValue()), unit, this.updatedText(),
+      this.range().title, this.stats.drop, this.stats.perDay, this.stats.valid,
+      this.estimateDays, this.low, this.isLow(), Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
+  @State private headerFade: number = 0;
+
+  build() {
+    PageHeader({
+      progress: this.headerFade,
+      title: '电费',
+      actionText: this.picking ? '返回电费' : '',
+      actionText2: this.picking ? '' : '分享',
+      scroller: this.scroller,
+      onBack: () => {
+        this.onClose();
+      },
+      onAction: () => {
+        if (this.picking) {
+          this.picking = false;
+        }
+      },
+      onAction2: () => {
+        this.shareSummary();
+      }
+    }) {
+      Column() {
+        if (this.picking) {
+          Scroll(this.scroller) {
           Column() {
             Text('选择关注的宿舍')
               .fontSize(Tokens.F_LABEL)
@@ -614,18 +846,6 @@ export struct PowerScreen {
             .width('100%')
             .margin({ top: 10 })
 
-            if (this.sel.length > 0) {
-              Button('返回电费')
-                .width('100%')
-                .height(44)
-                .margin({ top: 12 })
-                .backgroundColor(Tokens.CARD)
-                .fontColor(Tokens.TEXT_SECONDARY)
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.picking = false;
-                })
-            }
           }
           .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
@@ -633,8 +853,15 @@ export struct PowerScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
       } else {
-        Scroll() {
+        Refresh({ refreshing: $$this.refreshing }) {
+        Scroll(this.scroller) {
           Column() {
             this.heroCard()
 
@@ -646,48 +873,51 @@ export struct PowerScreen {
                 .margin({ top: 8 })
             }
 
-            Row({ space: 6 }) {
+            Row() {
               ForEach(this.rangeChips(), (range: PowerRange) => {
                 this.rangeChip(range)
               }, (range: PowerRange) => range.key)
-              Blank()
             }
             .width('100%')
+            .padding(4)
             .margin({ top: 12 })
+            .backgroundColor(Tokens.CONTROL_SOFT)
+            .borderRadius(Tokens.RADIUS_PILL)
 
             this.trendCard()
 
-            Column() {
-              Text('低电提醒阈值')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_SECONDARY)
-              Row() {
-                ForEach(PowerStats.LOW_OPTIONS, (value: number) => {
-                  this.lowChip(value)
-                }, (value: number) => 'low_' + value)
-                Blank()
-              }
-              .width('100%')
-              .margin({ top: 8 })
-            }
-            .width('100%')
-            .padding(14)
-            .margin({ top: 12 })
-            .backgroundColor(Tokens.CARD)
-            .borderRadius(Tokens.RADIUS_CARD)
-            .alignItems(HorizontalAlign.Start)
+            this.lowCard()
           }
-          .width('100%')
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+        .width('100%')
+        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
         }
-        .layoutWeight(1)
+        .width('100%')
+        .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
+        }
+        .layoutWeight(1)
+        .onRefreshing(() => {
+          this.pullRefresh();
+        })
+        }
       }
+      .width('100%')
+      .height('100%')
+      .padding({ top: 0 })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Tokens.BG)
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.load(true);
+    this.refreshing = false;
   }
 }
 
@@ -698,4 +928,14 @@ function pad2(value: number): string {
 function shortTime(ms: number): string {
   const d: Date = new Date(ms);
   return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function axisLabel(v: number): string {
+  if (v >= 100) {
+    return v.toFixed(0);
+  }
+  if (v >= 10) {
+    return v.toFixed(1);
+  }
+  return v.toFixed(2);
 }

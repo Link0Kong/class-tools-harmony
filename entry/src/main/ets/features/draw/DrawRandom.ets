@@ -1,4 +1,4 @@
-/** 随机数引擎抽象（可注入 seed，保证单测可复现）。 */
+﻿/** 随机数引擎抽象（可注入 seed，保证单测可复现）。 */
 export interface DrawRandom {
   /** 返回 `0..bound-1` 的随机整数；`bound <= 0` 时返回 0。 */
   nextInt(bound: number): number;

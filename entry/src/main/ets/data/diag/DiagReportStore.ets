@@ -1,4 +1,4 @@
-import { preferences } from '@kit.ArkData';
+﻿import { preferences } from '@kit.ArkData';
 import { AppGlobal } from '../../app/AppGlobal';
 
 /** 上报节流时间戳持久化（preferences，键 `last_report`）。 */

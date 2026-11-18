@@ -1,4 +1,4 @@
-import notificationManager from '@ohos.notificationManager';
+﻿import notificationManager from '@ohos.notificationManager';
 import { Log } from '../../common/Log';
 
 const TAG: string = 'PowerNotifier';

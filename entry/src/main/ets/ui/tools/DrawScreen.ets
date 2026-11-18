@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
 import { ClassMember } from '../../data/member/ClassMember';
 import {
@@ -15,6 +15,7 @@ import { DrawStep, DrawTransition, DrawWorkflow, DrawWorkflowState } from '../..
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { PageHeader } from '../components/PageHeader';
+import { GlassBar } from '../components/GlassBar';
 import { DrawExportFactory, ExportCardSpec, ExportNaming } from '../../features/export/ExportCard';
 import { DrawSession } from '../../app/DrawSession';
 import { ExportPreview } from './ExportPreview';
@@ -32,6 +33,7 @@ export struct DrawScreen {
   };
 
   @State private step: DrawStep = DrawStep.CONFIG;
+  private scroller: Scroller = new Scroller();
   @State private start: number = 1;
   @State private end: number = 70;
   @State private count: number = 10;
@@ -225,7 +227,7 @@ export struct DrawScreen {
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.sort === mode ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .backgroundColor(this.sort === mode ? Tokens.MIST_TEAL : Tokens.BG)
+      .backgroundColor(this.sort === mode ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
@@ -239,7 +241,7 @@ export struct DrawScreen {
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.source === source ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-      .backgroundColor(this.source === source ? Tokens.SLATE_BLUE : Tokens.BG)
+      .backgroundColor(this.source === source ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -258,7 +260,7 @@ export struct DrawScreen {
         .type(InputType.Number)
         .height(44)
         .margin({ top: 4 })
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(10)
         .fontSize(Tokens.F_BODY)
         .onChange((text: string) => {
@@ -274,7 +276,7 @@ export struct DrawScreen {
 
   @Builder
   configStep() {
-    Scroll() {
+    Scroll(this.scroller) {
       Column() {
         Column() {
           Row({ space: 12 }) {
@@ -316,7 +318,7 @@ export struct DrawScreen {
           TextInput({ placeholder: '如 3,7,10-12', text: this.excl })
             .height(44)
             .margin({ top: 4 })
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .borderRadius(10)
             .fontSize(Tokens.F_BODY)
             .onChange((text: string) => {
@@ -348,6 +350,7 @@ export struct DrawScreen {
         .width('100%')
         .padding(16)
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
 
         if (this.errorMsg.length > 0) {
@@ -376,12 +379,18 @@ export struct DrawScreen {
     .layoutWeight(1)
     .align(Alignment.Top)
     .scrollBar(BarState.Off)
+    .onDidScroll((offset: number) => {
+      const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+      if (Math.abs(next - this.headerFade) > 0.03) {
+        this.headerFade = next;
+      }
+    })
   }
 
   @Builder
   previewStep() {
     Column() {
-      Scroll() {
+      Scroll(this.scroller) {
         Column() {
           Text('候选 ' + this.candidates.length + ' 个')
             .fontSize(Tokens.F_HEADING)
@@ -401,7 +410,7 @@ export struct DrawScreen {
                 .fontSize(Tokens.F_CAPTION)
                 .fontColor(Tokens.TEXT_PRIMARY)
                 .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                .backgroundColor(Tokens.BG)
+                .backgroundColor(Tokens.CONTROL)
                 .borderRadius(Tokens.RADIUS_PILL)
                 .margin({ right: 6, bottom: 6 })
             }, (entry: DrawEntry) => '' + entry.number)
@@ -411,17 +420,25 @@ export struct DrawScreen {
         .width('100%')
         .padding(16)
         .backgroundColor(Tokens.CARD)
+        .border({ width: 0.5, color: Tokens.CARD_EDGE })
         .borderRadius(Tokens.RADIUS_CARD)
       }
       .layoutWeight(1)
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .onDidScroll((offset: number) => {
+        const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+        if (Math.abs(next - this.headerFade) > 0.03) {
+          this.headerFade = next;
+        }
+      })
 
-      Row({ space: 10 }) {
+      GlassBar() {
         Button('返回')
           .layoutWeight(1)
           .height(48)
-          .backgroundColor(Tokens.CARD)
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .fontColor(Tokens.TEXT_PRIMARY)
           .borderRadius(Tokens.RADIUS_PILL)
           .onClick(() => {
@@ -437,8 +454,6 @@ export struct DrawScreen {
             this.startDraw();
           })
       }
-      .width('100%')
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 16, top: 10 })
     }
     .layoutWeight(1)
   }
@@ -446,7 +461,7 @@ export struct DrawScreen {
   @Builder
   resultStep() {
     Column() {
-      Scroll() {
+      Scroll(this.scroller) {
         Column() {
           Column() {
             Text('结果 ' + (this.result !== undefined ? this.result.entries.length : 0) + ' 个')
@@ -496,6 +511,7 @@ export struct DrawScreen {
           .width('100%')
           .padding(16)
           .backgroundColor(Tokens.CARD)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .borderRadius(Tokens.RADIUS_CARD)
 
           Text('排序')
@@ -516,23 +532,19 @@ export struct DrawScreen {
       .layoutWeight(1)
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .onDidScroll((offset: number) => {
+        const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+        if (Math.abs(next - this.headerFade) > 0.03) {
+          this.headerFade = next;
+        }
+      })
 
-      Row({ space: 10 }) {
-        Button('调整参数')
-          .layoutWeight(1)
-          .height(48)
-          .backgroundColor(Tokens.CARD)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .borderRadius(Tokens.RADIUS_PILL)
-          .onClick(() => {
-            this.step = DrawStep.CONFIG;
-            this.candidates = [];
-            this.result = undefined;
-          })
+      GlassBar() {
         Button('重新抽一次')
           .layoutWeight(1)
           .height(48)
-          .backgroundColor(Tokens.CARD)
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .fontColor(Tokens.TEXT_PRIMARY)
           .borderRadius(Tokens.RADIUS_PILL)
           .onClick(() => {
@@ -548,49 +560,57 @@ export struct DrawScreen {
             this.openExport();
           })
       }
-      .width('100%')
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 16, top: 10 })
     }
     .layoutWeight(1)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '抽签 · ' + (this.step === DrawStep.CONFIG ? '配置'
-            : (this.step === DrawStep.PREVIEW ? '候选' : '结果')),
-          onBack: () => {
-            this.back();
-          }
-        })
-
-        if (this.step === DrawStep.CONFIG) {
-          Column() {
-            this.configStep()
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
-        } else if (this.step === DrawStep.PREVIEW) {
-          Column() {
-            this.previewStep()
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
-        } else {
-          Column() {
-            this.resultStep()
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+      PageHeader({
+      progress: this.headerFade,
+        title: '抽签 · ' + (this.step === DrawStep.CONFIG ? '配置'
+          : (this.step === DrawStep.PREVIEW ? '候选' : '结果')),
+        actionText: this.step === DrawStep.RESULT ? '调整参数' : '',
+        scroller: this.scroller,
+        onBack: () => {
+          this.back();
+        },
+        onAction: () => {
+          this.step = DrawStep.CONFIG;
+          this.candidates = [];
+          this.result = undefined;
         }
+      }) {
+        Column() {
+          if (this.step === DrawStep.CONFIG) {
+            Column() {
+              this.configStep()
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+          } else if (this.step === DrawStep.PREVIEW) {
+            Column() {
+              this.previewStep()
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+          } else {
+            Column() {
+              this.resultStep()
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.showExport) {
         ExportPreview({

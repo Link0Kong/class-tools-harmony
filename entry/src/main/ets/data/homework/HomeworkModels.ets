@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../sync/JsonBlob';
 
 /** 作业行（`public.homework`；`done` 列前端忽略，完成状态唯一真源是 marks kind='hw'）。 */
 export class HomeworkRow {

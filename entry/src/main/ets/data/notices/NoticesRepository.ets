@@ -1,11 +1,14 @@
-import { Api } from '../net/Api';
+﻿import { Api } from '../net/Api';
 import { ApiResult } from '../net/ApiResult';
 import { NoticeFilter, NoticeGroup, NoticeItemMeta, NoticeRow, NoticeSigRow } from './NoticeModels';
 import { NoticeBodyParser } from './NoticeParser';
+import { NoticeCacheBlob, NoticeCacheStore } from './NoticeCacheStore';
 
-const SIG_PATH: string = 'notices?select=id,ts,hidden,edited_at&archived=eq.false&order=ts.desc';
-const FULL_PATH: string = 'notices?select=*&archived=eq.false&order=ts.desc';
+const SIG_PATH: string = 'notices?select=id,ts,hidden,edited_at&archived=eq.false&order=ts.asc,id.asc';
+const FULL_PATH: string = 'notices?select=*&archived=eq.false&order=ts.asc,id.asc';
 const DEFAULT_TTL_MS: number = 10 * 60 * 1000;
+/** 磁盘缓存最多回放 7 天，避免离线时展示过旧内容。 */
+const MAX_DISK_AGE_MS: number = 7 * 24 * 60 * 60 * 1000;
 
 /** 一条通知（行 + 解析后的组 + 条目元信息）。 */
 export class NoticeEntry {
@@ -96,16 +99,22 @@ export class NoticesRepository {
   private api: Api;
   private clock: () => number;
   private ttlMs: number;
+  private sidProvider: () => string;
+  private adminProvider: () => boolean;
 
   private signature: string = '';
   private cache: NoticeEntry[] = [];
   private cachedAt: number = 0;
   private loaded: boolean = false;
+  private hydratedKey: string = '';
 
-  constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS) {
+  constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS,
+    sidProvider: () => string = () => '', adminProvider: () => boolean = () => false) {
     this.api = api;
     this.clock = clock;
     this.ttlMs = ttlMs;
+    this.sidProvider = sidProvider;
+    this.adminProvider = adminProvider;
   }
 
   /** 最近一次签名（未加载过为空串），用于工作台「新通知」角标。 */
@@ -113,7 +122,85 @@ export class NoticesRepository {
     return this.signature;
   }
 
+  /**
+   * 从本机磁盘恢复上次的通知（冷启动/离线首发用）。
+   * 同一会话内只尝试一次；切换账号后按 sid 重新恢复。
+   */
+  async hydrate(): Promise<void> {
+    const sid: string = this.sidProvider();
+    const key: string = sid.length > 0 ? sid : 'anon';
+    if (this.hydratedKey === key) {
+      return;
+    }
+    // 切换账号（同一台设备退出后换人登录）必须先清空上一位用户的内存缓存，避免串号泄露
+    this.hydratedKey = key;
+    this.cache = [];
+    this.signature = '';
+    this.cachedAt = 0;
+    this.loaded = false;
+    const blob: NoticeCacheBlob | undefined = await NoticeCacheStore.load(sid);
+    if (blob === undefined) {
+      return;
+    }
+    if (this.clock() - blob.savedAt > MAX_DISK_AGE_MS) {
+      return;
+    }
+    const rows: NoticeRow[] = this.filterAudience(NoticeBodyParser.parseRows(blob.rowsJson));
+    if (rows.length === 0) {
+      return;
+    }
+    this.cache = NoticesRepository.buildEntries(rows);
+    this.signature = blob.signature;
+    this.cachedAt = blob.savedAt;
+    this.loaded = true;
+  }
+
+  /**
+   * 可见范围的客户端兜底：服务端 RLS 已按 audience 过滤，
+   * 这里再拦一次 `sid:` / `admin`（防止缓存或旧环境返回越权行）；
+   * committee/league/set 由服务端判定，客户端不猜测。
+   */
+  private filterAudience(rows: NoticeRow[]): NoticeRow[] {
+    const sid: string = this.sidProvider();
+    const admin: boolean = this.adminProvider();
+    const out: NoticeRow[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row: NoticeRow = rows[i];
+      const aud: string = row.audience.trim();
+      if (aud.length === 0 || aud === 'all') {
+        out.push(row);
+        continue;
+      }
+      if (aud === 'admin') {
+        if (admin) {
+          out.push(row);
+        }
+        continue;
+      }
+      if (aud.indexOf('sid:') === 0) {
+        if (aud.substring(4) === sid) {
+          out.push(row);
+        }
+        continue;
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  /** 退出登录：清空内存与当前身份的本机通知缓存。 */
+  async clearLocal(): Promise<void> {
+    const sid: string = this.sidProvider();
+    this.hydratedKey = '';
+    this.cache = [];
+    this.signature = '';
+    this.cachedAt = 0;
+    this.loaded = false;
+    await NoticeCacheStore.clear(sid);
+  }
+
   async load(force: boolean): Promise<NoticesResult> {
+    await this.hydrate();
     const now: number = this.clock();
     if (!force && this.loaded && now - this.cachedAt < this.ttlMs) {
       return new NoticesResult(true, this.cache, true, '');
@@ -142,12 +229,17 @@ export class NoticesRepository {
       return new NoticesResult(false, [], false,
         fullResult.error !== undefined ? fullResult.error.displayMessage() : '通知加载失败');
     }
-    const rows: NoticeRow[] = NoticeBodyParser.parseRows(fullResult.value);
+    const rows: NoticeRow[] = this.filterAudience(NoticeBodyParser.parseRows(fullResult.value));
     const entries: NoticeEntry[] = NoticesRepository.buildEntries(rows);
     this.cache = entries;
     this.signature = signature;
     this.cachedAt = now;
     this.loaded = true;
+    const blob: NoticeCacheBlob = new NoticeCacheBlob();
+    blob.signature = signature;
+    blob.savedAt = now;
+    blob.rowsJson = fullResult.value;
+    await NoticeCacheStore.save(this.sidProvider(), blob);
     return new NoticesResult(true, entries, false, '');
   }
 

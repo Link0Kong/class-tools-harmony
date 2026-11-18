@@ -1,4 +1,4 @@
-/** 演示上传的分片/ID 规则（纯函数，便于单测）。 */
+﻿/** 演示上传的分片/ID 规则（纯函数，便于单测）。 */
 export class PptUploadPlanner {
   static readonly CHUNK_SIZE: number = 512 * 1024;
   static readonly MAX_SIZE: number = 200 * 1024 * 1024;

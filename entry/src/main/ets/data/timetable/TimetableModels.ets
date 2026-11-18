@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 
 /** 一门课（day 0=周一；start/end 为节次 1..12）。 */
 export class Course {

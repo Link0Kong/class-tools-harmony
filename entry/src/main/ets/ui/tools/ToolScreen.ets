@@ -1,6 +1,8 @@
-import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
+﻿import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
 import { Tokens } from '../theme/Tokens';
+import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
+import { AmbientBackdrop } from '../components/AmbientBackdrop';
 import { RosterScreen } from './RosterScreen';
 import { DrawScreen } from './DrawScreen';
 import { GroupScreen } from './GroupScreen';
@@ -17,6 +19,8 @@ import { DiagScreen } from './DiagScreen';
 import { JwScreen } from './JwScreen';
 import { MapScreen } from './MapScreen';
 import { FileTransferScreen } from './FileTransferScreen';
+import { UsageScreen } from './UsageScreen';
+import { AppGlobal } from '../../app/AppGlobal';
 
 /**
  * 工具页路由。
@@ -27,14 +31,31 @@ import { FileTransferScreen } from './FileTransferScreen';
 @Component
 export struct ToolScreen {
   @Prop toolId: string = '';
+  @State private topInset: number = 0;
+  @State private layoutWidth: number = 0;
+  private scroller: Scroller = new Scroller();
   onClose: () => void = () => {
   };
+
+  aboutToAppear(): void {
+    this.topInset = px2vp(AppGlobal.statusBarPx);
+  }
 
   private tool(): ToolDef | undefined {
     return ToolCatalog.byId(this.toolId);
   }
 
+  @State private headerFade: number = 0;
+
   build() {
+    Stack() {
+      AmbientBackdrop()
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+
+    Column() {
     if (this.toolId === 'roster') {
       RosterScreen({
         onClose: () => {
@@ -131,27 +152,36 @@ export struct ToolScreen {
           this.onClose();
         }
       })
+    } else if (this.toolId === 'usage') {
+      UsageScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
     } else {
-      Column() {
-        PageHeader({
-          title: this.tool() !== undefined ? this.tool()!.name : '工具',
-          onBack: () => {
-            this.onClose();
-          }
-        })
-
-        Scroll() {
+      PageHeader({
+      progress: this.headerFade,
+        title: this.tool() !== undefined ? this.tool()!.name : '工具',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        }
+      }) {
+        Column() {
+        Scroll(this.scroller) {
           Column() {
             Column() {
-              Text(this.tool() !== undefined ? this.tool()!.glyph : '')
-                .fontSize(26)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL)
-                .width(64)
-                .height(64)
-                .textAlign(TextAlign.Center)
-                .backgroundColor(Tokens.tint(this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL, 0.12))
-                .borderRadius(20)
+              Stack({ alignContent: Alignment.Center }) {
+                SymbolGlyph(this.tool() !== undefined ? this.tool()!.symbol : $r('sys.symbol.info_circle'))
+                  .fontSize(30)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor([this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL])
+                  .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+              }
+              .width(64)
+              .height(64)
+              .backgroundColor(Tokens.tint(this.tool() !== undefined ? this.tool()!.accent : Tokens.MIST_TEAL, 0.12))
+              .borderRadius(20)
 
               Text(this.tool() !== undefined ? this.tool()!.subtitle : '')
                 .fontSize(Tokens.F_LABEL)
@@ -195,19 +225,41 @@ export struct ToolScreen {
             .width('100%')
             .padding(16)
             .backgroundColor(Tokens.CARD)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
             .borderRadius(Tokens.RADIUS_CARD)
           }
           .width('100%')
           .constraintSize({ maxWidth: 720 })
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+          .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth), bottom: Tokens.GAP_XL })
         }
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
     }
+    }
+    .width('100%')
+    .height('100%')
+    .constraintSize({ maxWidth: Breakpoints.toolContentMaxWidth(this.layoutWidth) })
+    .padding({ top: this.topInset })
+    }
+    .width('100%')
+    .height('100%')
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      const next: number = Number(newArea.width);
+      if (Math.abs(next - this.layoutWidth) > 1) {
+        this.layoutWidth = next;
+      }
+    })
   }
 }

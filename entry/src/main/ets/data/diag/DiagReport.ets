@@ -1,4 +1,4 @@
-import { Blob } from '../sync/JsonBlob';
+﻿import { Blob } from '../sync/JsonBlob';
 import { DiagCheck, DiagStatus, ServiceHealthRow } from './DiagModels';
 
 /** 上报节流（同指纹 10 分钟一次）。 */

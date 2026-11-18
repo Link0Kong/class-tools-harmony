@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { HomeTools, HomeToolsToggleResult } from '../main/ets/data/home/HomeTools';
 import { NickLogic } from '../main/ets/features/home/NickLogic';
 import { HomeDigest, HomeCardItem } from '../main/ets/features/home/HomeDigest';

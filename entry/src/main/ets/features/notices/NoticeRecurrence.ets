@@ -1,5 +1,6 @@
-import { NoticeEntry } from '../../data/notices/NoticesRepository';
+﻿import { NoticeEntry } from '../../data/notices/NoticesRepository';
 import { NoticeGroup, NoticeOccurrence, NoticeRecurrence } from '../../data/notices/NoticeModels';
+import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 
 /** 通知分区（对齐网页：主列表 / 资料 / 已过期）。 */
 export enum NoticeSection {
@@ -61,6 +62,140 @@ export class NoticeRecurrenceLogic {
 
   static isLongterm(group: NoticeGroup | undefined): boolean {
     return NoticeRecurrenceLogic.effectiveRecurrence(group) !== undefined;
+  }
+
+  /** 真实截止：优先最后一次延期（extensions 尾项），其次 deadline。 */
+  static deadlineTs(group: NoticeGroup | undefined): number {
+    if (group === undefined) {
+      return 0;
+    }
+    if (group.extensions.length > 0) {
+      const last: string = group.extensions[group.extensions.length - 1].deadline;
+      const ts: number = NoticeRecurrenceLogic.parseTs(last);
+      if (ts > 0) {
+        return ts;
+      }
+    }
+    return NoticeRecurrenceLogic.parseTs(group.deadline);
+  }
+
+  static signupStartTs(group: NoticeGroup | undefined): number {
+    return group === undefined ? 0 : NoticeRecurrenceLogic.parseTs(group.signupStart);
+  }
+
+  static signupEndTs(group: NoticeGroup | undefined): number {
+    return group === undefined ? 0 : NoticeRecurrenceLogic.parseTs(group.signupEnd);
+  }
+
+  static eventTs(group: NoticeGroup | undefined): number {
+    return group === undefined ? 0 : NoticeRecurrenceLogic.parseTs(group.eventAt);
+  }
+
+  static expireTs(group: NoticeGroup | undefined): number {
+    return group === undefined ? 0 : NoticeRecurrenceLogic.parseTs(group.expireAt);
+  }
+
+  /** 消息时间解析：`MM-DD HH:MM`（按离 now 最近年份推断）等。 */
+  static parseMsgTime(raw: string, nowMillis: number): number {
+    const text: string = raw.trim();
+    if (text.length === 0) {
+      return 0;
+    }
+    const direct: number = NoticeRecurrenceLogic.parseTs(text);
+    if (direct > 0) {
+      return direct;
+    }
+    const mdhm: RegExpMatchArray | null = text.match(
+      new RegExp('^(\\d{1,2})-(\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2}))?$'));
+    if (mdhm === null) {
+      return 0;
+    }
+    const year: number = new Date(nowMillis).getFullYear();
+    const build = (yy: number): number => {
+      return new Date(yy, Number(mdhm[1]) - 1, Number(mdhm[2]), Number(mdhm[3]), Number(mdhm[4]),
+        mdhm[5] !== undefined ? Number(mdhm[5]) : 0).getTime();
+    };
+    let ts: number = build(year);
+    const half: number = 183 * 24 * 60 * 60 * 1000;
+    if (ts - nowMillis > half) {
+      ts = build(year - 1);
+    } else if (nowMillis - ts > half) {
+      ts = build(year + 1);
+    }
+    return Number.isFinite(ts) ? ts : 0;
+  }
+
+  /** 发布时间：publishedAt 优先，旧数据回退组内最新 items[].time / updatedAt。 */
+  static publishedTs(group: NoticeGroup | undefined, nowMillis: number): number {
+    if (group === undefined) {
+      return 0;
+    }
+    const direct: number = NoticeRecurrenceLogic.parseTs(group.publishedAt);
+    if (direct > 0) {
+      return direct;
+    }
+    let best: number = NoticeRecurrenceLogic.parseMsgTime(group.updatedAt, nowMillis);
+    for (let i = 0; i < group.items.length; i++) {
+      const item: Blob = group.items[i];
+      const t: number = NoticeRecurrenceLogic.parseMsgTime(
+        JsonBlob.asString(JsonBlob.get(item, 'time'), ''), nowMillis);
+      if (t > best) {
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  static hasSignup(group: NoticeGroup | undefined): boolean {
+    if (group === undefined) {
+      return false;
+    }
+    return NoticeRecurrenceLogic.signupStartTs(group) > 0
+      || NoticeRecurrenceLogic.signupEndTs(group) > 0
+      || group.signupWindows.length > 0;
+  }
+
+  /** 是否有真实时间锚点（截止/活动/报名）；用于区分主列表与资料兜底。 */
+  static hasTimeAnchor(group: NoticeGroup | undefined): boolean {
+    if (group === undefined) {
+      return false;
+    }
+    return NoticeRecurrenceLogic.deadlineTs(group) > 0
+      || NoticeRecurrenceLogic.eventTs(group) > 0
+      || NoticeRecurrenceLogic.hasSignup(group);
+  }
+
+  /** 长期安排是否已结束（now 越过 until，或下一次已越过 until）。 */
+  static isRecurEnded(group: NoticeGroup, nowMillis: number): boolean {
+    const until: number = NoticeRecurrenceLogic.recurUntil(group);
+    if (until <= 0) {
+      return false;
+    }
+    if (nowMillis > until) {
+      return true;
+    }
+    const next: number = NoticeRecurrenceLogic.recurNext(group, nowMillis);
+    return next > 0 && next > until;
+  }
+
+  /**
+   * 长期区子类型：'' = 普通通知；'recur' = 进行中的长期安排；
+   * 'info' = 资料/无时间（既无时间锚点也无发布时间，仅兜底）。
+   */
+  static longtermSubtypeOf(group: NoticeGroup | undefined, nowMillis: number): string {
+    if (group === undefined) {
+      return '';
+    }
+    if (NoticeRecurrenceLogic.isLongterm(group)) {
+      return NoticeRecurrenceLogic.isRecurEnded(group, nowMillis) ? '' : 'recur';
+    }
+    if (NoticeRecurrenceLogic.hasTimeAnchor(group)) {
+      return '';
+    }
+    if (NoticeRecurrenceLogic.publishedTs(group, nowMillis) > 0) {
+      return '';
+    }
+    return 'info';
   }
 
   /** `until`：`YYYY-MM-DD` 含当天；其它按时间解析；空/非法 → 0。 */
@@ -232,26 +367,36 @@ export class NoticeRecurrenceLogic {
     return '下次 ' + NoticeRecurrenceLogic.occurrenceLabel(next, nowMillis).substring(3);
   }
 
-  /** 通知分区。 */
+  /** 通知分区（与网页 longtermSubtypeOf + statusOf.expired 同口径）。 */
   static sectionOf(entry: NoticeEntry, nowMillis: number): NoticeSection {
     const group: NoticeGroup | undefined = entry.group;
-    if (group !== undefined) {
-      if (NoticeRecurrenceLogic.isLongterm(group)) {
-        const until: number = NoticeRecurrenceLogic.recurUntil(group);
-        if (until > 0 && nowMillis > until) {
-          return NoticeSection.EXPIRED;
-        }
-        return NoticeSection.PRIMARY;
-      }
-      const anchors: number[] = NoticeRecurrenceLogic.timeAnchors(group);
-      if (anchors.length === 0) {
-        return NoticeSection.MATERIAL;
-      }
-      let latest: number = 0;
-      for (let i = 0; i < anchors.length; i++) {
-        latest = Math.max(latest, anchors[i]);
-      }
-      return latest > 0 && latest < nowMillis ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
+    if (group === undefined) {
+      return NoticeSection.MATERIAL;
+    }
+    if (NoticeRecurrenceLogic.isLongterm(group)) {
+      return NoticeRecurrenceLogic.isRecurEnded(group, nowMillis) ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
+    }
+    // AI 判定已过期（长期安排除外）
+    if (group.expired) {
+      return group.alert ? NoticeSection.PRIMARY : NoticeSection.EXPIRED;
+    }
+    const deadline: number = NoticeRecurrenceLogic.deadlineTs(group);
+    if (deadline > 0) {
+      return nowMillis > deadline && !group.alert ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
+    }
+    const event: number = NoticeRecurrenceLogic.eventTs(group);
+    if (event > 0) {
+      const end: number = Math.max(event, NoticeRecurrenceLogic.expireTs(group));
+      return nowMillis > end ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
+    }
+    const start: number = NoticeRecurrenceLogic.signupStartTs(group);
+    const signupEnd: number = NoticeRecurrenceLogic.signupEndTs(group);
+    if (start > 0 || signupEnd > 0) {
+      const signupStop: number = signupEnd > 0 ? signupEnd : start;
+      return nowMillis > signupStop ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
+    }
+    if (NoticeRecurrenceLogic.publishedTs(group, nowMillis) > 0) {
+      return NoticeSection.PRIMARY;
     }
     return NoticeSection.MATERIAL;
   }

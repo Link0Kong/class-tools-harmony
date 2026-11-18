@@ -1,4 +1,4 @@
-import { AppGlobal } from '../../app/AppGlobal';
+﻿import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksRefreshResult, MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -7,17 +7,24 @@ import { NoticeEntry, NoticesRepository, NoticesResult } from '../../data/notice
 import { NoticeCard, NoticeCards, NoticeComposeChip, NoticeStats } from '../../features/notices/NoticeCards';
 import { NoticeSection } from '../../features/notices/NoticeRecurrence';
 import { NoticeStatus } from '../../features/notices/NoticeStatus';
+import { NoticeBodyParser } from '../../data/notices/NoticeParser';
 import { HomeNtBadge } from '../../data/home/HomeNtBadge';
 import { HidePrefs } from '../../data/home/HidePrefs';
 import { Blob } from '../../data/sync/JsonBlob';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Motion } from '../theme/Motion';
+import { Tokens } from '../theme/Tokens';
+import { PageHeader } from '../components/PageHeader';
 
-const NT_BG: string = '#F4F0E6';
-const NT_CARD: string = '#FFFCF6';
-const NT_CARD_SOFT: string = '#F8F3E9';
-const NT_BRIEF: string = '#F3F7F1';
-const NT_LINE: string = '#E7DED0';
-const NT_LINE_STRONG: string = '#DCD1BF';
+const NT_BG: string = '#00FFFFFF';
+const NT_CARD: string = '#CCFFFFFF';
+const NT_CARD_SOFT: string = '#B8FFFFFF';
+const NT_BRIEF: string = '#D9F3F7F1';
+const NT_LINE: string = '#E8EDEE';
+const NT_LINE_STRONG: string = '#D9E2DE';
 const NT_INK: string = '#303A35';
 const NT_INK_2: string = '#5C6860';
 const NT_INK_3: string = '#667166';
@@ -65,6 +72,8 @@ export struct NoticeScreen {
   @State private expandedKeys: string[] = [];
   @State private loading: boolean = true;
   @State private syncing: boolean = false;
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
   @State private errorMsg: string = '';
   @State private notice: string = '';
   @State private now: number = Date.now();
@@ -75,18 +84,26 @@ export struct NoticeScreen {
   @State private rawTitle: string = '';
   @State private rawBody: string = '';
   @State private rawBlocks: NoticeItemMeta[] = [];
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
+  private reloadTimer: number = -1;
 
   aboutToAppear(): void {
     HomeNtBadge.markOpened(Services.currentSid);
+    // 先回放本机缓存（冷启动/弱网秒开），再后台刷新
+    Services.notices.hydrate().then(() => {
+      const cached: NoticeEntry[] = Services.notices.local();
+      if (cached.length > 0) {
+        this.applyEntries(cached, true);
+        this.loading = false;
+        setTimeout(() => {
+          this.entered = true;
+        }, 40);
+      }
+    });
     this.reload(false);
   }
 
-  private async reload(force: boolean): Promise<void> {
-    this.loading = this.cards.length === 0;
-    this.syncing = true;
-    this.errorMsg = '';
-    const result: NoticesResult = await Services.notices.load(force);
-    const marksResult: MarksRefreshResult = await Services.marks.refresh(false);
+  private applyEntries(entries: NoticeEntry[], ok: boolean): void {
     this.now = Date.now();
     const hide = HidePrefs.read(Services.userdata.currentSections());
     const hidden: string[] = [];
@@ -94,7 +111,7 @@ export struct NoticeScreen {
       hidden.push(id);
     });
     this.hiddenIds = hidden;
-    const built: NoticeCard[] = NoticeCards.build(result.entries, this.now);
+    const built: NoticeCard[] = NoticeCards.build(entries, this.now);
     for (let i = 0; i < built.length; i++) {
       const card: NoticeCard = built[i];
       const entryId: string = card.entry !== undefined ? card.entry.row.id : '';
@@ -102,7 +119,6 @@ export struct NoticeScreen {
         ? card.key.substring(0, card.key.indexOf('@occ:')) : card.key;
       card.hiddenLocal = hidden.indexOf(entryId) >= 0 || hidden.indexOf(groupId) >= 0;
     }
-    this.cards = built;
     this.dataVersion = this.dataVersion + 1;
     this.categories = NoticeCards.categories(built);
     if (this.cat !== '全部' && this.categories.indexOf(this.cat) < 0) {
@@ -117,7 +133,43 @@ export struct NoticeScreen {
       }
     }
     this.doneKeys = done;
+    // 已处理置后需要 doneKeys 参与排序，重建一次得到最终主列表顺序
+    const sorted: NoticeCard[] = NoticeCards.build(entries, this.now, done);
+    for (let i = 0; i < sorted.length; i++) {
+      const card: NoticeCard = sorted[i];
+      const entryId: string = card.entry !== undefined ? card.entry.row.id : '';
+      const groupId: string = card.key.indexOf('@occ:') > 0
+        ? card.key.substring(0, card.key.indexOf('@occ:')) : card.key;
+      card.hiddenLocal = hidden.indexOf(entryId) >= 0 || hidden.indexOf(groupId) >= 0;
+    }
+    this.cards = sorted;
     this.refreshDigest();
+    if (!ok) {
+      this.errorMsg = this.errorMsg.length > 0 ? this.errorMsg : '通知暂时无法刷新';
+    }
+  }
+
+  private async reload(force: boolean): Promise<void> {
+    this.loading = this.cards.length === 0;
+    this.syncing = true;
+    this.errorMsg = '';
+    if (this.reloadTimer > 0) {
+      clearTimeout(this.reloadTimer);
+    }
+    // 网络挂起时兜底退出加载态，避免通知页一直转圈
+    this.reloadTimer = setTimeout(() => {
+      if (this.loading || this.syncing) {
+        this.loading = false;
+        this.syncing = false;
+        this.errorMsg = '通知加载超时，请点击重试';
+      }
+    }, 8000);
+    try {
+    // 已处理状态与通知并行拉取
+    const marksPromise = Services.marks.refresh(false);
+    const result: NoticesResult = await Services.notices.load(force);
+    const marksResult: MarksRefreshResult = await marksPromise;
+    this.applyEntries(result.entries, result.ok);
     if (!result.ok) {
       this.errorMsg = result.message;
     } else if (marksResult.error !== undefined) {
@@ -125,11 +177,27 @@ export struct NoticeScreen {
     }
     this.loading = false;
     this.syncing = false;
+    } catch (e) {
+      this.loading = false;
+      this.syncing = false;
+      this.errorMsg = this.cards.length > 0 ? '刷新失败，正在显示本机缓存' : '通知加载失败，请稍后重试';
+    } finally {
+      if (this.reloadTimer > 0) {
+        clearTimeout(this.reloadTimer);
+        this.reloadTimer = -1;
+      }
+    }
     if (!this.entered) {
       setTimeout(() => {
         this.entered = true;
       }, 40);
     }
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.reload(true);
+    this.refreshing = false;
   }
 
   private refreshDigest(): void {
@@ -199,7 +267,9 @@ export struct NoticeScreen {
           out.push(card);
         }
       } else if (card.section === NoticeSection.PRIMARY) {
-        out.push(card);
+        if (!card.definition) {
+          out.push(card);
+        }
       }
     }
     if (mode === 'latest') {
@@ -233,8 +303,7 @@ export struct NoticeScreen {
     }
     for (let i = 0; i < this.cards.length; i++) {
       const card: NoticeCard = this.cards[i];
-      if (!card.hiddenLocal && this.matchesCat(card) && card.section === NoticeSection.EXPIRED
-        && !card.definition) {
+      if (!card.hiddenLocal && this.matchesCat(card) && card.section === NoticeSection.EXPIRED) {
         out.push(card);
       }
     }
@@ -354,16 +423,36 @@ export struct NoticeScreen {
 
   private openRaw(card: NoticeCard): void {
     this.rawTitle = card.rawTitle.length > 0 ? card.rawTitle : card.title;
-    const blocks: NoticeItemMeta[] = [];
-    for (let i = 0; i < card.quotes.length; i++) {
-      blocks.push(card.quotes[i]);
+    let blocks: NoticeItemMeta[] = [];
+    if (card.entry !== undefined) {
+      for (let i = 0; i < card.entry.items.length && blocks.length < 8; i++) {
+        const item: NoticeItemMeta = card.entry.items[i];
+        if (item.kind !== 'text' && item.kind !== 'follow') {
+          continue;
+        }
+        const meta: NoticeItemMeta = new NoticeItemMeta();
+        meta.kind = item.kind;
+        meta.label = item.label;
+        meta.fromName = item.fromName;
+        meta.fromRole = item.fromRole;
+        meta.timeText = NoticeStatus.fmtDatesCn(item.timeText, Date.now());
+        meta.text = NoticeStatus.fmtDatesCn(item.text, Date.now());
+        meta.isFollow = item.isFollow;
+        blocks.push(meta);
+      }
     }
-    if (blocks.length === 0 && card.entry !== undefined && card.entry.row.body.trim().length > 0) {
-      this.rawBody = card.entry.row.body.trim();
+    if (blocks.length === 0) {
+      for (let i = 0; i < card.quotes.length; i++) {
+        blocks.push(card.quotes[i]);
+      }
+    }
+    this.rawBlocks = blocks;
+    if (blocks.length === 0 && card.entry !== undefined) {
+      const body: string = card.entry.row.body.trim();
+      this.rawBody = NoticeBodyParser.isAuto(body) ? '' : body;
     } else {
       this.rawBody = '';
     }
-    this.rawBlocks = blocks;
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.rawOpen = true;
     });
@@ -533,7 +622,7 @@ export struct NoticeScreen {
       .backgroundColor((this.filter === value && this.cardKey.length === 0) ? NT_CY_DEEP : NT_CARD)
       .border({ width: 1, color: (this.filter === value && this.cardKey.length === 0) ? NT_CY_DEEP : NT_LINE })
       .borderRadius(999)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
         this.pickFilter(value);
@@ -548,7 +637,7 @@ export struct NoticeScreen {
       .backgroundColor((this.filter === 'hidden' && this.cardKey.length === 0) ? NT_CY_DEEP : NT_CARD)
       .border({ width: 1, color: (this.filter === 'hidden' && this.cardKey.length === 0) ? NT_CY_DEEP : NT_LINE })
       .borderRadius(999)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
         this.pickFilter('hidden');
@@ -625,9 +714,14 @@ export struct NoticeScreen {
         .fontColor(NT_INK_3)
       Blank()
       if (foldable) {
-        Text(open ? '▴ 收起' : '▾ 展开')
-          .fontSize(11)
-          .fontColor(NT_CY_INK)
+        Row({ space: 2 }) {
+          Text(open ? '收起' : '展开')
+            .fontSize(11)
+            .fontColor(NT_CY_INK)
+          SymbolGlyph(open ? $r('sys.symbol.arrow_up') : $r('sys.symbol.arrow_down'))
+            .fontSize(10)
+            .fontColor([NT_CY_INK])
+        }
       }
     }
     .width('100%')
@@ -743,7 +837,7 @@ export struct NoticeScreen {
                 .margin({ left: 8 })
             }
             .width('100%')
-            .padding({ top: 3, bottom: 3 })
+            .padding({ top: 4, bottom: 4 })
           }, (af: NoticeArchiveFile, afIndex: number) => cardKey + '_af' + index + '_' + afIndex + '_' + af.name)
         }
         .width('100%')
@@ -904,7 +998,7 @@ export struct NoticeScreen {
           .fontColor(this.statusFg(card.statusCls))
           .backgroundColor(this.statusBg(card.statusCls))
           .borderRadius(999)
-          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .maxLines(1)
           .margin({ right: 6, bottom: 2 })
         if (card.hiddenLocal) {
@@ -946,12 +1040,12 @@ export struct NoticeScreen {
               Text(card.source)
                 .fontSize(10)
                 .fontColor(NT_INK_2)
-                .margin({ left: 5 })
+                .margin({ left: 4 })
             }
-            .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
             .border({ width: 1, color: NT_LINE })
             .borderRadius(999)
-            .margin({ right: 8, top: 3 })
+            .margin({ right: 8, top: 4 })
           }
           if (card.senderBadge.length > 0) {
             Text(card.senderBadge)
@@ -959,14 +1053,14 @@ export struct NoticeScreen {
               .fontColor(NT_BL_INK)
               .backgroundColor(NT_BL_TINT)
               .borderRadius(5)
-              .padding({ left: 5, right: 5, top: 1, bottom: 1 })
-              .margin({ right: 6, top: 3 })
+              .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+              .margin({ right: 6, top: 4 })
           }
           if (card.senderName.length > 0) {
             Text(card.senderName)
               .fontSize(10)
               .fontColor(NT_INK_3)
-              .margin({ top: 3 })
+              .margin({ top: 4 })
           }
         }
         .width('100%')
@@ -980,7 +1074,7 @@ export struct NoticeScreen {
             .fontColor(NT_BL_INK)
         }
         .width('100%')
-        .padding({ left: 8, right: 8, top: 5, bottom: 5 })
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
         .backgroundColor(NT_BL_TINT)
         .borderRadius(7)
         .margin({ top: 8 })
@@ -995,7 +1089,7 @@ export struct NoticeScreen {
               .fontColor(NT_CY_INK)
               .backgroundColor(NT_CY_TINT)
               .borderRadius(4)
-              .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+              .padding({ left: 4, right: 4, top: 2, bottom: 2 })
             Text('摘要')
               .fontSize(10)
               .fontWeight(FontWeight.Medium)
@@ -1018,7 +1112,7 @@ export struct NoticeScreen {
                   .backgroundColor(NT_CY_TINT)
                   .borderRadius(5)
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                  .margin({ right: 6, bottom: 5 })
+                  .margin({ right: 6, bottom: 4 })
               }, (point: string, pointIndex: number) => card.key + '_pt' + pointIndex)
             }
             .width('100%')
@@ -1073,7 +1167,7 @@ export struct NoticeScreen {
                       .fontColor(NT_SD_INK)
                       .backgroundColor(NT_SD_TINT)
                       .borderRadius(4)
-                      .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                      .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                     if (quote.fromName.length > 0) {
                       Text(quote.fromName)
                         .fontSize(9)
@@ -1119,7 +1213,7 @@ export struct NoticeScreen {
                 .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                 .border({ width: 1, color: NT_LINE })
                 .borderRadius(999)
-                .margin({ right: 6, bottom: 5 })
+                .margin({ right: 6, bottom: 4 })
               }, (chip: NoticeComposeChip, chipIndex: number) => card.key + '_cp' + chipIndex)
             }
             .width('100%')
@@ -1147,7 +1241,10 @@ export struct NoticeScreen {
           Text('恢复')
             .fontSize(11)
             .fontColor(NT_CY_INK)
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .backgroundColor(NT_CARD)
+            .border({ width: 1, color: NT_LINE })
+            .borderRadius(999)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .onClick(() => {
               this.restoreCard(card);
             })
@@ -1155,17 +1252,33 @@ export struct NoticeScreen {
           Text('隐藏')
             .fontSize(11)
             .fontColor(NT_INK_3)
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .backgroundColor(NT_CARD)
+            .border({ width: 1, color: NT_LINE })
+            .borderRadius(999)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .onClick(() => {
               this.hideCard(card);
             })
         }
+        Text('分享')
+          .fontSize(11)
+          .fontColor(NT_INK_2)
+          .backgroundColor(NT_CARD)
+          .border({ width: 1, color: NT_LINE })
+          .borderRadius(999)
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.shareCard(card);
+          })
         Blank()
         if (card.hasDetail) {
           Text(this.isExpanded(card.key) ? '收起' : '展开')
             .fontSize(11)
             .fontColor(NT_CY_INK)
-            .padding({ left: 8, right: 4, top: 6, bottom: 6 })
+            .backgroundColor(NT_CARD)
+            .border({ width: 1, color: NT_LINE })
+            .borderRadius(999)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .onClick(() => {
               this.toggleExpand(card.key);
             })
@@ -1175,7 +1288,7 @@ export struct NoticeScreen {
       .margin({ top: 8 })
     }
     .width('100%')
-    .padding(13)
+    .padding(12)
     .backgroundColor(this.isDone(card.key) || card.expired ? NT_CARD_SOFT : NT_CARD)
     .borderRadius(14)
     .border({ width: 1, color: card.occurrence ? '#BFD3E3' : NT_LINE })
@@ -1185,11 +1298,37 @@ export struct NoticeScreen {
     .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
   }
 
+  private notify(message: string): void {
+    this.getUIContext().getPromptAction().showToast({ message: message });
+  }
+
+  /** 通知统一生成分享卡图片，再走系统图片分享。 */
+  private shareCard(card: NoticeCard): void {
+    this.shareSpec = ShareSpecs.notice(card, Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.notify(result.message);
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
   @Builder
   emptyState(title: string, text: string) {
     Column({ space: 6 }) {
-      Text('📣')
-        .fontSize(26)
+      SymbolGlyph($r('sys.symbol.bell'))
+        .fontSize(30)
+        .fontWeight(FontWeight.Medium)
+        .fontColor([NT_INK_3])
+        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
       Text(title)
         .fontSize(14)
         .fontColor(NT_INK)
@@ -1199,8 +1338,9 @@ export struct NoticeScreen {
         .textAlign(TextAlign.Center)
     }
     .width('100%')
-    .padding({ top: 28, bottom: 28 })
+    .padding({ top: 32, bottom: 32 })
     .backgroundColor(NT_CARD)
+    .border({ width: 0.5, color: '#59FFFFFF' })
     .borderRadius(14)
     .border({ width: 1, color: NT_LINE })
   }
@@ -1217,8 +1357,9 @@ export struct NoticeScreen {
           .fontSize(9)
           .fontColor(NT_CY_INK)
           .backgroundColor(NT_CARD)
+          .border({ width: 0.5, color: '#59FFFFFF' })
           .borderRadius(999)
-          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
           .margin({ left: 8 })
         Blank()
         Text(NoticeStatus.pad2(new Date(this.now).getMonth() + 1) + '-' + NoticeStatus.pad2(new Date(this.now).getDate()))
@@ -1253,7 +1394,7 @@ export struct NoticeScreen {
                 .margin({ left: 8 })
             }
             .width('100%')
-            .padding({ top: 7, bottom: 7 })
+            .padding({ top: 8, bottom: 8 })
             .border({ width: { top: index === 0 ? 0 : 1 }, color: NT_LINE })
             .onClick(() => {
               this.filter = 'active';
@@ -1271,15 +1412,6 @@ export struct NoticeScreen {
           .fontSize(9)
           .fontColor(NT_INK_2)
           .layoutWeight(1)
-        Text(this.syncing ? '同步中…' : '刷新')
-          .fontSize(10)
-          .fontColor(NT_CY_INK)
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .onClick(() => {
-            if (!this.syncing) {
-              this.reload(true);
-            }
-          })
       }
       .width('100%')
       .margin({ top: 6 })
@@ -1325,48 +1457,28 @@ export struct NoticeScreen {
       .margin({ top: 4 })
     }
     .width('100%')
-    .padding(13)
+    .padding(12)
     .backgroundColor(NT_CARD)
+    .border({ width: 0.5, color: '#59FFFFFF' })
     .borderRadius(14)
     .border({ width: 1, color: NT_LINE })
     .margin({ bottom: 10 })
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      Column() {
-        Row() {
-          Text('‹')
-            .fontSize(28)
-            .fontColor(NT_INK)
-            .width(42)
-            .height(44)
-            .textAlign(TextAlign.Center)
-            .onClick(() => {
-              this.onClose();
-            })
-          Text('通知')
-            .fontSize(18)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(NT_INK)
-            .layoutWeight(1)
-          Text(this.syncing ? '同步中' : '刷新')
-            .fontSize(12)
-            .fontColor(this.syncing ? NT_INK_3 : NT_CY_INK)
-            .padding({ left: 10, right: 12 })
-            .height(44)
-            .onClick(() => {
-              if (!this.syncing) {
-                this.reload(true);
-              }
-            })
+      PageHeader({
+      progress: this.headerFade,
+        title: '通知',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
         }
-        .width('100%')
-        .height(56)
-        .padding({ left: 2, right: 4 })
-        .backgroundColor(NT_BG)
-
-        if (this.loading) {
+      }) {
+        Column() {
+          if (this.loading) {
           Column({ space: 10 }) {
             LoadingProgress().width(30).height(30).color(NT_CY)
             Text('正在读取通知…')
@@ -1377,7 +1489,8 @@ export struct NoticeScreen {
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
         } else {
-          Scroll() {
+          Refresh({ refreshing: $$this.refreshing }) {
+          Scroll(this.scroller) {
             Column() {
               this.briefCard()
 
@@ -1548,16 +1661,29 @@ export struct NoticeScreen {
             .width('100%')
             .padding({ left: 14, right: 14, top: 4, bottom: 8 })
           }
-          .layoutWeight(1)
+          .width('100%')
+          .height('100%')
           .align(Alignment.Top)
           .scrollBar(BarState.Off)
+          .onDidScroll((offset: number) => {
+            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+            if (Math.abs(next - this.headerFade) > 0.03) {
+              this.headerFade = next;
+            }
+          })
           .edgeEffect(EdgeEffect.Spring)
           .clip(true)
+          }
+          .layoutWeight(1)
+          .onRefreshing(() => {
+            this.pullRefresh();
+          })
         }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(NT_BG)
 
       if (this.rawOpen) {
         Column() {
@@ -1597,7 +1723,7 @@ export struct NoticeScreen {
                         .fontColor(NT_SD_INK)
                         .backgroundColor(NT_SD_TINT)
                         .borderRadius(4)
-                        .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                        .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                       if (block.fromName.length > 0) {
                         Text(block.fromName)
                           .fontSize(9)
@@ -1630,12 +1756,14 @@ export struct NoticeScreen {
           }
           .width('100%')
           .height('68%')
-          .backgroundColor(NT_CARD)
-          .borderRadius({ topLeft: 18, topRight: 18 })
+          .backgroundColor(Tokens.SHEET)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          .border({ width: 0.5, color: '#59FFFFFF' })
+          .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(Tokens.SCRIM)
         .justifyContent(FlexAlign.End)
         .onClick(() => {
           this.closeRaw();

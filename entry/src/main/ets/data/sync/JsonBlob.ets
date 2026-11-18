@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JSON 树工具（ArkTS 没有 kotlinx.serialization 的 JsonElement，用 Record<string, JsonValue> 表达）。
  *
  * 约定：

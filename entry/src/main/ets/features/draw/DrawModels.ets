@@ -1,4 +1,4 @@
-/** 结果排序模式（wire 值必须与 userdata.draw.sort 对齐：draw|num|desc|rand）。 */
+﻿/** 结果排序模式（wire 值必须与 userdata.draw.sort 对齐：draw|num|desc|rand）。 */
 export enum DrawSortMode {
   DRAW_ORDER = 'draw',
   ASCENDING = 'num',

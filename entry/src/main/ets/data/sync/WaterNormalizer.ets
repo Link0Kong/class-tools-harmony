@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from './JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from './JsonBlob';
 
 /**
  * `water` section 归一化（契约：`_water_contract.md` §7.1 + `USERDATA_V6.md` §1.3）。

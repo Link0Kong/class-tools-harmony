@@ -1,4 +1,4 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
+﻿import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const DOMAIN: number = 0x1001;
 const PREFIX: string = 'ClassTools';

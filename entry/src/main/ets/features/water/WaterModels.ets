@@ -1,4 +1,4 @@
-/** 计费规则常量（网页/小程序同值；页面唯一来源）。 */
+﻿/** 计费规则常量（网页/小程序同值；页面唯一来源）。 */
 export class WaterRules {
   /** 电 0.58 元/度。 */
   static readonly ELEC_PRICE: number = 0.58;

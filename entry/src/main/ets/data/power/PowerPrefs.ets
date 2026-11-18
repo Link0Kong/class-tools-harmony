@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 import { PowerRooms, PowerStats } from './PowerModels';
 
 /** `userdata.power` 快照（v6 顶层键 `power`，整段 LWW）。 */

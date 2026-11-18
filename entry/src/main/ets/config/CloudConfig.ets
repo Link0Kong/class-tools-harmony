@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 云端配置（与网页/小程序/安卓共用同一套 CloudBase 契约）。
  *
  * - 后端只有一种形态：CloudBase PostgreSQL + PostgREST 风格 REST 网关。

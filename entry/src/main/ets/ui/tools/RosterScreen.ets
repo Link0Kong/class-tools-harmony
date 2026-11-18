@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember, MemberEntry } from '../../data/member/ClassMember';
 import { MemberCategory, MemberCategoryBuilder, MemberCategoryCounts } from '../../data/member/MemberCategories';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
@@ -21,14 +21,18 @@ export struct RosterScreen {
   @State private leagueMembers: LeagueMember[] = [];
   @State private query: string = '';
   @State private loading: boolean = true;
+  @State private refreshing: boolean = false;
   @State private errorMsg: string = '';
+  private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.reload(false);
   }
 
-  private async reload(force: boolean): Promise<void> {
-    this.loading = true;
+  private async reload(force: boolean, quiet: boolean = false): Promise<void> {
+    if (!quiet) {
+      this.loading = true;
+    }
     this.errorMsg = '';
     const membersResult: ClassMembersResult = await Services.members.load(force);
     const leagueResult: ClassLeagueResult = await Services.league.load(force);
@@ -71,7 +75,7 @@ export struct RosterScreen {
         .fontColor(this.category === category ? '#E8F2EF' : Tokens.TEXT_TERTIARY)
     }
     .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .backgroundColor(this.category === category ? Tokens.MIST_TEAL : Tokens.CARD)
+    .backgroundColor(this.category === category ? Tokens.MIST_TEAL : Tokens.CONTROL)
     .borderRadius(Tokens.RADIUS_PILL)
     .onClick(() => {
       this.category = category;
@@ -87,7 +91,7 @@ export struct RosterScreen {
         .width(36)
         .height(36)
         .textAlign(TextAlign.Center)
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(10)
 
       Text(entry.name)
@@ -100,7 +104,7 @@ export struct RosterScreen {
         Text(entry.badge)
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.MIST_TEAL)
-          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .backgroundColor(Tokens.TINT_TEAL)
           .borderRadius(Tokens.RADIUS_PILL)
       }
@@ -110,94 +114,115 @@ export struct RosterScreen {
     .padding({ left: 12, right: 12 })
   }
 
+  @State private headerFade: number = 0;
+
   build() {
-    Column() {
-      PageHeader({
-        title: '名单',
-        actionText: this.loading ? '' : '刷新',
-        onBack: () => {
-          this.onClose();
-        },
-        onAction: () => {
-          this.reload(true);
-        }
-      })
-
-      if (this.loading) {
-        Column({ space: 10 }) {
-          LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
-          Text('加载名单…').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_TERTIARY)
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else if (this.errorMsg.length > 0) {
-        Column({ space: 12 }) {
-          Text(this.errorMsg)
-            .fontSize(Tokens.F_BODY)
-            .fontColor(Tokens.TEXT_SECONDARY)
-            .textAlign(TextAlign.Center)
-          Button('重试')
-            .backgroundColor(Tokens.MIST_TEAL)
-            .fontColor('#FFFFFF')
-            .height(40)
-            .borderRadius(Tokens.RADIUS_PILL)
-            .onClick(() => {
-              this.reload(true);
-            })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .padding(Tokens.PAGE_PADDING)
-      } else {
-        Row({ space: 8 }) {
-          ForEach(this.categories(), (category: MemberCategory) => {
-            this.categoryTab(category)
-          }, (category: MemberCategory) => category)
-        }
-        .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
-
-        TextInput({ placeholder: '搜索姓名', text: this.query })
-          .height(40)
-          .margin({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10 })
-          .backgroundColor(Tokens.CARD)
-          .borderRadius(Tokens.RADIUS_INPUT)
-          .fontSize(Tokens.F_LABEL)
-          .onChange((value: string) => {
-            this.query = value;
-          })
-
-        if (this.entries().length === 0) {
-          Column() {
-            Text(this.query.length > 0 ? '没有匹配的姓名' : '暂无数据')
-              .fontSize(Tokens.F_LABEL)
-              .fontColor(Tokens.TEXT_TERTIARY)
+    PageHeader({
+      progress: this.headerFade,
+      title: '名单',
+      scroller: this.scroller,
+      onBack: () => {
+        this.onClose();
+      }
+    }) {
+      Column() {
+        if (this.loading) {
+          Column({ space: 10 }) {
+            LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
+            Text('加载名单…').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_TERTIARY)
           }
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
-        } else {
-          List() {
-            ForEach(this.entries(), (entry: MemberEntry) => {
-              ListItem() {
-                this.memberRow(entry)
-              }
-            }, (entry: MemberEntry) => '' + entry.seat)
+        } else if (this.errorMsg.length > 0) {
+          Column({ space: 12 }) {
+            Text(this.errorMsg)
+              .fontSize(Tokens.F_BODY)
+              .fontColor(Tokens.TEXT_SECONDARY)
+              .textAlign(TextAlign.Center)
+            Button('重试')
+              .backgroundColor(Tokens.MIST_TEAL)
+              .fontColor('#FFFFFF')
+              .height(40)
+              .borderRadius(Tokens.RADIUS_PILL)
+              .onClick(() => {
+                this.reload(true);
+              })
           }
           .width('100%')
           .layoutWeight(1)
-          .margin({ top: 8 })
+          .justifyContent(FlexAlign.Center)
+          .padding(Tokens.PAGE_PADDING)
+        } else {
+          Row({ space: 8 }) {
+            ForEach(this.categories(), (category: MemberCategory) => {
+              this.categoryTab(category)
+            }, (category: MemberCategory) => category)
+          }
+          .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
-          .backgroundColor(Tokens.CARD)
-          .borderRadius(Tokens.RADIUS_CARD)
-          .clip(true)
+
+          TextInput({ placeholder: '搜索姓名', text: this.query })
+            .height(40)
+            .margin({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10 })
+            .backgroundColor(Tokens.CONTROL)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
+            .borderRadius(Tokens.RADIUS_INPUT)
+            .fontSize(Tokens.F_LABEL)
+            .onChange((value: string) => {
+              this.query = value;
+            })
+
+          if (this.entries().length === 0) {
+            Column() {
+              Text(this.query.length > 0 ? '没有匹配的姓名' : '暂无数据')
+                .fontSize(Tokens.F_LABEL)
+                .fontColor(Tokens.TEXT_TERTIARY)
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+          } else {
+            Refresh({ refreshing: $$this.refreshing }) {
+              List({ scroller: this.scroller }) {
+                ForEach(this.entries(), (entry: MemberEntry) => {
+                  ListItem() {
+                    this.memberRow(entry)
+                  }
+                }, (entry: MemberEntry) => '' + entry.seat)
+              }
+              .width('100%')
+              .height('100%')
+              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .backgroundColor(Tokens.CARD)
+              .border({ width: 0.5, color: Tokens.CARD_EDGE })
+              .borderRadius(Tokens.RADIUS_CARD)
+              .clip(true)
+              .scrollBar(BarState.Off)
+              .onDidScroll((offset: number) => {
+                const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+                if (Math.abs(next - this.headerFade) > 0.03) {
+                  this.headerFade = next;
+                }
+              })
+            }
+            .layoutWeight(1)
+            .margin({ top: 8 })
+            .onRefreshing(() => {
+              this.pullRefresh();
+            })
+          }
         }
       }
+      .width('100%')
+      .height('100%')
+      .padding({ top: 0 })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Tokens.BG)
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.reload(true, true);
+    this.refreshing = false;
   }
 }

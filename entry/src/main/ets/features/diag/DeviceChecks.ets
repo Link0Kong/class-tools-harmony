@@ -1,4 +1,4 @@
-import bundleManager from '@ohos.bundle.bundleManager';
+﻿import bundleManager from '@ohos.bundle.bundleManager';
 import deviceInfo from '@ohos.deviceInfo';
 import fs from '@ohos.file.fs';
 import { AppGlobal } from '../../app/AppGlobal';

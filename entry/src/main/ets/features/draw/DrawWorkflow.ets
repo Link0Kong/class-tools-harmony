@@ -1,4 +1,4 @@
-import { DrawConfig, DrawEntry, DrawError, DrawErrorCode, DrawResult, DrawSortMode } from './DrawModels';
+﻿import { DrawConfig, DrawEntry, DrawError, DrawErrorCode, DrawResult, DrawSortMode } from './DrawModels';
 import { DrawEngine, DrawOutcome } from './DrawEngine';
 import { DrawRandom } from './DrawRandom';
 import { DrawValidation, DrawValidator } from './DrawValidator';

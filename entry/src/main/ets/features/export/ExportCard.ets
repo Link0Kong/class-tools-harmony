@@ -1,4 +1,4 @@
-import { DrawEntry, DrawResult, DrawPoolSource, drawSortLabel } from '../draw/DrawModels';
+﻿import { DrawEntry, DrawResult, DrawPoolSource, drawSortLabel } from '../draw/DrawModels';
 import { FitCalc, FitInput, FitRow, fitGradeLabel, fitSexLabel } from '../fit/FitModels';
 import { GroupResult, MemberGroup } from '../group/GroupModels';
 

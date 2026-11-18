@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import {
   DiagAnalysis,
   DiagCheck,
@@ -16,6 +16,10 @@ import { DiagReport, DiagThrottle } from '../../data/diag/DiagReport';
 import { DiagReportStore } from '../../data/diag/DiagReportStore';
 import { Blob } from '../../data/sync/JsonBlob';
 import { DeviceChecks } from '../../features/diag/DeviceChecks';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
 
@@ -38,6 +42,9 @@ export struct DiagScreen {
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
   @State private reportNotice: string = '';
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   aboutToAppear(): void {
     this.refresh();
@@ -100,12 +107,31 @@ export struct DiagScreen {
     return pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   }
 
+  /** 诊断结果 → 分享卡图片 → 系统图片分享。 */
+  private shareReport(): void {
+    this.shareSpec = ShareSpecs.diag(this.summary, this.health, this.analyses, Date.now());
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.getUIContext().getPromptAction().showToast({ message: result.message });
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
+  }
+
   @Builder
   statusChip(status: DiagStatus, label: string) {
     Text(label)
       .fontSize(Tokens.F_CAPTION)
       .fontColor('#FFFFFF')
-      .padding({ left: 8, right: 8, top: 1, bottom: 1 })
+      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
       .backgroundColor(diagStatusColor(status))
       .borderRadius(6)
   }
@@ -139,28 +165,38 @@ export struct DiagScreen {
     .alignItems(HorizontalAlign.Start)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Column() {
       PageHeader({
+      progress: this.headerFade,
         title: '诊断',
-        actionText: this.loading ? '' : '重测',
+        actionText2: this.loading ? '' : '分享',
+        actionText3: this.loading || this.summary.warnCount() + this.summary.failCount()
+          + DiagReport.fromHealth(this.health).length === 0 ? '' : '上报异常',
+        scroller: this.scroller,
         onBack: () => {
           this.onClose();
         },
-        onAction: () => {
-          this.refresh();
+        onAction2: () => {
+          this.shareReport();
+        },
+        onAction3: () => {
+          this.reportAnomalies();
         }
-      })
-
-      if (this.loading) {
+      }) {
         Column() {
-          LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else {
-        Scroll() {
+          if (this.loading) {
+            Column() {
+              LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+          } else {
+            Refresh({ refreshing: $$this.refreshing }) {
+            Scroll(this.scroller) {
           Column() {
             Row() {
               Text('本机检查')
@@ -168,15 +204,6 @@ export struct DiagScreen {
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Tokens.TEXT_PRIMARY)
               Blank()
-              if (this.summary.warnCount() + this.summary.failCount() + DiagReport.fromHealth(this.health).length > 0) {
-                Text('上报异常')
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.SLATE_BLUE)
-                  .padding({ left: 8, right: 8 } )
-                  .onClick(() => {
-                    this.reportAnomalies();
-                  })
-              }
               Text('通过 ' + this.summary.passCount()
                 + ' · 注意 ' + this.summary.warnCount()
                 + ' · 异常 ' + this.summary.failCount())
@@ -200,13 +227,14 @@ export struct DiagScreen {
                   this.statusChip(check.status, diagStatusLabel(check.status))
                 }
                 .width('100%')
-                .padding({ top: 7, bottom: 7 })
+                .padding({ top: 8, bottom: 8 })
               }, (check: DiagCheck) => check.id)
             }
             .width('100%')
             .padding({ left: 14, right: 14 })
             .margin({ top: 8 })
             .backgroundColor(Tokens.CARD)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
             .borderRadius(Tokens.RADIUS_CARD)
 
             if (this.reportNotice.length > 0) {
@@ -268,6 +296,7 @@ export struct DiagScreen {
             .padding({ left: 14, right: 14 })
             .margin({ top: 8 })
             .backgroundColor(Tokens.CARD)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
             .borderRadius(Tokens.RADIUS_CARD)
 
             if (this.analyses.length > 0) {
@@ -287,6 +316,7 @@ export struct DiagScreen {
               .padding({ left: 14, right: 14 })
               .margin({ top: 8 })
               .backgroundColor(Tokens.CARD)
+              .border({ width: 0.5, color: Tokens.CARD_EDGE })
               .borderRadius(Tokens.RADIUS_CARD)
             }
 
@@ -318,20 +348,44 @@ export struct DiagScreen {
               .padding({ left: 14, right: 14 })
               .margin({ top: 8, bottom: 16 })
               .backgroundColor(Tokens.CARD)
+              .border({ width: 0.5, color: Tokens.CARD_EDGE })
               .borderRadius(Tokens.RADIUS_CARD)
             }
           }
           .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
         }
-        .layoutWeight(1)
+        .width('100%')
+        .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
+            }
+            .layoutWeight(1)
+            .onRefreshing(() => {
+              this.pullRefresh();
+            })
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.BG)
+    .backgroundColor(Color.Transparent)
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.refresh();
+    this.refreshing = false;
   }
 }
 

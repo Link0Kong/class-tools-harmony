@@ -1,4 +1,4 @@
-/** 投票上限（对齐 `web/vote/CONTRACT.md` §1）。 */
+﻿/** 投票上限（对齐 `web/vote/CONTRACT.md` §1）。 */
 export class VoteLimits {
   static readonly MAX_TITLE: number = 80;
   static readonly MAX_DESCRIPTION: number = 500;

@@ -1,4 +1,4 @@
-import curves from '@ohos.curves';
+﻿import curves from '@ohos.curves';
 
 /**
  * 全局动效令牌（与网页/安卓同一套节奏）：

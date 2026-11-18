@@ -1,4 +1,4 @@
-import { HttpClient } from '../net/HttpClient';
+﻿import { HttpClient } from '../net/HttpClient';
 import { ApiError, ApiErrorKind, ApiResult } from '../net/ApiResult';
 import { Session } from '../session/Session';
 

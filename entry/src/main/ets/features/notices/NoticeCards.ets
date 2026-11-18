@@ -1,4 +1,4 @@
-import { NoticeEntry } from '../../data/notices/NoticesRepository';
+﻿import { NoticeEntry } from '../../data/notices/NoticesRepository';
 import { NoticeGroup, NoticeItemMeta, NoticeOccurrence, NoticeRecurrence, NoticeSegment } from '../../data/notices/NoticeModels';
 import { NoticeRecurrenceLogic, NoticeSection } from './NoticeRecurrence';
 import { NoticeStatus, NoticeStatusInfo } from './NoticeStatus';
@@ -28,6 +28,8 @@ export class NoticeCard {
   catCls: string = 'qt';
   statusLabel: string = '';
   statusCls: string = 'none';
+  statusKey: string = 'none';
+  actionable: boolean = true;
   expired: boolean = false;
   source: string = '';
   sourceKind: string = 'doc';
@@ -74,7 +76,7 @@ export class NoticeCards {
   private static readonly COMPOSE_LABELS: string[] = ['原文', '图片', '附件', '收集表', '链接', '小程序', '公众号', '聊天记录'];
   private static readonly SEG_ORDER: string[] = ['时间', '地点', '对象', '内容', '报名', '截止', '要求', '联系方式', '补充'];
 
-  static build(entries: NoticeEntry[], nowMillis: number): NoticeCard[] {
+  static build(entries: NoticeEntry[], nowMillis: number, doneKeys: string[] = []): NoticeCard[] {
     const primary: NoticeCard[] = [];
     const material: NoticeCard[] = [];
     const expired: NoticeCard[] = [];
@@ -82,8 +84,7 @@ export class NoticeCards {
       const entry: NoticeEntry = entries[i];
       const group: NoticeGroup | undefined = entry.group;
       if (group !== undefined && NoticeRecurrenceLogic.isLongterm(group)) {
-        const until: number = NoticeRecurrenceLogic.recurUntil(group);
-        const ended: boolean = until > 0 && nowMillis > until;
+        const ended: boolean = NoticeRecurrenceLogic.isRecurEnded(group, nowMillis);
         const occurrence: NoticeOccurrence | undefined = ended ? undefined
           : NoticeRecurrenceLogic.occurrenceOf(entry, nowMillis);
         if (occurrence !== undefined) {
@@ -98,6 +99,7 @@ export class NoticeCards {
           card.whenAt = occurrence.nextMillis;
           card.statusLabel = NoticeStatus.occurrenceLabel(occurrence.nextMillis, nowMillis);
           card.statusCls = 'recurring';
+          card.statusKey = 'recurring';
           card.expired = false;
           card.canDone = true;
           card.canRemind = false;
@@ -115,6 +117,8 @@ export class NoticeCards {
         card.section = ended ? NoticeSection.EXPIRED : NoticeSection.PRIMARY;
         card.sortAt = entry.row.ts;
         card.expired = ended;
+        card.statusKey = ended ? 'expired' : 'recurring';
+        card.statusCls = ended ? 'expired' : 'recurring';
         card.canDone = false;
         card.canRemind = false;
         card.recurring = !ended;
@@ -123,7 +127,6 @@ export class NoticeCards {
         card.nextCnText = card.nextText.length > 0 ? '下次 ' + card.nextText : '';
         card.statusLabel = ended ? '长期安排已结束'
           : ('长期安排 · ' + NoticeCards.recurLabelOf(group));
-        card.statusCls = ended ? 'expired' : 'recurring';
         card.label = card.statusLabel;
         if (ended) {
           expired.push(card);
@@ -139,7 +142,7 @@ export class NoticeCards {
       card.timeText = entry.timeLabel();
       card.dueText = group !== undefined ? NoticeRecurrenceLogic.deadlineText(group) : '';
       card.section = NoticeRecurrenceLogic.sectionOf(entry, nowMillis);
-      card.sortAt = entry.row.ts;
+      card.sortAt = card.whenAt > 0 ? card.whenAt : card.pubTs;
       if (card.section === NoticeSection.EXPIRED) {
         expired.push(card);
       } else if (card.section === NoticeSection.MATERIAL) {
@@ -148,26 +151,97 @@ export class NoticeCards {
         primary.push(card);
       }
     }
+    // 网页同口径排序：档位（alert / urgent·today / extended / soon·active / 发布卡 / 已处理）
+    // → 档 4 按发布时间倒序，其余按主显示时间升序；同序保持数据源顺序
+    const indexed: NoticeCard[] = primary.slice(0);
+    const order: Map<NoticeCard, number> = new Map<NoticeCard, number>();
+    for (let i = 0; i < indexed.length; i++) {
+      order.set(indexed[i], i);
+    }
     primary.sort((a: NoticeCard, b: NoticeCard) => {
-      if (a.occurrence !== b.occurrence) {
-        return a.occurrence ? -1 : 1;
+      const rank: number = NoticeCards.rankOf(a, doneKeys) - NoticeCards.rankOf(b, doneKeys);
+      if (rank !== 0) {
+        return rank;
       }
-      if (a.occurrence && b.occurrence) {
-        return a.sortAt - b.sortAt;
+      const ra: number = NoticeCards.rankOf(a, doneKeys);
+      if (ra === 4) {
+        const pa: number = a.pubTs;
+        const pb: number = b.pubTs;
+        if (pa !== pb) {
+          return pb - pa;
+        }
+      } else {
+        const ta: number = a.occurrence ? a.sortAt : a.whenAt;
+        const tb: number = b.occurrence ? b.sortAt : b.whenAt;
+        if (ta > 0 && tb > 0 && ta !== tb) {
+          return ta - tb;
+        }
+        if (ta <= 0 && tb > 0) {
+          return 1;
+        }
+        if (ta > 0 && tb <= 0) {
+          return -1;
+        }
       }
-      return 0;
+      const oa: number | undefined = order.get(a);
+      const ob: number | undefined = order.get(b);
+      const ia: number = oa !== undefined ? oa : 0;
+      const ib: number = ob !== undefined ? ob : 0;
+      return ia - ib;
     });
     const out: NoticeCard[] = [];
     for (let i = 0; i < primary.length; i++) {
       out.push(primary[i]);
     }
+    material.sort((a: NoticeCard, b: NoticeCard) => b.pubTs - a.pubTs);
     for (let i = 0; i < material.length; i++) {
       out.push(material[i]);
     }
+    expired.sort((a: NoticeCard, b: NoticeCard) => {
+      const ta: number = a.definition ? a.sortAt : (a.whenAt > 0 ? a.whenAt : a.sortAt);
+      const tb: number = b.definition ? b.sortAt : (b.whenAt > 0 ? b.whenAt : b.sortAt);
+      return tb - ta;
+    });
     for (let i = 0; i < expired.length; i++) {
       out.push(expired[i]);
     }
     return out;
+  }
+
+  /** 主列表档位（与网页 `listRankOf` 同口径）。 */
+  static rankOf(card: NoticeCard, doneKeys: string[]): number {
+    if (doneKeys.indexOf(card.key) >= 0) {
+      return 9;
+    }
+    if (card.definition) {
+      return card.expired ? 8 : 6;
+    }
+    if (card.occurrence) {
+      return 1;
+    }
+    const key: string = card.statusKey;
+    if (key === 'alert') {
+      return 0;
+    }
+    if (key === 'urgent' || key === 'today') {
+      return 1;
+    }
+    if (key === 'extended') {
+      return 2;
+    }
+    if (key === 'soon' || key === 'active') {
+      return 3;
+    }
+    if (key === 'published' || key === 'none') {
+      return 4;
+    }
+    if (key === 'extended_past') {
+      return 7;
+    }
+    if (key === 'expired') {
+      return 8;
+    }
+    return 5;
   }
 
   /** 填充展示层公共字段。 */
@@ -205,6 +279,8 @@ export class NoticeCards {
     const status: NoticeStatusInfo = NoticeStatus.ofEntry(entry, nowMillis);
     card.statusLabel = NoticeStatus.fmtDatesCn(status.label, nowMillis);
     card.statusCls = status.cls;
+    card.statusKey = status.key;
+    card.actionable = group !== undefined ? group.actionable : true;
     card.expired = status.expired;
     card.whenAt = status.whenAt;
     card.canDone = !status.expired && !(group !== undefined && NoticeRecurrenceLogic.isLongterm(group));
@@ -284,21 +360,22 @@ export class NoticeCards {
     return out;
   }
 
-  /** 未处理数（期次卡与普通卡都计入；长期定义不计）。 */
+  /** 未处理数（期次卡与普通卡都计入；长期定义/资料/不可操作不计）。 */
   static pendingCount(cards: NoticeCard[], doneKeys: string[]): number {
     let count: number = 0;
     for (let i = 0; i < cards.length; i++) {
-      if (cards[i].definition) {
+      const card: NoticeCard = cards[i];
+      if (card.definition || card.section !== NoticeSection.PRIMARY || !card.actionable) {
         continue;
       }
-      if (doneKeys.indexOf(cards[i].key) < 0) {
+      if (doneKeys.indexOf(card.key) < 0) {
         count += 1;
       }
     }
     return count;
   }
 
-  /** 顶部 5 张数据卡 + 已过期数。 */
+  /** 顶部 5 张数据卡 + 已过期数（与网页 `statOf` 同口径）。 */
   static statsOf(cards: NoticeCard[], doneKeys: string[], nowMillis: number): NoticeStats {
     const stats: NoticeStats = new NoticeStats();
     let latest: number = 0;
@@ -316,6 +393,9 @@ export class NoticeCards {
         continue;
       }
       if (card.section === NoticeSection.MATERIAL) {
+        continue;
+      }
+      if (!card.actionable) {
         continue;
       }
       if (doneKeys.indexOf(card.key) >= 0) {
@@ -341,7 +421,7 @@ export class NoticeCards {
     const out: NoticeCard[] = [];
     for (let i = 0; i < cards.length; i++) {
       const card: NoticeCard = cards[i];
-      if (card.definition || card.section !== NoticeSection.PRIMARY) {
+      if (card.definition || card.section !== NoticeSection.PRIMARY || !card.actionable) {
         continue;
       }
       if (doneKeys.indexOf(card.key) >= 0) {
@@ -523,20 +603,7 @@ export class NoticeCards {
   }
 
   private static pubTsOf(entry: NoticeEntry, nowMillis: number): number {
-    let best: number = entry.row.ts;
-    if (entry.group !== undefined) {
-      const updated: number = NoticeRecurrenceLogic.parseTs(entry.group.updatedAt);
-      if (updated > best) {
-        best = updated;
-      }
-    }
-    for (let i = 0; i < entry.items.length; i++) {
-      const t: number = NoticeRecurrenceLogic.parseTs(entry.items[i].timeText);
-      if (t > best && t <= nowMillis) {
-        best = t;
-      }
-    }
-    return best;
+    return NoticeRecurrenceLogic.publishedTs(entry.group, nowMillis);
   }
 }
 

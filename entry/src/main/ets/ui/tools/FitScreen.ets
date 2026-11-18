@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import {
   FIT_INPUT_FIELDS,
@@ -19,6 +19,7 @@ import { FitCodec } from '../../features/fit/FitCodec';
 import { ExportCardSpec, ExportNaming, FitExportFactory } from '../../features/export/ExportCard';
 import { FitRecsResult, FitRecsWriteResult } from '../../data/fitrecs/FitRecsRepository';
 import { Tokens } from '../theme/Tokens';
+import { Immersive } from '../theme/Immersive';
 import { PageHeader } from '../components/PageHeader';
 import { ExportPreview } from './ExportPreview';
 
@@ -40,6 +41,7 @@ export struct FitScreen {
   @State private renameText: string = '';
   @State private errorMsg: string = '';
   @State private showExport: boolean = false;
+  private scroller: Scroller = new Scroller();
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
 
   private persistTimer: number = -1;
@@ -248,8 +250,8 @@ export struct FitScreen {
     Text(fitSexLabel(value))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.input.sex === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-      .backgroundColor(this.input.sex === value ? Tokens.MIST_TEAL : Tokens.BG)
+      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+      .backgroundColor(this.input.sex === value ? Tokens.MIST_TEAL : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -266,8 +268,8 @@ export struct FitScreen {
     Text(fitGradeLabel(value))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.input.grade === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-      .backgroundColor(this.input.grade === value ? Tokens.SLATE_BLUE : Tokens.BG)
+      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+      .backgroundColor(this.input.grade === value ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8 })
       .onClick(() => {
@@ -290,7 +292,7 @@ export struct FitScreen {
         .type(InputType.NUMBER_DECIMAL)
         .height(40)
         .layoutWeight(1)
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(8)
         .fontSize(Tokens.F_BODY)
         .onChange((text: string) => {
@@ -317,7 +319,7 @@ export struct FitScreen {
         .type(InputType.Number)
         .height(40)
         .width(64)
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(8)
         .fontSize(Tokens.F_BODY)
         .onChange((text: string) => {
@@ -331,7 +333,7 @@ export struct FitScreen {
         .type(InputType.Number)
         .height(40)
         .width(64)
-        .backgroundColor(Tokens.BG)
+        .backgroundColor(Tokens.CONTROL)
         .borderRadius(8)
         .fontSize(Tokens.F_BODY)
         .onChange((text: string) => {
@@ -406,6 +408,7 @@ export struct FitScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
   }
 
@@ -431,7 +434,7 @@ export struct FitScreen {
           TextInput({ text: this.renameText, placeholder: '记录名称' })
             .layoutWeight(1)
             .height(38)
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .fontSize(Tokens.F_CAPTION)
             .borderRadius(8)
             .onChange((value: string) => {
@@ -449,7 +452,7 @@ export struct FitScreen {
           Button('取消')
             .height(34)
             .fontSize(Tokens.F_CAPTION)
-            .backgroundColor(Tokens.BG)
+            .backgroundColor(Tokens.CONTROL)
             .fontColor(Tokens.TEXT_SECONDARY)
             .borderRadius(Tokens.RADIUS_PILL)
             .onClick(() => {
@@ -503,7 +506,11 @@ export struct FitScreen {
               Text('删除')
                 .fontSize(Tokens.F_CAPTION)
                 .fontColor(Tokens.DANGER)
-                .padding({ top: 6, bottom: 6 })
+                .backgroundColor(Tokens.CONTROL)
+                .border({ width: 0.5, color: Tokens.CARD_EDGE })
+                .borderRadius(Tokens.RADIUS_PILL)
+                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                .margin({ left: 8 })
                 .onClick(() => {
                   this.deleteRecord(index);
                 })
@@ -519,21 +526,25 @@ export struct FitScreen {
     .padding(16)
     .margin({ top: 14 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '体测',
-          onBack: () => {
-            this.onClose();
-          }
-        })
-
-        Scroll() {
+      PageHeader({
+      progress: this.headerFade,
+        title: '体测',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        }
+      }) {
+        Column() {
+          Scroll(this.scroller) {
           Column() {
             Row() {
               this.sexChip(FitSex.MALE)
@@ -564,6 +575,7 @@ export struct FitScreen {
             .width('100%')
             .padding({ left: 16, right: 16 })
             .backgroundColor(Tokens.CARD)
+            .border({ width: 0.5, color: Tokens.CARD_EDGE })
             .borderRadius(Tokens.RADIUS_CARD)
 
             if (this.errorMsg.length > 0) {
@@ -589,29 +601,30 @@ export struct FitScreen {
                 .onClick(() => {
                   this.saveRecord();
                 })
-              Button('清空')
+              Button('更多')
                 .layoutWeight(1)
                 .height(46)
-                .backgroundColor(Tokens.CARD)
+                .backgroundColor(Tokens.CONTROL)
+                .border({ width: 0.5, color: Tokens.CARD_EDGE })
                 .fontColor(Tokens.TEXT_SECONDARY)
                 .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.clearForm();
-                })
+                .bindMenu([
+                  {
+                    value: '清空本次输入',
+                    action: () => {
+                      this.clearForm();
+                    }
+                  },
+                  {
+                    value: '导出图片',
+                    action: () => {
+                      this.openExport();
+                    }
+                  }
+                ], { systemMaterial: Immersive.dialogMaterial() })
             }
             .width('100%')
             .margin({ top: 14 })
-
-            Button('导出图片')
-              .width('100%')
-              .height(46)
-              .margin({ top: 10 })
-              .backgroundColor(Tokens.CARD)
-              .fontColor(Tokens.TEXT_PRIMARY)
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.openExport();
-              })
 
             this.historyCard()
           }
@@ -621,10 +634,17 @@ export struct FitScreen {
         .layoutWeight(1)
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .onDidScroll((offset: number) => {
+          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          if (Math.abs(next - this.headerFade) > 0.03) {
+            this.headerFade = next;
+          }
+        })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.showExport) {
         ExportPreview({

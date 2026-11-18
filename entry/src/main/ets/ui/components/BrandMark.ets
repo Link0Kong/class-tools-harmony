@@ -1,4 +1,4 @@
-import { Tokens } from '../theme/Tokens';
+﻿import { Tokens } from '../theme/Tokens';
 
 /** 品牌标记：三圆点几何（与网页 favicon / 小程序 / 安卓 BrandMark 一致）。 */
 @Component

@@ -1,4 +1,4 @@
-import { BusinessError } from '@ohos.base';
+﻿import { BusinessError } from '@ohos.base';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { SessionInfo, TtPeriods, TtPlan, TtSnapshot } from '../../data/timetable/TimetableModels';
@@ -28,7 +28,9 @@ export struct JwScreen {
   @State private plan: TtPlan = new TtPlan();
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
+  @State private refreshing: boolean = false;
   @State private now: number = Date.now();
+  private scroller: Scroller = new Scroller();
   @State private pwd: string = '';
   @State private loginBusy: boolean = false;
   @State private loginMsg: string = '';
@@ -205,7 +207,7 @@ export struct JwScreen {
           .type(InputType.Password)
           .layoutWeight(1)
           .height(42)
-          .backgroundColor(Tokens.BG)
+          .backgroundColor(Tokens.CONTROL)
           .fontSize(Tokens.F_CAPTION)
           .borderRadius(10)
           .onChange((value: string) => {
@@ -236,6 +238,7 @@ export struct JwScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -281,6 +284,7 @@ export struct JwScreen {
     .width('100%')
     .padding(16)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
   }
@@ -306,6 +310,7 @@ export struct JwScreen {
     .padding(12)
     .margin({ bottom: 8 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .alignItems(HorizontalAlign.Start)
     .onClick(() => {
@@ -313,24 +318,24 @@ export struct JwScreen {
     })
   }
 
+  @State private headerFade: number = 0;
+
   build() {
-    Column() {
-      PageHeader({
-        title: '教务',
-        actionText: this.loading ? '' : '刷新',
-        onBack: () => {
-          this.onClose();
-        },
-        onAction: () => {
-          this.load();
-        }
-      })
+    PageHeader({
+      progress: this.headerFade,
+      title: '教务',
+      scroller: this.scroller,
+      onBack: () => {
+        this.onClose();
+      }
+    }) {
+      Column() {
+        Refresh({ refreshing: $$this.refreshing }) {
+          Scroll(this.scroller) {
+            Column() {
+              this.loginCard()
 
-      Scroll() {
-        Column() {
-          this.loginCard()
-
-          this.entryCard()
+              this.entryCard()
 
           Row() {
             Text('课表速览')
@@ -376,13 +381,14 @@ export struct JwScreen {
                 }
               }
               .width('100%')
-              .padding({ top: 5, bottom: 5 })
+              .padding({ top: 4, bottom: 4 })
             }, (session: SessionInfo) => '' + session.startAt + '_' + session.name)
           }
           .width('100%')
           .padding({ left: 14, right: 14, top: 10, bottom: 10 })
           .margin({ top: 8 })
           .backgroundColor(Tokens.CARD)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .borderRadius(Tokens.RADIUS_CARD)
 
           if (this.errorMsg.length > 0) {
@@ -419,13 +425,33 @@ export struct JwScreen {
         }
         .width('100%')
         .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+          }
+          .width('100%')
+          .height('100%')
+          .align(Alignment.Top)
+          .scrollBar(BarState.Off)
+          .onDidScroll((offset: number) => {
+            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+            if (Math.abs(next - this.headerFade) > 0.03) {
+              this.headerFade = next;
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .onRefreshing(() => {
+          this.pullRefresh();
+        })
       }
-      .layoutWeight(1)
-      .align(Alignment.Top)
-      .scrollBar(BarState.Off)
+      .width('100%')
+      .height('100%')
+      .padding({ top: 0 })
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Tokens.BG)
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.load();
+    this.refreshing = false;
   }
 }

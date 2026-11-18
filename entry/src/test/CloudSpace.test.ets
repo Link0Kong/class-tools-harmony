@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { Blob, JsonBlob } from '../main/ets/data/sync/JsonBlob';
 import {
   CloudSpaceDefaults,

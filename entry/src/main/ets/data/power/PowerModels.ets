@@ -1,4 +1,4 @@
-/** 宿舍目录项；`rv` = roomverify（如 `4-23A---321`，同时也是 `power.id`）。 */
+﻿/** 宿舍目录项；`rv` = roomverify（如 `4-23A---321`，同时也是 `power.id`）。 */
 export class RoomInfo {
   rv: string = '';
   label: string = '';

@@ -1,4 +1,4 @@
-import { preferences } from '@kit.ArkData';
+﻿import { preferences } from '@kit.ArkData';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Log } from '../../common/Log';
 

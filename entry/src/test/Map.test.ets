@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { MapConfig, MapLoadState, MapLogic } from '../main/ets/features/map/MapModels';
 
 export default function mapTest() {

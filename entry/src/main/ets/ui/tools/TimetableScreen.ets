@@ -1,4 +1,4 @@
-import { AppGlobal } from '../../app/AppGlobal';
+﻿import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import {
   Course,
@@ -10,6 +10,10 @@ import {
 } from '../../data/timetable/TimetableModels';
 import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TimetableRepository, TtResult, TtSource } from '../../data/timetable/TimetableRepository';
+import { NativeShare, ShareResult } from '../../features/share/NativeShare';
+import { ShareSpecs } from '../../features/share/ShareSpecs';
+import { ExportCardSpec, ExportParam } from '../../features/export/ExportCard';
+import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { PageHeader } from '../components/PageHeader';
@@ -36,6 +40,8 @@ export struct TimetableScreen {
   @State private dayIdx: number = 0;
   @State private viewMode: string = 'day';
   @State private loading: boolean = true;
+  @State private refreshing: boolean = false;
+  private scroller: Scroller = new Scroller();
   @State private errorMsg: string = '';
   @State private source: string = '';
   @State private now: number = Date.now();
@@ -44,6 +50,7 @@ export struct TimetableScreen {
   @State private detailCourse: Course | undefined = undefined;
   @State private detailOpen: boolean = false;
   @State private detailDate: string = '';
+  private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   aboutToAppear(): void {
     this.dayIdx = TtCalendar.dayIndex(new Date(Date.now()));
@@ -65,6 +72,12 @@ export struct TimetableScreen {
       this.errorMsg = result.message;
     }
     this.loading = false;
+  }
+
+  private async pullRefresh(): Promise<void> {
+    this.refreshing = true;
+    await this.reload(true);
+    this.refreshing = false;
   }
 
   private baseWeek(): number {
@@ -193,12 +206,12 @@ export struct TimetableScreen {
       Text('' + this.dateAt(index).getDate())
         .fontSize(10)
         .fontColor(this.dayIdx === index ? '#E8F2EF' : Tokens.TEXT_TERTIARY)
-        .margin({ top: 1 })
+        .margin({ top: 2 })
     }
     .width(44)
     .height(38)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.dayIdx === index ? Tokens.MIST_TEAL : Tokens.BG)
+    .backgroundColor(this.dayIdx === index ? Tokens.MIST_TEAL : Tokens.CONTROL)
     .borderRadius(9)
     .onClick(() => {
       this.dayIdx = index;
@@ -210,8 +223,8 @@ export struct TimetableScreen {
     Text(label)
       .fontSize(Tokens.F_CAPTION)
       .fontColor(this.viewMode === mode ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-      .backgroundColor(this.viewMode === mode ? Tokens.SLATE_BLUE : Tokens.BG)
+      .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+      .backgroundColor(this.viewMode === mode ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ left: 6 })
       .onClick(() => {
@@ -250,7 +263,7 @@ export struct TimetableScreen {
             Text('进行中')
               .fontSize(Tokens.F_CAPTION)
               .fontColor('#FFFFFF')
-              .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
               .backgroundColor(Tokens.MIST_TEAL)
               .borderRadius(6)
           }
@@ -263,6 +276,7 @@ export struct TimetableScreen {
     .width('100%')
     .padding(14)
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .stateStyles({
       pressed: {
@@ -419,8 +433,108 @@ export struct TimetableScreen {
     .width('100%')
     .padding({ left: 6, right: 6, bottom: 6 })
     .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .translate({ x: this.slide })
+  }
+
+  private notify(message: string): void {
+    this.getUIContext().getPromptAction().showToast({ message: message });
+  }
+
+  /** 分享当前视图（日 / 周）：先渲染分享卡图片，再走系统图片分享。 */
+  private sharePlan(): void {
+    if (this.snapshot === undefined || this.snapshot.c.length === 0) {
+      this.notify('暂无可分享的课表');
+      return;
+    }
+    const lines: string[] = [];
+    let courseCount: number = 0;
+    let subtitle: string = '';
+    if (this.viewMode === 'day') {
+      const date: Date = this.selectedDate();
+      subtitle = TtPeriods.DAY_LABELS[this.dayIdx] + ' ' + (date.getMonth() + 1) + '-' + date.getDate();
+      const sessions: SessionInfo[] = this.sessions();
+      courseCount = sessions.length;
+      if (sessions.length === 0) {
+        lines.push('今天没课');
+      }
+      for (let i = 0; i < sessions.length; i++) {
+        const session: SessionInfo = sessions[i];
+        lines.push(session.startText + '–' + session.endText + '  ' + session.name
+          + (session.room.length > 0 ? '  · ' + session.room : ''));
+      }
+    } else {
+      subtitle = this.rangeText() + ' · 整周';
+      for (let day = 0; day < 7; day++) {
+        const courses: Course[] = this.coursesOf(day);
+        courseCount += courses.length;
+        lines.push(TtPeriods.DAY_LABELS[day]);
+        if (courses.length === 0) {
+          lines.push('  没课');
+        }
+        for (let i = 0; i < courses.length; i++) {
+          const course: Course = courses[i];
+          lines.push('  ' + TtPeriods.startText(course.start) + '–' + TtPeriods.endText(course.end)
+            + '  ' + course.name + (course.room.length > 0 ? '  · ' + course.room : ''));
+        }
+        if (day < 6) {
+          lines.push('');
+        }
+      }
+    }
+    const now: number = Date.now();
+    const params: ExportParam[] = [
+      new ExportParam('周次', '第 ' + this.displayWeek() + ' 周'),
+      new ExportParam('日期', this.rangeText()),
+      new ExportParam('课程', courseCount + ' 节')
+    ];
+    this.shareSpec = ShareSpecs.textCard('TIMETABLE', '第 ' + this.displayWeek() + ' 周课表',
+      subtitle, '课表', params, lines, '课程安排', now);
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.notify(result.message);
+      }
+    });
+  }
+
+  /** 单门课程详情 → 分享卡图片。 */
+  private shareCourse(): void {
+    if (this.detailCourse === undefined) {
+      return;
+    }
+    const course: Course = this.detailCourse;
+    const now: number = Date.now();
+    const params: ExportParam[] = [
+      new ExportParam('日期', this.detailDate),
+      new ExportParam('时间', TtPeriods.startText(course.start) + '–' + TtPeriods.endText(course.end)),
+      new ExportParam('节次', TtCalendar.spanText(course.start, course.end)),
+      new ExportParam('地点', course.room.length > 0 ? course.room : '—'),
+      new ExportParam('教师', course.teacher.length > 0 ? course.teacher : '—'),
+      new ExportParam('周次', (course.weeks.length > 0 ? course.weeks : '全学期')
+        + ' · ' + (course.parity === 'odd' ? '单周' : (course.parity === 'even' ? '双周' : '每周')))
+    ];
+    this.shareSpec = ShareSpecs.textCard('COURSE', course.name,
+      this.detailDate + (course.room.length > 0 ? ' · ' + course.room : ''),
+      '课程_' + course.name, params, ['在「班级工具 → 课表」中查看完整课程安排。'], '课程说明', now);
+    const builder: CustomBuilder = (): void => {
+      this.sharePoster();
+    };
+    NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
+      this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
+      if (!result.ok) {
+        this.notify(result.message);
+      }
+    });
+  }
+
+  @Builder
+  sharePoster() {
+    ExportCardView({ spec: this.shareSpec })
   }
 
   @Builder
@@ -432,6 +546,13 @@ export struct TimetableScreen {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Blank()
+        Text('分享')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.SLATE_BLUE)
+          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+          .onClick(() => {
+            this.shareCourse();
+          })
         Text('关闭')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.SLATE_BLUE)
@@ -471,26 +592,30 @@ export struct TimetableScreen {
     }
     .width('100%')
     .padding(18)
-    .backgroundColor(Tokens.CARD)
-    .borderRadius({ topLeft: Tokens.RADIUS_CARD, topRight: Tokens.RADIUS_CARD })
-    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(Tokens.SHEET)
+    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
     .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Stack() {
-      Column() {
-        PageHeader({
-          title: '课表',
-          actionText: this.loading ? '' : '刷新',
-          onBack: () => {
-            this.onClose();
-          },
-          onAction: () => {
-            this.reload(true);
-          }
-        })
-
+      PageHeader({
+      progress: this.headerFade,
+        title: '课表',
+        actionText2: this.loading ? '' : '分享',
+        scroller: this.scroller,
+        onBack: () => {
+          this.onClose();
+        },
+        onAction2: () => {
+          this.sharePlan();
+        }
+      }) {
+        Column() {
         if (this.loading) {
           Column({ space: 10 }) {
             LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
@@ -519,7 +644,8 @@ export struct TimetableScreen {
           .justifyContent(FlexAlign.Center)
           .padding(Tokens.PAGE_PADDING)
         } else {
-          Scroll() {
+          Refresh({ refreshing: $$this.refreshing }) {
+          Scroll(this.scroller) {
             Column() {
               Row() {
                 Text(this.weekLabel())
@@ -531,9 +657,9 @@ export struct TimetableScreen {
                   .fontColor(Tokens.TEXT_TERTIARY)
                   .margin({ left: 4 })
                 Blank()
-                Text('‹')
+                SymbolGlyph($r('sys.symbol.arrow_left'))
                   .fontSize(18)
-                  .fontColor(Tokens.SLATE_BLUE)
+                  .fontColor([Tokens.SLATE_BLUE])
                   .padding({ left: 8, right: 8 })
                   .onClick(() => {
                     this.shiftWeek(-1);
@@ -545,9 +671,9 @@ export struct TimetableScreen {
                   .onClick(() => {
                     this.weekOffset = 0;
                   })
-                Text('›')
+                SymbolGlyph($r('sys.symbol.arrow_right'))
                   .fontSize(18)
-                  .fontColor(Tokens.SLATE_BLUE)
+                  .fontColor([Tokens.SLATE_BLUE])
                   .padding({ left: 8, right: 8 })
                   .onClick(() => {
                     this.shiftWeek(1);
@@ -651,14 +777,27 @@ export struct TimetableScreen {
             .width('100%')
             .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
           }
-          .layoutWeight(1)
+          .width('100%')
+          .height('100%')
           .align(Alignment.Top)
           .scrollBar(BarState.Off)
+          .onDidScroll((offset: number) => {
+            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+            if (Math.abs(next - this.headerFade) > 0.03) {
+              this.headerFade = next;
+            }
+          })
+          }
+          .layoutWeight(1)
+          .onRefreshing(() => {
+            this.pullRefresh();
+          })
         }
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Tokens.BG)
 
       if (this.detailOpen) {
         Column() {
@@ -668,7 +807,7 @@ export struct TimetableScreen {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor('#66000000')
+          .backgroundColor(Tokens.SCRIM)
           .justifyContent(FlexAlign.End)
           .transition(Motion.scrim())
           .animation({ duration: Motion.NORMAL, curve: Motion.ease() })

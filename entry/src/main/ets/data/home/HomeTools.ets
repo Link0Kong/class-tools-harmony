@@ -1,4 +1,4 @@
-import { ToolCatalog } from '../tool/ToolCatalog';
+﻿import { ToolCatalog } from '../tool/ToolCatalog';
 
 /** 首页快捷编辑结果。 */
 export class HomeToolsToggleResult {

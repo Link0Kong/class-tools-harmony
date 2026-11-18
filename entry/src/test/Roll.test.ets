@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { ClassMember } from '../main/ets/data/member/ClassMember';
 import {
   RollCodec,

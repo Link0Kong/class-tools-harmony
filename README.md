@@ -4,10 +4,10 @@
 > 与网页、微信小程序、安卓端共用同一套 CloudBase 数据契约。
 
 - 包名：`com.furina.classtools`
-- 版本：**1.0.6**（HarmonyOS 独立版本线；M79 全量整合：手表 5 屏 + 通知页微调）
+- 版本：**1.0.7**（HarmonyOS 独立版本线；通知中心细化 + 手表端）
 - 目标 SDK：HarmonyOS SDK API 26（DevEco Studio 26.0.0.865，模拟器 HarmonyOS 7.0.0）
 - 语言/UI：ArkTS + ArkUI（Stage 模型），**零第三方依赖**（不引 UI 库/网络库/图标库）
-- 状态：**M79**：1.0.6 全量整合包已产出（手表 5 屏 / 通知页微调，382 单测全绿），桌面已交付
+- 状态：**1.0.7**：最新整合包已产出（396 单测全绿），桌面已交付
 - 已实现工具：全部 16 个 —— `draw`、`group`、`fit`、`hw`、`nt`、`tt`、`power`、`water`、`vote`、`ppt`、`roll`、`diag`、`roster`、`jw`、`map`、`file`
 - 已删除工具（2026-11-16，用户要求）：`chsi` 学信网、`today` 今日校园（不再恢复入口；相关 `features/chsi/`、`data/todaycampus/`、`ui/tools/ChsiScreen.ets`、`ui/tools/TodayCampusScreen.ets` 与对应单测均已移除）
 

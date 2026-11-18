@@ -1,4 +1,4 @@
-import { Api } from '../net/Api';
+﻿import { Api } from '../net/Api';
 import { ApiResult } from '../net/ApiResult';
 import { Blob, JsonBlob } from '../sync/JsonBlob';
 import { HomeworkRow } from './HomeworkModels';

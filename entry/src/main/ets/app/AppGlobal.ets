@@ -1,4 +1,4 @@
-import { common, UIAbility } from '@kit.AbilityKit';
+﻿import { common, UIAbility } from '@kit.AbilityKit';
 
 /**
  * 进程级全局对象。
@@ -14,6 +14,9 @@ export class AppGlobal {
 
   /** 当前打开的工具 id（'' = 在根页面）。 */
   static openToolId: string = '';
+
+  /** 状态栏高度（px），全屏布局下由 EntryAbility 注入，供自绘顶栏避让。 */
+  static statusBarPx: number = 0;
 
   /** Ability 级返回键关闭工具页时回调根页面（由 Index 注册）。 */
   static onToolClosed: (() => void) | undefined = undefined;

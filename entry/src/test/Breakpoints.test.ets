@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { Breakpoints } from '../main/ets/ui/theme/Breakpoints';
 import { Tokens } from '../main/ets/ui/theme/Tokens';
 import { ToolCatalog, ToolDef } from '../main/ets/data/tool/ToolCatalog';
@@ -24,9 +24,15 @@ export default function breakpointsTest() {
     it('content_max_width_and_breath', 0, () => {
       expect(Breakpoints.contentMaxWidth(360)).assertEqual(880);
       expect(Breakpoints.contentMaxWidth(700)).assertEqual(880);
-      expect(Breakpoints.contentMaxWidth(1200)).assertEqual(960);
+      expect(Breakpoints.contentMaxWidth(1200)).assertEqual(1080);
       expect(Breakpoints.breathTop(360)).assertEqual(8);
       expect(Breakpoints.breathTop(1200)).assertEqual(12);
+      expect(Breakpoints.contentBottomSpace(360)).assertEqual(96);
+      expect(Breakpoints.contentBottomSpace(1200)).assertEqual(32);
+      expect(Breakpoints.toolContentMaxWidth(360) > 10000).assertTrue();
+      expect(Breakpoints.toolContentMaxWidth(1200)).assertEqual(960);
+      expect(Breakpoints.useSideNav(899)).assertFalse();
+      expect(Breakpoints.useSideNav(900)).assertTrue();
       expect(Tokens.BREATH_TOP).assertEqual(8);
     });
 

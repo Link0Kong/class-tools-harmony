@@ -1,4 +1,4 @@
-import { JsonBlob, Blob } from '../sync/JsonBlob';
+﻿import { JsonBlob, Blob } from '../sync/JsonBlob';
 
 /** 隐藏项（仅自己不可见，跨端同步）：作业 hwHide / 通知 ntHide。 */
 export class HideData {

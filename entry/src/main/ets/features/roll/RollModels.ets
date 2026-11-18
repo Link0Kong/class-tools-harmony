@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { ClassMember } from '../../data/member/ClassMember';
 
 /** 点名状态（到 / 假；空 = 未点）。 */

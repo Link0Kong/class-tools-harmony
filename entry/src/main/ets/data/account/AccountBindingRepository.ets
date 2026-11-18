@@ -1,4 +1,4 @@
-import { Services } from '../../app/Services';
+﻿import { Services } from '../../app/Services';
 import { Session } from '../session/Session';
 import { ApiResult } from '../net/ApiResult';
 import { Api } from '../net/Api';
@@ -20,6 +20,8 @@ export class BindItem {
 export class HwLoginResult {
   session: Session | undefined = undefined;
   reason: string = '';
+  /** 华为账号有效但尚未绑定学号：应引导用户完成学号认证并绑定。 */
+  unbound: boolean = false;
 }
 
 interface HwActionJson {
@@ -117,14 +119,16 @@ export class AccountBindingRepository {
   }
 
   /** 用华为账号换班级会话；未绑定时 reason 说明原因。 */
-  static async login(openId: string, api: Api = Services.api): Promise<HwLoginResult> {
+  static async login(openId: string, api: Api = Services.api,
+    now: () => number = () => Date.now()): Promise<HwLoginResult> {
     const out: HwLoginResult = new HwLoginResult();
-    if (openId.length === 0) {
+    const normalized: string = openId.trim();
+    if (normalized.length === 0) {
       out.reason = '没有拿到华为账号标识';
       return out;
     }
     const result: ApiResult = await api.post('rpc/hw_login',
-      JSON.stringify({ p_open_id: openId }));
+      JSON.stringify({ p_open_id: normalized }));
     if (!result.ok) {
       out.reason = result.error !== undefined ? result.error.displayMessage() : '登录失败';
       return out;
@@ -138,16 +142,26 @@ export class AccountBindingRepository {
     }
     if (obj.ok !== true) {
       out.reason = obj.reason !== undefined ? obj.reason : '登录失败';
+      out.unbound = out.reason.indexOf('绑定') >= 0;
       return out;
     }
-    const session: Session = new Session(
-      obj.sid !== undefined ? obj.sid : '',
-      obj.name !== undefined ? obj.name : '',
-      obj.token !== undefined ? obj.token : ''
-    );
+    const sid: string = obj.sid !== undefined ? obj.sid.trim() : '';
+    const token: string = obj.token !== undefined ? obj.token.trim() : '';
+    if (token.length === 0) {
+      out.reason = '云端未返回身份凭证，请稍后重试';
+      return out;
+    }
+    if (sid.length === 0) {
+      out.reason = '云端未返回学号信息';
+      return out;
+    }
+    const issuedAt: number = now();
+    const session: Session = new Session(sid, obj.name !== undefined ? obj.name.trim() : '', token);
     session.role = obj.role !== undefined ? obj.role : '';
     session.badge = obj.badge !== undefined ? obj.badge : '';
     session.isAdmin = obj.is_admin === true;
+    session.issuedAt = issuedAt;
+    session.expiresAt = 0;
     out.session = session;
     return out;
   }

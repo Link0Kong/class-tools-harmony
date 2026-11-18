@@ -1,4 +1,4 @@
-/** 昵称规则（userdata.nick 字符串，跨端同步）。 */
+﻿/** 昵称规则（userdata.nick 字符串，跨端同步）。 */
 export class NickLogic {
   static readonly MAX: number = 16;
 

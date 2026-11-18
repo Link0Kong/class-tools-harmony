@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
 import { FitFields, FitGrade, fitGradeFromWire, FitInput, FitRecord, FitSex, fitSexFromWire } from './FitModels';
 
 /**

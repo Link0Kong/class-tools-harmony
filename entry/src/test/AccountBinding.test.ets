@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { AccountBindingRepository, BindItem } from '../main/ets/data/account/AccountBindingRepository';
 import { FakeApi } from './support/FakeApi';
 
@@ -47,12 +47,15 @@ export default function accountBindingTest() {
 
     it('login_session_and_reason', 0, async () => {
       const api: FakeApi = new FakeApi();
-      const ok = await AccountBindingRepository.login('openid-12345678', api);
+      const ok = await AccountBindingRepository.login('openid-12345678', api, () => 1000);
       expect(ok.reason).assertEqual('');
       expect(ok.session !== undefined).assertTrue();
       if (ok.session !== undefined) {
         expect(ok.session.sid).assertEqual('3260799999');
         expect(ok.session.token).assertEqual('t0');
+        expect(ok.session.issuedAt).assertEqual(1000);
+        expect(ok.session.expiresAt).assertEqual(0);
+        expect(ok.session.isLikelyValid(2000)).assertTrue();
       }
 
       api.hwLoginBody = '{"ok":false,"reason":"该华为账号尚未绑定学号"}';
@@ -62,6 +65,47 @@ export default function accountBindingTest() {
 
       const empty = await AccountBindingRepository.login('', api);
       expect(empty.session === undefined).assertTrue();
+      const blank = await AccountBindingRepository.login('   ', api);
+      expect(blank.session === undefined).assertTrue();
+    });
+
+    it('login_validates_and_maps_fields', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.hwLoginBody = '{"ok":true,"sid":" 3260799999 ","name":" 测试账号 ",'
+        + '"token":"t9","role":"班长","badge":"B","is_admin":true}';
+      const admin = await AccountBindingRepository.login('  openid-x  ', api, () => 5000);
+      expect(admin.session !== undefined).assertTrue();
+      if (admin.session !== undefined) {
+        expect(admin.session.sid).assertEqual('3260799999');
+        expect(admin.session.name).assertEqual('测试账号');
+        expect(admin.session.role).assertEqual('班长');
+        expect(admin.session.badge).assertEqual('B');
+        expect(admin.session.isAdmin).assertTrue();
+      }
+
+      api.hwLoginBody = '{"ok":true,"sid":"3260799999","token":"   "}';
+      const noToken = await AccountBindingRepository.login('openid-x', api);
+      expect(noToken.session === undefined).assertTrue();
+      expect(noToken.reason.indexOf('身份凭证') >= 0).assertTrue();
+
+      api.hwLoginBody = '{"ok":true,"sid":"  ","token":"t9"}';
+      const noSid = await AccountBindingRepository.login('openid-x', api);
+      expect(noSid.session === undefined).assertTrue();
+      expect(noSid.reason.indexOf('学号') >= 0).assertTrue();
+
+      api.hwLoginBody = 'not-json';
+      const bad = await AccountBindingRepository.login('openid-x', api);
+      expect(bad.session === undefined).assertTrue();
+      expect(bad.reason).assertEqual('登录服务返回异常');
+
+      api.hwLoginBody = '{"ok":true,"sid":"3260799999"}';
+      const missingToken = await AccountBindingRepository.login('openid-x', api);
+      expect(missingToken.session === undefined).assertTrue();
+
+      api.failPosts = true;
+      const failed = await AccountBindingRepository.login('openid-x', api);
+      expect(failed.session === undefined).assertTrue();
+      expect(failed.reason.length > 0).assertTrue();
     });
 
     it('unbind', 0, async () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { MarkKind, MarkRow, MarksSnapshot } from '../main/ets/data/marks/Marks';
 import {

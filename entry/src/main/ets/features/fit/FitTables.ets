@@ -1,4 +1,4 @@
-import { FitGrade, FitSex } from './FitModels';
+﻿import { FitGrade, FitSex } from './FitModels';
 
 /** 单项评分表：`hi=true` 越大越好（v>=阈值命中），否则越小越好（v<=阈值命中）。 */
 export class FitScoreTable {

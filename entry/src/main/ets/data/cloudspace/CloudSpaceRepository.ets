@@ -1,4 +1,4 @@
-import { http } from '@kit.NetworkKit';
+﻿import { http } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { fileUri } from '@kit.CoreFileKit';

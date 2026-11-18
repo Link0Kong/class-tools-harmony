@@ -1,4 +1,4 @@
-import { ClassMember, LeagueMember, MemberEntry } from './ClassMember';
+﻿import { ClassMember, LeagueMember, MemberEntry } from './ClassMember';
 
 /** 名单三分类（对齐网页/小程序「名单」工具三 tab：班委 / 团员 / 全班）。 */
 export enum MemberCategory {

@@ -1,9 +1,11 @@
-import { BusinessError } from '@kit.BasicServicesKit';
+﻿import { BusinessError } from '@kit.BasicServicesKit';
 import { webview } from '@kit.ArkWeb';
 import { AppGlobal } from '../../app/AppGlobal';
 import { MapLoadState, MapLogic } from '../../features/map/MapModels';
 import { Tokens } from '../theme/Tokens';
+import { Immersive } from '../theme/Immersive';
 import { Breakpoints } from '../theme/Breakpoints';
+import { PageHeader } from '../components/PageHeader';
 
 /**
  * 校内地图（ArkUI Web 加载 ECS H5，与网页/安卓同源方案）。
@@ -51,55 +53,13 @@ export struct MapScreen {
       });
     } catch (e) {
       const err: BusinessError = e as BusinessError;
-      this.getUIContext().getPromptAction().showToast({ message: '无法打开浏览器（' + err.code + '）' });
+        this.getUIContext().getPromptAction().showToast({
+          message: '无法打开浏览器（' + err.code + '）',
+          systemMaterial: Immersive.dialogMaterial()
+        });
     }
   }
 
-  @Builder
-  header() {
-    Row() {
-      Text('‹')
-        .fontSize(28)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .width(44)
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.onClose();
-        })
-        .accessibilityText('返回')
-
-      Text('地图')
-        .fontSize(Tokens.F_HEADING)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .layoutWeight(1)
-
-      Text('浏览器')
-        .fontSize(Tokens.F_LABEL)
-        .fontColor(Tokens.SLATE_BLUE)
-        .padding({ left: 8, right: 8 })
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.openBrowser();
-        })
-
-      Text('刷新')
-        .fontSize(Tokens.F_LABEL)
-        .fontColor(Tokens.MIST_TEAL)
-        .padding({ left: 8, right: 4 })
-        .height(44)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.refresh();
-        })
-    }
-    .width('100%')
-    .height(56)
-    .padding({ left: 4, right: 8 })
-    .backgroundColor(Tokens.BG)
-  }
 
   @Builder
   errorBar() {
@@ -128,59 +88,80 @@ export struct MapScreen {
     .backgroundColor(Tokens.TINT_SAND)
   }
 
+  @State private headerFade: number = 0;
+
   build() {
     Column() {
-      this.header()
-
-      if (this.state === MapLoadState.LOADING) {
-        Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(2)
-          .color(Tokens.MIST_TEAL)
-          .backgroundColor(Tokens.DIVIDER)
-      }
-
-      if (MapLogic.showErrorBar(this.state)) {
-        this.errorBar()
-      }
-
-      Web({ src: MapLogic.pageUrl(), controller: this.controller })
-        .javaScriptAccess(true)
-        .domStorageAccess(true)
-        .zoomAccess(true)
-        .fileAccess(false)
-        .imageAccess(true)
-        .layoutWeight(1)
-        .width('100%')
-        .backgroundColor(Tokens.BG)
-        .onPageBegin(() => {
-          this.state = MapLoadState.LOADING;
-        })
-        .onProgressChange((event: OnProgressChangeEvent) => {
-          this.progress = event.newProgress;
-        })
-        .onPageEnd(() => {
-          this.state = MapLoadState.READY;
-          this.progress = 100;
-        })
-        .onErrorReceive((event: OnErrorReceiveEvent) => {
-          if (event.request.isMainFrame()) {
-            this.state = MapLoadState.FAILED;
-          }
-        })
-        .onLoadIntercept((event: OnLoadInterceptEvent) => {
-          const url: string = event.data.getRequestUrl();
-          if (MapLogic.isAllowedNavigation(url)) {
-            return false;
-          }
-          // 非 ECS 主机（如站外链接）交给系统浏览器，Web 内不加载。
+      PageHeader({
+      progress: 0.6,
+        title: '地图',
+        actionText: '刷新',
+        actionText2: '浏览器',
+        onBack: () => {
+          this.onClose();
+        },
+        onAction: () => {
+          this.refresh();
+        },
+        onAction2: () => {
           this.openBrowser();
-          return true;
-        })
+        }
+      }) {
+        Column() {
+          if (this.state === MapLoadState.LOADING) {
+            Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
+              .width('100%')
+              .height(2)
+              .color(Tokens.MIST_TEAL)
+              .backgroundColor(Tokens.DIVIDER)
+          }
+
+          if (MapLogic.showErrorBar(this.state)) {
+            this.errorBar()
+          }
+
+          Web({ src: MapLogic.pageUrl(), controller: this.controller })
+            .javaScriptAccess(true)
+            .domStorageAccess(true)
+            .zoomAccess(true)
+            .fileAccess(false)
+            .imageAccess(true)
+            .layoutWeight(1)
+            .width('100%')
+            .backgroundColor(Tokens.BG)
+            .onPageBegin(() => {
+              this.state = MapLoadState.LOADING;
+            })
+            .onProgressChange((event: OnProgressChangeEvent) => {
+              this.progress = event.newProgress;
+            })
+            .onPageEnd(() => {
+              this.state = MapLoadState.READY;
+              this.progress = 100;
+            })
+            .onErrorReceive((event: OnErrorReceiveEvent) => {
+              if (event.request.isMainFrame()) {
+                this.state = MapLoadState.FAILED;
+              }
+            })
+            .onLoadIntercept((event: OnLoadInterceptEvent) => {
+              const url: string = event.data.getRequestUrl();
+              if (MapLogic.isAllowedNavigation(url)) {
+                return false;
+              }
+              // 非 ECS 主机（如站外链接）交给系统浏览器，Web 内不加载。
+              this.openBrowser();
+              return true;
+            })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: 0 })
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.BG)
+    .backgroundColor(Color.Transparent)
     .padding({ top: Breakpoints.BREATH_TOP })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const next: number = Number(newArea.width);

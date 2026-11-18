@@ -1,4 +1,4 @@
-import {
+﻿import {
   GroupConfig,
   GroupConfigSnapshot,
   GroupError,

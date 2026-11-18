@@ -1,4 +1,4 @@
-/** PPT 文件条目（manifest.files.compat/pdf/source）。 */
+﻿/** PPT 文件条目（manifest.files.compat/pdf/source）。 */
 export class PptFileInfo {
   /** 相对文件名（manifest.files.*.s）。 */
   s: string = '';

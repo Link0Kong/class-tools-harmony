@@ -1,4 +1,4 @@
-import { ExportCardSpec, ExportChip, ExportParam } from '../../features/export/ExportCard';
+﻿import { ExportCardSpec, ExportChip, ExportParam } from '../../features/export/ExportCard';
 import { Tokens } from '../theme/Tokens';
 
 /**
@@ -37,7 +37,7 @@ export struct ExportCardView {
 
   @Builder
   blockTitle(text: string, topMargin: number) {
-    Row({ space: 7 }) {
+    Row({ space: 8 }) {
       Rect()
         .width(5)
         .height(5)
@@ -89,7 +89,7 @@ export struct ExportCardView {
 
   @Builder
   chipView(chip: ExportChip) {
-    Row({ space: 5 }) {
+    Row({ space: 4 }) {
       Text('' + chip.n)
         .fontSize(13.5)
         .fontWeight(FontWeight.Bold)
@@ -101,11 +101,11 @@ export struct ExportCardView {
       }
     }
     .height(30)
-    .padding({ left: 11, right: 11 })
+    .padding({ left: 12, right: 12 })
     .backgroundColor('#FFFFFF')
     .border({ width: 1, color: '#E3E9E6' })
     .borderRadius(15)
-    .margin({ right: 7, bottom: 7 })
+    .margin({ right: 8, bottom: 8 })
   }
 
   build() {
@@ -232,7 +232,7 @@ export struct ExportCardView {
                   .fontSize(12)
                   .fontColor(Tokens.TEXT_SECONDARY)
                   .width('100%')
-                  .margin({ top: 3 })
+                  .margin({ top: 4 })
               }, (line: string) => line)
             }
             .width('100%')
@@ -270,7 +270,7 @@ export struct ExportCardView {
           }
           .width('100%')
         }
-        .padding(28)
+        .padding(32)
         .width('100%')
         .onAreaChange((oldArea: Area, newArea: Area) => {
           const raw: Length = newArea.height;

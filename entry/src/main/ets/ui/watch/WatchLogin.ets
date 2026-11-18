@@ -1,4 +1,4 @@
-import { common } from '@kit.AbilityKit';
+﻿import { common } from '@kit.AbilityKit';
 import { Services } from '../../app/Services';
 import { AccountBindingRepository, HwLoginResult } from '../../data/account/AccountBindingRepository';
 import { HuaweiAccount } from '../../data/account/HuaweiAccount';

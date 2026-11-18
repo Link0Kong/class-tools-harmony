@@ -1,4 +1,4 @@
-import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
+﻿import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
 import { DrawConfig, DrawPoolSource, drawSortFromWire, DrawSortMode } from './DrawModels';
 
 /**

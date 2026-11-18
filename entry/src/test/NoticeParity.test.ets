@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@ohos/hypium';
+﻿import { describe, it, expect } from '@ohos/hypium';
 import { NoticeBodyParser } from '../main/ets/data/notices/NoticeParser';
 import { NOTICE_BODY_PREFIX, NoticeGroup, NoticeOccurrence } from '../main/ets/data/notices/NoticeModels';
 import { NoticeEntry, NoticesRepository } from '../main/ets/data/notices/NoticesRepository';
@@ -157,7 +157,8 @@ export default function noticeParityTest() {
     });
 
     it('pending_count_excludes_definition', 0, () => {
-      const normal: NoticeEntry = entryFromJson('n1', bodyWith('普通通知', ''), 2);
+      const normal: NoticeEntry = entryFromJson('n1',
+        bodyWith('普通通知', '"deadline":"2026-11-20 18:00"'), 2);
       const cards: NoticeCard[] = NoticeCards.build([normal], NOW);
       expect(NoticeCards.pendingCount(cards, [])).assertEqual(1);
       expect(NoticeCards.pendingCount(cards, [cards[0].key])).assertEqual(0);

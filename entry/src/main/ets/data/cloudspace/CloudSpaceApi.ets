@@ -1,4 +1,4 @@
-import { Blob, JsonBlob } from '../sync/JsonBlob';
+﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 import {
   CloudSpaceDefaults,
   CloudSpaceError,
