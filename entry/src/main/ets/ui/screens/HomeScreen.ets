@@ -74,7 +74,6 @@ export struct HomeScreen {
   @State private ntNew: boolean = false;
   @State private shimmer: boolean = false;
   @State private layoutWidth: number = 0;
-  @State private topFade: number = 0;
 
   @State private cards: HomeCardConfig[] = HomeCards.defaults();
   @State private sheetOpen: boolean = false;
@@ -168,7 +167,20 @@ export struct HomeScreen {
   }
 
   private async loadCards(): Promise<void> {
-    const stored: HomeCardConfig[] | undefined = await HomeCards.load(Services.currentSid);
+    // 首帧可能早于根页面写入会话身份，等 sid 就绪后再读本机布局
+    let sid: string = Services.currentSid;
+    let tries: number = 0;
+    while (sid.length === 0 && tries < 15) {
+      await new Promise<void>((resolve: () => void) => {
+        setTimeout(resolve, 200);
+      });
+      sid = Services.currentSid;
+      tries += 1;
+    }
+    if (sid.length === 0) {
+      return;
+    }
+    const stored: HomeCardConfig[] | undefined = await HomeCards.load(sid);
     if (stored !== undefined && stored.length > 0) {
       this.cards = HomeCards.normalize(stored);
     }
@@ -1075,8 +1087,20 @@ export struct HomeScreen {
   configSheet() {
     HomeCardConfigSheet({
       cards: this.cards,
-      onCardsChange: (next: HomeCardConfig[]) => {
-        this.applyCards(next);
+      onAddCard: (id: string) => {
+        this.applyCards(HomeCards.add(this.cards, id));
+      },
+      onRemoveCard: (id: string) => {
+        this.applyCards(HomeCards.remove(this.cards, id));
+      },
+      onToggleSpan: (id: string) => {
+        this.applyCards(HomeCards.toggleSpan(this.cards, id));
+      },
+      onShiftCard: (id: string, delta: number) => {
+        this.applyCards(HomeCards.shift(this.cards, id, delta));
+      },
+      onReset: () => {
+        this.applyCards(HomeCards.defaults());
       },
       onDone: () => {
         this.sheetOpen = false;
@@ -1177,7 +1201,7 @@ export struct HomeScreen {
                 Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween, alignItems: ItemAlign.Start }) {
                   ForEach(this.cards, (cfg: HomeCardConfig) => {
                     this.renderCard(cfg)
-                  }, (cfg: HomeCardConfig) => cfg.id)
+                  }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
                 }
                 .width('100%')
                 .margin({ top: Tokens.SPACE_4 })
@@ -1201,13 +1225,7 @@ export struct HomeScreen {
         .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
-        .onDidScroll(() => {
-          const offset: number = this.scroller.currentOffset().yOffset;
-          const next: number = offset > 0 ? Math.min(1, offset / 48) : 0;
-          if (Math.abs(next - this.topFade) > 0.02) {
-            this.topFade = next;
-          }
-        })
+        .padding({ top: 56 })
       }
       .width('100%')
       .height('100%')
@@ -1218,21 +1236,6 @@ export struct HomeScreen {
       if (this.loading) {
         this.skeletonPage()
       }
-
-      Column()
-        .width('100%')
-        .height(96)
-        .linearGradient({
-          angle: 180,
-          colors: [
-            ['#FFF6F7F8', 0.0],
-            ['#B8F6F7F8', 0.45],
-            ['#00F6F7F8', 1.0]
-          ]
-        })
-        .opacity(this.topFade)
-        .position({ x: 0, y: 0 })
-        .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
     .height('100%')

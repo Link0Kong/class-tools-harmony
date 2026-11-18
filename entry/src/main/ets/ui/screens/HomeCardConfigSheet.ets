@@ -10,7 +10,15 @@ import { AppSymbols } from '../theme/AppSymbols';
 @Component
 export struct HomeCardConfigSheet {
   @Prop cards: HomeCardConfig[] = [];
-  onCardsChange: (cards: HomeCardConfig[]) => void = () => {
+  onAddCard: (id: string) => void = () => {
+  };
+  onRemoveCard: (id: string) => void = () => {
+  };
+  onToggleSpan: (id: string) => void = () => {
+  };
+  onShiftCard: (id: string, delta: number) => void = () => {
+  };
+  onReset: () => void = () => {
   };
   onDone: () => void = () => {
   };
@@ -83,34 +91,32 @@ export struct HomeCardConfigSheet {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Button() {
-        Row({ space: 4 }) {
-          SymbolGlyph(AppSymbols.RESIZE_WIDTH)
-            .fontSize(14)
-            .fontColor([cfg.span === HomeCards.HALF ? Tokens.SLATE_BLUE : Tokens.MIST_TEAL])
-          Text(HomeCards.spanLabel(cfg.span))
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(cfg.span === HomeCards.HALF ? Tokens.SLATE_BLUE : Tokens.MIST_TEAL)
-        }
+      Row({ space: 4 }) {
+        SymbolGlyph(AppSymbols.RESIZE_WIDTH)
+          .fontSize(14)
+          .fontColor([cfg.span === HomeCards.HALF ? Tokens.SLATE_BLUE : Tokens.MIST_TEAL])
+        Text(HomeCards.spanLabel(cfg.span))
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(cfg.span === HomeCards.HALF ? Tokens.SLATE_BLUE : Tokens.MIST_TEAL)
       }
-      .type(ButtonType.Normal)
-      .height(32)
-      .padding({ left: 10, right: 10, top: 0, bottom: 0 })
+      .height(36)
+      .padding({ left: 10, right: 10 })
       .borderRadius(Tokens.RADIUS_PILL)
       .backgroundColor(Tokens.tint(cfg.span === HomeCards.HALF ? Tokens.SLATE_BLUE : Tokens.MIST_TEAL, 0.10))
       .animation({ duration: Motion.FAST, curve: Motion.ease() })
+      .hitTestBehavior(HitTestMode.Block)
       .onClick(() => {
-        this.onCardsChange(HomeCards.toggleSpan(this.cards, cfg.id));
+        this.onToggleSpan(cfg.id);
       })
 
       this.miniButton(AppSymbols.ARROW_UP, Tokens.TEXT_SECONDARY, index > 0, () => {
-        this.onCardsChange(HomeCards.shift(this.cards, cfg.id, -1));
+        this.onShiftCard(cfg.id, -1);
       })
       this.miniButton(AppSymbols.ARROW_DOWN, Tokens.TEXT_SECONDARY, index < this.cards.length - 1, () => {
-        this.onCardsChange(HomeCards.shift(this.cards, cfg.id, 1));
+        this.onShiftCard(cfg.id, 1);
       })
       this.miniButton(AppSymbols.MINUS, Tokens.DANGER, true, () => {
-        this.onCardsChange(HomeCards.remove(this.cards, cfg.id));
+        this.onRemoveCard(cfg.id);
       })
     }
     .width('100%')
@@ -147,7 +153,7 @@ export struct HomeCardConfigSheet {
     .border({ width: 0.5, color: Tokens.tint(def.accent, 0.18) })
     .borderRadius(Tokens.RADIUS_INPUT)
     .onClick(() => {
-      this.onCardsChange(HomeCards.add(this.cards, def.id));
+      this.onAddCard(def.id);
     })
   }
 
@@ -179,7 +185,7 @@ export struct HomeCardConfigSheet {
         .borderRadius(Tokens.RADIUS_PILL)
         .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.10))
         .onClick(() => {
-          this.onCardsChange(HomeCards.defaults());
+          this.onReset();
         })
       }
       .width('100%')
@@ -189,7 +195,7 @@ export struct HomeCardConfigSheet {
         Column() {
           ForEach(this.cards, (cfg: HomeCardConfig, index: number) => {
             this.cardRow(cfg, index)
-          }, (cfg: HomeCardConfig) => cfg.id)
+          }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
 
           if (this.cards.length === 0) {
             Text('还没有卡片，从下方添加')
