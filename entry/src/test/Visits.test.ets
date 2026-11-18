@@ -36,6 +36,7 @@ export default function visitsTest() {
       expect(JsonBlob.asString(JsonBlob.get(row, 'slot'), '')).assertEqual('2026-11-14-09');
       expect(JsonBlob.asString(JsonBlob.get(row, 'sid'), '')).assertEqual(SID);
       expect(JsonBlob.asString(JsonBlob.get(row, 'did'), '')).assertEqual('aabbccddeeff0011');
+      expect(JsonBlob.asString(JsonBlob.get(row, 'client'), '')).assertEqual('harmony');
     });
 
     it('new_hour_reports_again', 0, async () => {

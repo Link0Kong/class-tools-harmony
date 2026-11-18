@@ -111,6 +111,7 @@ export class PreferencesVisitsStore implements VisitsStore {
  * 访问上报（与网页 `visitLog()` 同口径）：
  * - `POST visits` **不带** `Prefer: return=representation`（returning 会被 RLS 拒绝）；
  * - `id = "<sid>|<slot>|<随机6位>"`、`slot = YYYY-MM-DD-HH`；
+ * - 行含 `client = "harmony"`（统计多端契约 §1：各端记录具体登录端）；
  * - 同一 sid 同一 slot 只报一次（本机记录），失败不记，下次重试。
  */
 export class VisitsReporter {
@@ -147,7 +148,8 @@ export class VisitsReporter {
       'sid': sid,
       'name': this.nameProvider().trim(),
       'did': did,
-      'ts': this.clock()
+      'ts': this.clock(),
+      'client': 'harmony'
     };
     const rows: Object[] = [row];
     const result: ApiResult = await this.api.post('visits', JSON.stringify(rows), '', true);
