@@ -65,10 +65,17 @@ export struct HomeCardShell {
       .padding(Tokens.CARD_PADDING)
       .alignItems(HorizontalAlign.Start)
 
-      Stack()
-        .width(44)
-        .height(44)
-        .priorityGesture(
+      Stack() {
+        Row()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#01000000')
+      }
+      .width(56)
+      .height(56)
+      .hitTestBehavior(HitTestMode.Block)
+      .accessibilityText('拖动缩放卡片')
+      .priorityGesture(
           PanGesture({ direction: PanDirection.Horizontal, distance: 1 })
             .onActionStart(() => {
               this.gripActive = true;

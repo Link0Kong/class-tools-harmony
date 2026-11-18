@@ -85,6 +85,12 @@ export struct HomeScreen {
   @State private dragDx: number = 0;
   @State private dragDy: number = 0;
 
+  /** 缩放开始时的卡片宽度（绝对宽度跟手，避免累计误差）。 */
+  private resizeStartWidth: number = 0;
+  private resizeOriginIndex: number = -1;
+  private resizeOriginSpan: number = HomeCards.HALF;
+  private resizeSwapped: boolean = false;
+
   @State private clockText: string = '--:--';
   @State private clockDate: string = '';
   @State private clockWeek: string = '';
@@ -599,7 +605,7 @@ export struct HomeScreen {
     return Math.max(half, full - half - Tokens.GAP);
   }
 
-  /** 卡片当前宽度：缩放拖动时实时跟手并夹在半宽与可用宽度之间。 */
+  /** 卡片当前宽度：缩放拖动时实时跟手，夹在半宽与整行之间。 */
   private cardWidthOf(cfg: HomeCardConfig): number {
     const base: number = this.widthForSpan(cfg.span);
     if (this.resizingId !== cfg.id) {
@@ -607,7 +613,7 @@ export struct HomeScreen {
     }
     const half: number = this.widthForSpan(HomeCards.HALF);
     const max: number = this.maxWidthAt(cfg);
-    return Math.max(half, Math.min(max, base + this.resizeDx));
+    return Math.max(half, Math.min(max, this.resizeStartWidth + this.resizeDx));
   }
 
   private slotRow(index: number): number {
@@ -782,22 +788,37 @@ export struct HomeScreen {
   private onCardResize(id: string, phase: string, dx: number): void {
     if (phase === 'start') {
       this.suppressTap = true;
-      this.resizingId = id;
+      const index: number = this.indexOf(id);
+      this.resizeOriginIndex = index;
+      this.resizeOriginSpan = this.spanOf(id);
+      this.resizeStartWidth = this.widthForSpan(this.resizeOriginSpan);
       this.resizeDx = 0;
+      // 右列卡片先与同排左卡换位：缩放时从左边缘向右展开，避免跑出屏幕
+      this.resizeSwapped = index > 0 && this.slotCol(index) > 0;
+      if (this.resizeSwapped) {
+        this.cards = HomeCards.moveTo(this.cards, index, index - 1);
+      }
+      this.resizingId = id;
       return;
     }
     if (phase === 'update') {
       this.resizeDx = dx;
       return;
     }
-    const baseSpan: number = this.spanOf(id);
-    const half: number = this.widthForSpan(HomeCards.HALF);
-    const full: number = this.widthForSpan(HomeCards.FULL);
-    // 用未裁剪的目标宽度判断落位：右侧列拖宽 → 吸附为整行并换到新的一行
-    const desired: number = this.widthForSpan(baseSpan) + this.resizeDx;
-    const targetSpan: number = desired > (half + full) / 2 ? HomeCards.FULL : HomeCards.HALF;
-    const next: HomeCardConfig[] = HomeCards.withSpan(this.cards, id, targetSpan);
-    this.getUIContext().animateTo({ duration: Motion.SLOW, curve: Motion.spring() }, () => {
+    // 两态吸附：向外拖（半宽→整行）或向内拖（整行→半宽）超过阈值即切换
+    let targetSpan: number = this.resizeOriginSpan;
+    if (this.resizeOriginSpan === HomeCards.HALF && this.resizeDx > 24) {
+      targetSpan = HomeCards.FULL;
+    } else if (this.resizeOriginSpan === HomeCards.FULL && this.resizeDx < -24) {
+      targetSpan = HomeCards.HALF;
+    }
+    let next: HomeCardConfig[] = HomeCards.withSpan(this.cards, id, targetSpan);
+    if (this.resizeSwapped && targetSpan === this.resizeOriginSpan) {
+      // 没有达到切换阈值：还原换位，避免误触改顺序
+      next = HomeCards.moveTo(next, this.indexOf(id), this.resizeOriginIndex);
+    }
+    this.resizeSwapped = false;
+    this.getUIContext().animateTo({ duration: Motion.SLOW, curve: Motion.ease() }, () => {
       this.resizingId = '';
       this.resizeDx = 0;
       this.cards = next;
@@ -1354,7 +1375,10 @@ export struct HomeScreen {
     })
     .zIndex(this.dragId === cfg.id ? 20 : 0)
     .opacity(this.dragId.length > 0 && this.dragId !== cfg.id ? 0.72 : 1)
-    .animation({ duration: Motion.NORMAL, curve: Motion.spring() })
+    // 缩放时必须实时跟手：宽度变化不能带隐式弹性动画，否则会来回抖动、冲出屏幕
+    .animation(this.resizingId === cfg.id
+      ? { duration: 0 }
+      : { duration: Motion.NORMAL, curve: Motion.spring() })
     .gesture(
       GestureGroup(GestureMode.Sequence,
         LongPressGesture({ repeat: false, duration: 320 })
@@ -1364,7 +1388,7 @@ export struct HomeScreen {
               ? event.fingerList[0] : undefined;
             const localX: number = finger !== undefined ? finger.localX : 0;
             const localY: number = finger !== undefined ? finger.localY : 0;
-            if (localX > this.cardWidthOf(cfg) - 48 && localY > HOME_CARD_H - 48) {
+            if (localX > this.cardWidthOf(cfg) - 56 && localY > HOME_CARD_H - 56) {
               return;
             }
             this.beginDrag(cfg.id);
@@ -1517,7 +1541,7 @@ export struct HomeScreen {
                     Row({ space: Tokens.GAP }) {
                       ForEach(this.cardsInRow(rowIndex), (cfg: HomeCardConfig) => {
                         this.dragCard(cfg)
-                      }, (cfg: HomeCardConfig) => cfg.id)
+                      }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
                     }
                     .width('100%')
                     .height(HOME_CARD_H)
