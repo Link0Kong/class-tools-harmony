@@ -1,48 +1,116 @@
-import { Tokens } from '../theme/Tokens';
+﻿import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 
-/**
- * 工作台卡片外壳：统一圆角、玻璃底、按压反馈与宽度动画。
- *
- * 宽度由父级按断点计算（一行最多两张），这里只负责外观与内容插槽。
- */
+/** Workbench card shell: glass surface, press feedback, bottom-right resize grip border. */
 @Component
 export struct HomeCardShell {
-  @Prop cardWidthVp: number = 160;
   @Prop cardHeightVp: number = 150;
   @Prop accentColor: string = Tokens.MIST_TEAL;
+  @Prop resizing: boolean = false;
   onCardTap: () => void = () => {
   };
+  onResize: (phase: string, dx: number) => void = () => {
+  };
   @BuilderParam content: () => void = this.emptyContent;
+
+  @State private gripActive: boolean = false;
+
+  /** 缩放提示只用右下角边框线：常态略粗，按住时再加粗。 */
+  private gripEdgeWidth(): number {
+    return this.gripActive || this.resizing ? 3 : 2;
+  }
+
+  private edgeColor(): string {
+    return this.gripActive || this.resizing ? Tokens.tint(this.accentColor, 0.62) : Tokens.CARD_EDGE;
+  }
+
+  private gripColor(): string {
+    return this.gripActive || this.resizing ? this.accentColor : Tokens.tint(this.accentColor, 0.55);
+  }
+
+  private liftRadius(): number {
+    return this.gripActive || this.resizing ? 22 : 14;
+  }
+
+  private liftColor(): string {
+    return this.gripActive || this.resizing ? Tokens.tint(this.accentColor, 0.22) : '#0B1C2629';
+  }
+
+  private liftOffsetY(): number {
+    return this.gripActive || this.resizing ? 8 : 4;
+  }
 
   @Builder
   emptyContent() {
   }
 
   build() {
-    Column() {
-      Row()
-        .width('100%')
-        .height(3)
-        .backgroundColor(Tokens.tint(this.accentColor, 0.55))
-        .borderRadius(2)
-        .margin({ bottom: 9 })
+    Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
-        this.content()
+        Row()
+          .width('100%')
+          .height(3)
+          .backgroundColor(Tokens.tint(this.accentColor, 0.55))
+          .borderRadius(2)
+          .margin({ bottom: 9 })
+        Column() {
+          this.content()
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
-      .layoutWeight(1)
+      .height('100%')
+      .padding(Tokens.CARD_PADDING)
       .alignItems(HorizontalAlign.Start)
+
+      Stack()
+        .width(44)
+        .height(44)
+        .priorityGesture(
+          PanGesture({ direction: PanDirection.Horizontal, distance: 1 })
+            .onActionStart(() => {
+              this.gripActive = true;
+              this.onResize('start', 0);
+            })
+            .onActionUpdate((event: GestureEvent) => {
+              this.onResize('update', event.offsetX);
+            })
+            .onActionEnd(() => {
+              this.gripActive = false;
+              this.onResize('end', 0);
+            })
+            .onActionCancel(() => {
+              this.gripActive = false;
+              this.onResize('end', 0);
+            })
+        )
     }
-    .width(this.cardWidthVp)
+    .width('100%')
     .height(this.cardHeightVp)
-    .padding(Tokens.CARD_PADDING)
-    .alignItems(HorizontalAlign.Start)
-    .justifyContent(FlexAlign.Start)
     .backgroundColor(Tokens.CARD)
-    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .border({
+      width: {
+        left: 0.5,
+        top: 0.5,
+        right: this.gripEdgeWidth(),
+        bottom: this.gripEdgeWidth()
+      },
+      color: {
+        left: this.edgeColor(),
+        top: this.edgeColor(),
+        right: this.gripColor(),
+        bottom: this.gripColor()
+      }
+    })
     .borderRadius(Tokens.RADIUS_CARD)
-    .shadow({ radius: 14, color: '#0B1C2629', offsetX: 0, offsetY: 4 })
+    .shadow({
+      radius: this.liftRadius(),
+      color: this.liftColor(),
+      offsetX: 0,
+      offsetY: this.liftOffsetY()
+    })
     .clip(true)
     .stateStyles({
       pressed: {

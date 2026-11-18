@@ -42,8 +42,10 @@ export struct HomeScreen {
   @Prop @Watch('syncQuickOrder') quickIds: string[] = [];
   @State private quickOrder: string[] = [];
   @Prop @Watch('onEpochChanged') epoch: number = 0;
-  /** 右上角配置按钮每次点击 +1，用于打开配置面板。 */
-  @Prop @Watch('onConfigEpoch') configEpoch: number = 0;
+  /** 编辑态：卡片右上角显示移除按钮，点按不再打开工具。 */
+  @Prop editing: boolean = false;
+  /** 标题栏「加号」按钮每次点击 +1，用于打开添加卡片面板。 */
+  @Prop @Watch('onAddEpoch') addEpoch: number = 0;
   onOpenTool: (id: string) => void = () => {
   };
   onHomeReady: () => void = () => {
@@ -77,6 +79,11 @@ export struct HomeScreen {
 
   @State private cards: HomeCardConfig[] = HomeCards.defaults();
   @State private sheetOpen: boolean = false;
+  @State private resizingId: string = '';
+  @State private resizeDx: number = 0;
+  @State private dragId: string = '';
+  @State private dragDx: number = 0;
+  @State private dragDy: number = 0;
 
   @State private clockText: string = '--:--';
   @State private clockDate: string = '';
@@ -94,6 +101,8 @@ export struct HomeScreen {
   private loadSeq: number = 0;
   private readyFired: boolean = false;
   private lastLoadAt: number = 0;
+  /** 手势刚结束（拖动/缩放）时屏蔽一次误触打开。 */
+  private suppressTap: boolean = false;
 
   onEpochChanged(): void {
     // 切回工作台：2 分钟内只复用内存缓存，避免每次切 tab 都重复请求
@@ -103,8 +112,8 @@ export struct HomeScreen {
     this.load(false);
   }
 
-  onConfigEpoch(): void {
-    if (this.configEpoch > 0) {
+  onAddEpoch(): void {
+    if (this.addEpoch > 0) {
       this.sheetOpen = true;
     }
   }
@@ -195,6 +204,9 @@ export struct HomeScreen {
   }
 
   private onCardTap(id: string): void {
+    if (this.suppressTap || this.editing) {
+      return;
+    }
     if (id === 'weather') {
       this.getUIContext().getPromptAction().showToast({ message: '当前设备暂未提供天气数据' });
       return;
@@ -561,17 +573,239 @@ export struct HomeScreen {
     return text;
   }
 
-  private cardWidth(span: number): number {
+  /** 当前内容区可用宽度（vp）。 */
+  private contentWidth(): number {
     const max: number = Breakpoints.contentMaxWidth(this.layoutWidth);
     const pad: number = Breakpoints.pagePadding(this.layoutWidth);
     const available: number = Math.min(this.layoutWidth, max) - pad * 2;
-    if (available <= 0) {
-      return HomeCards.normalizeSpan(span) === HomeCards.HALF ? 156 : 328;
+    return available > 0 ? available : 328;
+  }
+
+  private widthForSpan(span: number): number {
+    const full: number = this.contentWidth();
+    if (HomeCards.normalizeSpan(span) === HomeCards.FULL) {
+      return full;
     }
-    if (HomeCards.normalizeSpan(span) === HomeCards.HALF) {
-      return Math.floor((available - Tokens.GAP) / 2);
+    return Math.floor((full - Tokens.GAP) / 2);
+  }
+
+  /** 卡片所在列右侧还剩下的宽度（防止缩放时卡片跑出屏幕）。 */
+  private maxWidthAt(cfg: HomeCardConfig): number {
+    const half: number = this.widthForSpan(HomeCards.HALF);
+    const full: number = this.widthForSpan(HomeCards.FULL);
+    if (this.slotCol(this.indexOf(cfg.id)) === 0) {
+      return full;
     }
-    return available;
+    return Math.max(half, full - half - Tokens.GAP);
+  }
+
+  /** 卡片当前宽度：缩放拖动时实时跟手并夹在半宽与可用宽度之间。 */
+  private cardWidthOf(cfg: HomeCardConfig): number {
+    const base: number = this.widthForSpan(cfg.span);
+    if (this.resizingId !== cfg.id) {
+      return base;
+    }
+    const half: number = this.widthForSpan(HomeCards.HALF);
+    const max: number = this.maxWidthAt(cfg);
+    return Math.max(half, Math.min(max, base + this.resizeDx));
+  }
+
+  private slotRow(index: number): number {
+    let row: number = 0;
+    let used: number = 0;
+    for (let i = 0; i < index && i < this.cards.length; i++) {
+      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
+      if (used + span > HomeCards.PER_ROW) {
+        row += 1;
+        used = 0;
+      }
+      used += span;
+      if (used >= HomeCards.PER_ROW) {
+        row += 1;
+        used = 0;
+      }
+    }
+    return row;
+  }
+
+  private slotCol(index: number): number {
+    let used: number = 0;
+    for (let i = 0; i < index && i < this.cards.length; i++) {
+      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
+      if (used + span > HomeCards.PER_ROW) {
+        used = 0;
+      }
+      used += span;
+      if (used >= HomeCards.PER_ROW) {
+        used = 0;
+      }
+    }
+    return used;
+  }
+
+  private rowCount(): number {
+    let rows: number = 0;
+    let used: number = 0;
+    for (let i = 0; i < this.cards.length; i++) {
+      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
+      if (used + span > HomeCards.PER_ROW) {
+        rows += 1;
+        used = 0;
+      }
+      used += span;
+      if (used >= HomeCards.PER_ROW) {
+        rows += 1;
+        used = 0;
+      }
+    }
+    if (used > 0) {
+      rows += 1;
+    }
+    return rows;
+  }
+
+  private rowIndexes(): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < this.rowCount(); i++) {
+      out.push(i);
+    }
+    return out;
+  }
+
+  private cardsInRow(row: number): HomeCardConfig[] {
+    const out: HomeCardConfig[] = [];
+    for (let i = 0; i < this.cards.length; i++) {
+      if (this.slotRow(i) === row) {
+        out.push(this.cards[i]);
+      }
+    }
+    return out;
+  }
+
+  private indexOf(id: string): number {
+    for (let i = 0; i < this.cards.length; i++) {
+      if (this.cards[i].id === id) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private spanOf(id: string): number {
+    const index: number = this.indexOf(id);
+    return index >= 0 ? HomeCards.normalizeSpan(this.cards[index].span) : HomeCards.HALF;
+  }
+
+  private isDragging(): boolean {
+    return this.dragId.length > 0;
+  }
+
+  private beginDrag(id: string): void {
+    this.suppressTap = true;
+    this.dragId = id;
+    this.dragDx = 0;
+    this.dragDy = 0;
+  }
+
+  private updateDrag(dx: number, dy: number): void {
+    if (this.dragId.length === 0) {
+      return;
+    }
+    this.dragDx = dx;
+    this.dragDy = dy;
+  }
+
+  private cancelDrag(): void {
+    this.dragId = '';
+    this.dragDx = 0;
+    this.dragDy = 0;
+    setTimeout(() => {
+      this.suppressTap = false;
+    }, 260);
+  }
+
+  /** 松手时按最近卡片落位，带弹性动画。 */
+  private endDrag(): void {
+    if (this.dragId.length === 0) {
+      return;
+    }
+    const from: number = this.indexOf(this.dragId);
+    const to: number = this.nearestIndex(from, this.dragDx, this.dragDy);
+    const next: HomeCardConfig[] = from >= 0 && to >= 0 && to !== from
+      ? HomeCards.moveTo(this.cards, from, to) : this.cards;
+    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.spring() }, () => {
+      this.dragId = '';
+      this.dragDx = 0;
+      this.dragDy = 0;
+      if (to !== from) {
+        this.cards = next;
+      }
+    });
+    if (to !== from) {
+      HomeCards.save(Services.currentSid, next);
+    }
+    setTimeout(() => {
+      this.suppressTap = false;
+    }, 260);
+  }
+
+  private nearestIndex(from: number, dx: number, dy: number): number {
+    if (from < 0) {
+      return from;
+    }
+    const half: number = this.widthForSpan(HomeCards.HALF);
+    const draggedWidth: number = this.widthForSpan(this.cards[from].span);
+    const draggedCenterX: number = this.slotCol(from) === 0 ? draggedWidth / 2
+      : half + Tokens.GAP + draggedWidth / 2;
+    const draggedCenterY: number = this.slotRow(from) * (HOME_CARD_H + Tokens.GAP) + HOME_CARD_H / 2;
+    const targetX: number = draggedCenterX + dx;
+    const targetY: number = draggedCenterY + dy;
+    let best: number = from;
+    let bestDistance: number = Number.MAX_VALUE;
+    for (let i = 0; i < this.cards.length; i++) {
+      if (i === from) {
+        continue;
+      }
+      const width: number = this.widthForSpan(this.cards[i].span);
+      const centerX: number = this.slotCol(i) === 0 ? width / 2 : half + Tokens.GAP + width / 2;
+      const centerY: number = this.slotRow(i) * (HOME_CARD_H + Tokens.GAP) + HOME_CARD_H / 2;
+      const distance: number = (centerX - targetX) * (centerX - targetX) + (centerY - targetY) * (centerY - targetY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  /** 右下角抓手拖动：宽度实时跟手，松手吸附到半宽 / 整行。 */
+  private onCardResize(id: string, phase: string, dx: number): void {
+    if (phase === 'start') {
+      this.suppressTap = true;
+      this.resizingId = id;
+      this.resizeDx = 0;
+      return;
+    }
+    if (phase === 'update') {
+      this.resizeDx = dx;
+      return;
+    }
+    const baseSpan: number = this.spanOf(id);
+    const half: number = this.widthForSpan(HomeCards.HALF);
+    const full: number = this.widthForSpan(HomeCards.FULL);
+    // 用未裁剪的目标宽度判断落位：右侧列拖宽 → 吸附为整行并换到新的一行
+    const desired: number = this.widthForSpan(baseSpan) + this.resizeDx;
+    const targetSpan: number = desired > (half + full) / 2 ? HomeCards.FULL : HomeCards.HALF;
+    const next: HomeCardConfig[] = HomeCards.withSpan(this.cards, id, targetSpan);
+    this.getUIContext().animateTo({ duration: Motion.SLOW, curve: Motion.spring() }, () => {
+      this.resizingId = '';
+      this.resizeDx = 0;
+      this.cards = next;
+    });
+    HomeCards.save(Services.currentSid, next);
+    setTimeout(() => {
+      this.suppressTap = false;
+    }, 260);
   }
 
   private bottomSpace(): number {
@@ -1065,22 +1299,88 @@ export struct HomeScreen {
     }
   }
 
+  /** 单张卡片：编辑态右上角移除 + 长按拖动排序 + 右下角边框线拖动缩放。 */
   @Builder
-  renderCard(cfg: HomeCardConfig) {
+  dragCard(cfg: HomeCardConfig) {
     Column() {
-      HomeCardShell({
-        cardWidthVp: this.cardWidth(cfg.span),
-        cardHeightVp: HOME_CARD_H,
-        accentColor: HomeCards.defOr(cfg.id).accent,
-        onCardTap: () => {
-          this.onCardTap(cfg.id);
+      Stack({ alignContent: Alignment.TopEnd }) {
+        HomeCardShell({
+          cardHeightVp: HOME_CARD_H,
+          accentColor: HomeCards.defOr(cfg.id).accent,
+          resizing: this.resizingId === cfg.id,
+          onCardTap: () => {
+            this.onCardTap(cfg.id);
+          },
+          onResize: (phase: string, dx: number) => {
+            this.onCardResize(cfg.id, phase, dx);
+          }
+        }) {
+          this.cardBody(cfg)
         }
-      }) {
-        this.cardBody(cfg)
+
+        if (this.editing) {
+          Stack({ alignContent: Alignment.Center }) {
+            SymbolGlyph(AppSymbols.XMARK)
+              .fontSize(9)
+              .fontWeight(FontWeight.Bold)
+              .fontColor([Color.White])
+          }
+          .width(20)
+          .height(20)
+          .backgroundColor(Tokens.tint(Tokens.TEXT_PRIMARY, 0.78))
+          .border({ width: 1, color: Tokens.tint('#FFFFFF', 0.92) })
+          .borderRadius(10)
+          .shadow({ radius: 6, color: Tokens.tint(Tokens.TEXT_PRIMARY, 0.22), offsetX: 0, offsetY: 2 })
+          .margin({ top: 6, right: 6 })
+          .hitTestBehavior(HitTestMode.Block)
+          .onClick(() => {
+            this.applyCards(HomeCards.remove(this.cards, cfg.id));
+          })
+          .accessibilityText('移除 ' + HomeCards.defOr(cfg.id).title)
+        }
       }
+      .width('100%')
+      .height(HOME_CARD_H)
     }
-    .width(this.cardWidth(cfg.span))
-    .margin({ bottom: Tokens.GAP })
+    .width(this.cardWidthOf(cfg))
+    .height(HOME_CARD_H)
+    .translate({
+      x: this.dragId === cfg.id ? this.dragDx : 0,
+      y: this.dragId === cfg.id ? this.dragDy : 0
+    })
+    .scale({
+      x: this.dragId === cfg.id ? 1.04 : 1,
+      y: this.dragId === cfg.id ? 1.04 : 1
+    })
+    .zIndex(this.dragId === cfg.id ? 20 : 0)
+    .opacity(this.dragId.length > 0 && this.dragId !== cfg.id ? 0.72 : 1)
+    .animation({ duration: Motion.NORMAL, curve: Motion.spring() })
+    .gesture(
+      GestureGroup(GestureMode.Sequence,
+        LongPressGesture({ repeat: false, duration: 320 })
+          .onAction((event: GestureEvent) => {
+            // 右下角是缩放手势区，长按在此不启动排序拖动
+            const finger: FingerInfo | undefined = event.fingerList.length > 0
+              ? event.fingerList[0] : undefined;
+            const localX: number = finger !== undefined ? finger.localX : 0;
+            const localY: number = finger !== undefined ? finger.localY : 0;
+            if (localX > this.cardWidthOf(cfg) - 48 && localY > HOME_CARD_H - 48) {
+              return;
+            }
+            this.beginDrag(cfg.id);
+          }),
+        PanGesture({ direction: PanDirection.All, distance: 1 })
+          .onActionUpdate((event: GestureEvent) => {
+            this.updateDrag(event.offsetX, event.offsetY);
+          })
+          .onActionEnd(() => {
+            this.endDrag();
+          })
+          .onActionCancel(() => {
+            this.cancelDrag();
+          })
+      )
+    )
   }
 
   @Builder
@@ -1093,12 +1393,6 @@ export struct HomeScreen {
       onRemoveCard: (id: string) => {
         this.applyCards(HomeCards.remove(this.cards, id));
       },
-      onToggleSpan: (id: string) => {
-        this.applyCards(HomeCards.toggleSpan(this.cards, id));
-      },
-      onShiftCard: (id: string, delta: number) => {
-        this.applyCards(HomeCards.shift(this.cards, id, delta));
-      },
       onReset: () => {
         this.applyCards(HomeCards.defaults());
       },
@@ -1106,6 +1400,22 @@ export struct HomeScreen {
         this.sheetOpen = false;
       }
     })
+  }
+
+  @Builder
+  editHint() {
+    Row() {
+      Text('点卡片右上角 × 移除 · 长按拖动排序 · 右下角边框拖动缩放')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .layoutWeight(1)
+        .maxLines(2)
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .backgroundColor(Tokens.tint(Tokens.MIST_TEAL, 0.10))
+    .borderRadius(Tokens.RADIUS_INPUT)
+    .margin({ top: Tokens.GAP })
   }
 
   @Builder
@@ -1195,13 +1505,25 @@ export struct HomeScreen {
             Column() {
               this.heroCard()
 
+              if (this.editing) {
+                this.editHint()
+              }
+
               if (this.cards.length === 0) {
                 this.emptyCards()
               } else {
-                Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween, alignItems: ItemAlign.Start }) {
-                  ForEach(this.cards, (cfg: HomeCardConfig) => {
-                    this.renderCard(cfg)
-                  }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
+                Column({ space: Tokens.GAP }) {
+                  ForEach(this.rowIndexes(), (rowIndex: number) => {
+                    Row({ space: Tokens.GAP }) {
+                      ForEach(this.cardsInRow(rowIndex), (cfg: HomeCardConfig) => {
+                        this.dragCard(cfg)
+                      }, (cfg: HomeCardConfig) => cfg.id)
+                    }
+                    .width('100%')
+                    .height(HOME_CARD_H)
+                    .alignItems(VerticalAlign.Top)
+                    .justifyContent(FlexAlign.Start)
+                  }, (rowIndex: number) => 'row_' + rowIndex)
                 }
                 .width('100%')
                 .margin({ top: Tokens.SPACE_4 })
@@ -1225,7 +1547,8 @@ export struct HomeScreen {
         .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
-        .padding({ top: 56 })
+        .padding({ top: 0 })
+        .enableScrollInteraction(!this.isDragging())
       }
       .width('100%')
       .height('100%')

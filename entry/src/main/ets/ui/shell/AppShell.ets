@@ -50,7 +50,7 @@ export struct AppShell {
   @State private activeTab: number = 0;
   @State private editHome: boolean = false;
   @State private homeEpoch: number = 0;
-  @State private homeConfigEpoch: number = 0;
+  @State private homeAddEpoch: number = 0;
   @State private layoutWidth: number = 0;
   private homeScroller: Scroller = new Scroller();
   @State private tabPulse: number[] = [-1, -1, -1];
@@ -81,25 +81,32 @@ export struct AppShell {
     });
   }
 
-  /** 标题栏右侧配置按钮：工作台打开卡片配置面板，「全部」切换快捷编辑。 */
+  /**
+   * 标题栏右侧按钮：
+   * - 工作台：[加号]（添加卡片）+ [设置]（切换编辑态）；
+   * - 全部：[设置]（切换常用工具编辑态）。
+   */
   private titleMenus(): HdsNavigationMenuItemOptions[] {
     const items: HdsNavigationMenuItemOptions[] = [];
     if (this.activeTab === 2) {
       return items;
     }
-    const icon: HdsNavigationIconOptions = {
-      icon: this.activeTab === 1 && this.editHome
-        ? $r('sys.symbol.gearshape_fill') : $r('sys.symbol.gearshape'),
-      action: () => {
-        if (this.activeTab === 0) {
-          this.homeConfigEpoch += 1;
-        } else {
-          this.toggleEditHome();
+    if (this.activeTab === 0) {
+      const addIcon: HdsNavigationIconOptions = {
+        icon: $r('sys.symbol.plus'),
+        action: () => {
+          this.homeAddEpoch += 1;
         }
+      };
+      items.push({ content: addIcon });
+    }
+    const icon: HdsNavigationIconOptions = {
+      icon: this.editHome ? $r('sys.symbol.gearshape_fill') : $r('sys.symbol.gearshape'),
+      action: () => {
+        this.toggleEditHome();
       }
     };
-    const item: HdsNavigationMenuItemOptions = { content: icon };
-    items.push(item);
+    items.push({ content: icon });
     return items;
   }
 
@@ -221,7 +228,8 @@ export struct AppShell {
               onReorderQuick: (ids: string[]) => {
                 this.onSetHomeTools(HomeTools.normalize(ids));
               },
-              configEpoch: this.homeConfigEpoch,
+              editing: this.editHome,
+              addEpoch: this.homeAddEpoch,
               onOpenTool: (id: string) => {
                 this.onOpenTool(id);
               },
@@ -332,7 +340,7 @@ export struct AppShell {
         },
         menu: {
           value: this.titleMenus(),
-          maxCount: 1
+          maxCount: 2
         }
       },
       avoidLayoutSafeArea: true,

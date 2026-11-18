@@ -208,6 +208,29 @@ export class HomeCards {
     return next;
   }
 
+  /** 指定宽度（角落拖动缩放落位时使用）。 */
+  static withSpan(list: HomeCardConfig[], id: string, span: number): HomeCardConfig[] {
+    const next: HomeCardConfig[] = HomeCards.normalize(list);
+    for (let i = 0; i < next.length; i++) {
+      if (next[i].id === id) {
+        next[i].span = HomeCards.normalizeSpan(span);
+        break;
+      }
+    }
+    return next;
+  }
+
+  /** 按下标移动（长按拖拽排序落位时使用）。 */
+  static moveTo(list: HomeCardConfig[], from: number, to: number): HomeCardConfig[] {
+    const next: HomeCardConfig[] = HomeCards.normalize(list);
+    if (from < 0 || to < 0 || from >= next.length || to >= next.length || from === to) {
+      return next;
+    }
+    const moved: HomeCardConfig[] = next.splice(from, 1);
+    next.splice(to, 0, moved[0]);
+    return next;
+  }
+
   static unusedDefs(list: HomeCardConfig[]): HomeCardDef[] {
     const out: HomeCardDef[] = [];
     for (let i = 0; i < HomeCards.CATALOG.length; i++) {
