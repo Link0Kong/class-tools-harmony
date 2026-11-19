@@ -1368,6 +1368,7 @@ export struct TimetableScreen {
                   .border({ width: 0.5, color: Tokens.CARD_EDGE })
                   .borderRadius(20)
                   .shadow({ radius: 18, color: Tokens.CARD_SHADOW, offsetX: 0, offsetY: 6 })
+                  .clip(true)
                 }
                 .width('100%')
                 .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10, bottom: 24 })
