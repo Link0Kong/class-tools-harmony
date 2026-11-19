@@ -12,6 +12,10 @@ import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TtResult } from '../../data/timetable/TimetableRepository';
 import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
 import { HomeDigest, HomeCardItem } from '../../features/home/HomeDigest';
+import { HomeToolDigest, ToolCardDigest, ToolDigestLine } from '../../features/home/HomeToolDigest';
+import { WaterCodec } from '../../features/water/WaterCodec';
+import { JsonBlob } from '../../data/sync/JsonBlob';
+import { FitRecsResult } from '../../data/fitrecs/FitRecsRepository';
 import { HomeNtBadge } from '../../data/home/HomeNtBadge';
 import { HidePrefs } from '../../data/home/HidePrefs';
 import { HomeCardConfig, HomeCardDef, HomeCards } from '../../data/home/HomeCards';
@@ -95,6 +99,11 @@ export struct HomeScreen {
   @State private clockDate: string = '';
   @State private clockWeek: string = '';
 
+  /** 工具入口卡片摘要（体测/水量/文件传输读本机数据，其余用功能点）。 */
+  @State private fitDigest: ToolCardDigest = new ToolCardDigest('体测未加载');
+  @State private waterDigest: ToolCardDigest = new ToolCardDigest('水量未加载');
+  @State private cloudDigest: ToolCardDigest = new ToolCardDigest('临时空间未连接');
+
   scroller: Scroller = new Scroller();
   private rotateTimer: number = -1;
   private shimmerTimer: number = -1;  private fadeTimer: number = -1;
@@ -128,6 +137,7 @@ export struct HomeScreen {
     this.syncQuickOrder();
     this.startedAt = Date.now();
     this.applyLocal();
+    this.refreshDigests();
     this.startSkeleton();
     this.load(false);
     this.loadCards();
@@ -199,10 +209,45 @@ export struct HomeScreen {
     if (stored !== undefined && stored.length > 0) {
       this.cards = HomeCards.normalize(stored);
     }
+    this.refreshDigests();
+    this.refreshFitDigest();
   }
 
-  private applyCards(next: HomeCardConfig[]): void {
-    const normalized: HomeCardConfig[] = HomeCards.normalize(next);
+  /** 体测历史（带 TTL 缓存）就绪后刷新入口卡片摘要。 */
+  private async refreshFitDigest(): Promise<void> {
+    if (Services.currentSid.length === 0) {
+      return;
+    }
+    try {
+      const fit: FitRecsResult = await Services.fitRecs.refresh(false);
+      this.fitDigest = HomeToolDigest.fit(fit.records);
+    } catch (e) {
+      // 失败时保留已有摘要
+    }
+  }
+
+  /** 只读本机缓存刷新工具卡片摘要（体测历史在 load 里异步更新）。 */
+  private refreshDigests(): void {
+    const sections = Services.userdata.currentSections();
+    this.waterDigest = HomeToolDigest.water(WaterCodec.fromJson(JsonBlob.get(sections, 'water')), Date.now());
+    this.cloudDigest = HomeToolDigest.cloud(Services.cloudspace.snapshot());
+    this.fitDigest = HomeToolDigest.fit(Services.fitRecs.local());
+  }
+
+  private digestOf(id: string): ToolCardDigest {
+    if (id === 'fit') {
+      return this.fitDigest;
+    }
+    if (id === 'water') {
+      return this.waterDigest;
+    }
+    if (id === 'file') {
+      return this.cloudDigest;
+    }
+    return HomeToolDigest.fallback(id, HomeCards.defOr(id).subtitle);
+  }
+
+  private applyCards(next: HomeCardConfig[]): void {    const normalized: HomeCardConfig[] = HomeCards.normalize(next);
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.spring() }, () => {
       this.cards = normalized;
     });
@@ -390,6 +435,7 @@ export struct HomeScreen {
     this.lastLoadAt = Date.now();
     const now: number = Date.now();
     this.applyLocal();
+    this.refreshDigests();
     this.startSkeleton();
     if (this.loading) {
       if (this.paintTimer >= 0) {
@@ -1371,6 +1417,32 @@ export struct HomeScreen {
   }
 
   @Builder
+  digestLineRow(line: ToolDigestLine) {
+    Row({ space: 6 }) {
+      Row()
+        .width(4)
+        .height(4)
+        .borderRadius(2)
+        .backgroundColor(Tokens.TEXT_TERTIARY)
+      Text(line.text)
+        .fontSize(11)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (line.sub.length > 0) {
+        Text(line.sub)
+          .fontSize(10)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+      }
+    }
+    .width('100%')
+    .height(20)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
   entryBody(def: HomeCardDef, wide: boolean) {
     Row() {
       this.iconBadge(def.symbol, def.accent, wide ? 40 : 34, wide ? 22 : 18)
@@ -1380,10 +1452,10 @@ export struct HomeScreen {
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.TEXT_PRIMARY)
           .maxLines(1)
-        Text(def.subtitle)
+        Text(this.digestOf(def.id).primary)
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
-          .maxLines(wide ? 2 : 1)
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 3 })
       }
@@ -1398,6 +1470,16 @@ export struct HomeScreen {
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
+
+    if (wide) {
+      Column() {
+        ForEach(this.digestOf(def.id).lines, (line: ToolDigestLine) => {
+          this.digestLineRow(line)
+        }, (line: ToolDigestLine) => line.text + '|' + line.sub)
+      }
+      .width('100%')
+      .margin({ top: 6 })
+    }
     Blank()
   }
 
