@@ -670,24 +670,6 @@ export struct HomeScreen {
     return rows;
   }
 
-  private rowIndexes(): number[] {
-    const out: number[] = [];
-    for (let i = 0; i < this.rowCount(); i++) {
-      out.push(i);
-    }
-    return out;
-  }
-
-  private cardsInRow(row: number): HomeCardConfig[] {
-    const out: HomeCardConfig[] = [];
-    for (let i = 0; i < this.cards.length; i++) {
-      if (this.slotRow(i) === row) {
-        out.push(this.cards[i]);
-      }
-    }
-    return out;
-  }
-
   private indexOf(id: string): number {
     for (let i = 0; i < this.cards.length; i++) {
       if (this.cards[i].id === id) {
@@ -706,76 +688,124 @@ export struct HomeScreen {
     return this.dragId.length > 0;
   }
 
-  private beginDrag(id: string): void {
-    this.suppressTap = true;
-    this.dragId = id;
-    this.dragDx = 0;
-    this.dragDy = 0;
+  /** 拖动开始时的卡片中心（用于把手指位置换算成绝对坐标，跨多格重排时保持跟手）。 */
+  private dragStartCenterX: number = 0;
+  private dragStartCenterY: number = 0;
+  private dragReordered: boolean = false;
+
+  /** 卡片槽位左上角（相对内容区）。 */
+  private slotX(index: number): number {
+    if (index < 0 || index >= this.cards.length) {
+      return 0;
+    }
+    if (this.slotCol(index) === 0) {
+      return 0;
+    }
+    return this.widthForSpan(HomeCards.HALF) + Tokens.GAP;
   }
 
+  private slotY(index: number): number {
+    if (index < 0 || index >= this.cards.length) {
+      return 0;
+    }
+    return this.slotRow(index) * (HOME_CARD_H + Tokens.GAP);
+  }
+
+  private centerX(index: number): number {
+    return this.slotX(index) + this.widthForSpan(this.cards[index].span) / 2;
+  }
+
+  private centerY(index: number): number {
+    return this.slotY(index) + HOME_CARD_H / 2;
+  }
+
+  private boardHeight(): number {
+    const rows: number = this.rowCount();
+    return rows > 0 ? rows * (HOME_CARD_H + Tokens.GAP) - Tokens.GAP : 0;
+  }
+
+  /** 按 id 查槽位（渲染时读取 cards 状态，重排后才能触发其他卡片让位）。 */
+  private slotXOf(id: string): number {
+    return this.slotX(this.indexOf(id));
+  }
+
+  private slotYOf(id: string): number {
+    return this.slotY(this.indexOf(id));
+  }
+
+  private beginDrag(id: string): void {
+    const index: number = this.indexOf(id);
+    if (index < 0) {
+      return;
+    }
+    this.suppressTap = true;
+    this.dragId = id;
+    this.dragStartCenterX = this.centerX(index);
+    this.dragStartCenterY = this.centerY(index);
+    this.dragDx = 0;
+    this.dragDy = 0;
+    this.dragReordered = false;
+  }
+
+  /**
+   * 拖动实时排序：手指越过邻卡中心就立即交换位置，
+   * 其余卡片由隐式动画让位；被拖卡片用绝对中心减去新槽位中心，保持在手指下不跳。
+   */
   private updateDrag(dx: number, dy: number): void {
     if (this.dragId.length === 0) {
       return;
     }
-    this.dragDx = dx;
-    this.dragDy = dy;
+    const absX: number = this.dragStartCenterX + dx;
+    const absY: number = this.dragStartCenterY + dy;
+    const from: number = this.indexOf(this.dragId);
+    if (from < 0) {
+      return;
+    }
+    const to: number = this.nearestIndexAt(absX, absY, from);
+    if (to !== from) {
+      this.cards = HomeCards.moveTo(this.cards, from, to);
+      this.dragReordered = true;
+    }
+    const now: number = this.indexOf(this.dragId);
+    this.dragDx = absX - this.centerX(now);
+    this.dragDy = absY - this.centerY(now);
   }
 
   private cancelDrag(): void {
     this.dragId = '';
     this.dragDx = 0;
     this.dragDy = 0;
+    this.dragReordered = false;
     setTimeout(() => {
       this.suppressTap = false;
     }, 260);
   }
 
-  /** 松手时按最近卡片落位，带弹性动画。 */
+  /** 松手：已在拖动过程中完成落位，这里只回收拖动偏移并持久化。 */
   private endDrag(): void {
     if (this.dragId.length === 0) {
       return;
     }
-    const from: number = this.indexOf(this.dragId);
-    const to: number = this.nearestIndex(from, this.dragDx, this.dragDy);
-    const next: HomeCardConfig[] = from >= 0 && to >= 0 && to !== from
-      ? HomeCards.moveTo(this.cards, from, to) : this.cards;
-    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.spring() }, () => {
-      this.dragId = '';
-      this.dragDx = 0;
-      this.dragDy = 0;
-      if (to !== from) {
-        this.cards = next;
-      }
-    });
-    if (to !== from) {
-      HomeCards.save(Services.currentSid, next);
+    const reordered: boolean = this.dragReordered;
+    this.dragId = '';
+    this.dragDx = 0;
+    this.dragDy = 0;
+    this.dragReordered = false;
+    if (reordered) {
+      HomeCards.save(Services.currentSid, this.cards);
     }
     setTimeout(() => {
       this.suppressTap = false;
     }, 260);
   }
 
-  private nearestIndex(from: number, dx: number, dy: number): number {
-    if (from < 0) {
-      return from;
-    }
-    const half: number = this.widthForSpan(HomeCards.HALF);
-    const draggedWidth: number = this.widthForSpan(this.cards[from].span);
-    const draggedCenterX: number = this.slotCol(from) === 0 ? draggedWidth / 2
-      : half + Tokens.GAP + draggedWidth / 2;
-    const draggedCenterY: number = this.slotRow(from) * (HOME_CARD_H + Tokens.GAP) + HOME_CARD_H / 2;
-    const targetX: number = draggedCenterX + dx;
-    const targetY: number = draggedCenterY + dy;
-    let best: number = from;
+  private nearestIndexAt(x: number, y: number, exclude: number): number {
+    let best: number = exclude;
     let bestDistance: number = Number.MAX_VALUE;
     for (let i = 0; i < this.cards.length; i++) {
-      if (i === from) {
-        continue;
-      }
-      const width: number = this.widthForSpan(this.cards[i].span);
-      const centerX: number = this.slotCol(i) === 0 ? width / 2 : half + Tokens.GAP + width / 2;
-      const centerY: number = this.slotRow(i) * (HOME_CARD_H + Tokens.GAP) + HOME_CARD_H / 2;
-      const distance: number = (centerX - targetX) * (centerX - targetX) + (centerY - targetY) * (centerY - targetY);
+      const cx: number = this.centerX(i);
+      const cy: number = this.centerY(i);
+      const distance: number = (cx - x) * (cx - x) + (cy - y) * (cy - y);
       if (distance < bestDistance) {
         bestDistance = distance;
         best = i;
@@ -1366,8 +1396,8 @@ export struct HomeScreen {
     .width(this.cardWidthOf(cfg))
     .height(HOME_CARD_H)
     .translate({
-      x: this.dragId === cfg.id ? this.dragDx : 0,
-      y: this.dragId === cfg.id ? this.dragDy : 0
+      x: this.slotXOf(cfg.id) + (this.dragId === cfg.id ? this.dragDx : 0),
+      y: this.slotYOf(cfg.id) + (this.dragId === cfg.id ? this.dragDy : 0)
     })
     .scale({
       x: this.dragId === cfg.id ? 1.04 : 1,
@@ -1375,8 +1405,8 @@ export struct HomeScreen {
     })
     .zIndex(this.dragId === cfg.id ? 20 : 0)
     .opacity(this.dragId.length > 0 && this.dragId !== cfg.id ? 0.72 : 1)
-    // 缩放时必须实时跟手：宽度变化不能带隐式弹性动画，否则会来回抖动、冲出屏幕
-    .animation(this.resizingId === cfg.id
+    // 拖动/缩放中的卡片必须实时跟手；其余卡片保留动画做「让位」过渡
+    .animation(this.resizingId === cfg.id || this.dragId === cfg.id
       ? { duration: 0 }
       : { duration: Motion.NORMAL, curve: Motion.spring() })
     .gesture(
@@ -1536,20 +1566,13 @@ export struct HomeScreen {
               if (this.cards.length === 0) {
                 this.emptyCards()
               } else {
-                Column({ space: Tokens.GAP }) {
-                  ForEach(this.rowIndexes(), (rowIndex: number) => {
-                    Row({ space: Tokens.GAP }) {
-                      ForEach(this.cardsInRow(rowIndex), (cfg: HomeCardConfig) => {
-                        this.dragCard(cfg)
-                      }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
-                    }
-                    .width('100%')
-                    .height(HOME_CARD_H)
-                    .alignItems(VerticalAlign.Top)
-                    .justifyContent(FlexAlign.Start)
-                  }, (rowIndex: number) => 'row_' + rowIndex)
+                Stack({ alignContent: Alignment.TopStart }) {
+                  ForEach(this.cards, (cfg: HomeCardConfig) => {
+                    this.dragCard(cfg)
+                  }, (cfg: HomeCardConfig) => cfg.id + '_' + cfg.span)
                 }
                 .width('100%')
+                .height(this.boardHeight())
                 .margin({ top: Tokens.SPACE_4 })
               }
 
