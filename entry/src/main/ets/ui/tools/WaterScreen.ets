@@ -21,7 +21,7 @@ import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
 
 /**
- * 水量工具：4/6 人间 + 按月抄表（读数 → 用量/水费/折合扣电）+ 记录列表 + 规则卡。
+ * 水量工具：1–6 人间自选 + 按月抄表（读数 → 用量/水费/折合扣电）+ 记录列表 + 规则卡。
  *
  * 数据：`userdata.water = { rooms: { <roomverify>: { p, recs:[{m,r,ts}] } } }`（整段 LWW）。
  * 口径：水 3.03 元/吨、免费 2 吨/人/月、折合扣电 = 水费 ÷ 0.58；无上一条不伪造用量。
@@ -613,17 +613,21 @@ export struct WaterScreen {
       } else {
         Scroll() {
           Column() {
-            Row() {
+            Column() {
               Text(this.roomLabel())
                 .fontSize(Tokens.F_TITLE)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Tokens.TEXT_PRIMARY)
-              Blank()
-              this.personsChip(4)
-              this.personsChip(6)
+                .width('100%')
+              Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.End }) {
+                ForEach(WaterRules.PERSONS_OPTIONS, (value: number) => {
+                  this.personsChip(value)
+                }, (value: number) => 'persons_' + value)
+              }
+              .width('100%')
+              .margin({ top: 4 })
             }
             .width('100%')
-            .margin({ top: 4 })
 
             this.entryCard()
             this.statsCard()

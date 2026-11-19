@@ -9,7 +9,7 @@ export class WaterRules {
   /** 免费电量 5 度/人/月（展示用）。 */
   static readonly ELEC_FREE_PER_PERSON: number = 5.0;
   static readonly PERSONS_DEFAULT: number = 4;
-  static readonly PERSONS_OPTIONS: number[] = [4, 6];
+  static readonly PERSONS_OPTIONS: number[] = [1, 2, 3, 4, 5, 6];
   static readonly MAX_RECORDS_PER_ROOM: number = 120;
   static readonly CYCLE_MONTHS: number = 10;
 

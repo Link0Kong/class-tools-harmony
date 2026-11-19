@@ -93,7 +93,8 @@ export default function waterTest() {
 
     it('normalizes_helpers', 0, () => {
       expect(WaterCodec.normalizePersons(6)).assertEqual(6);
-      expect(WaterCodec.normalizePersons(5)).assertEqual(4);
+      expect(WaterCodec.normalizePersons(5)).assertEqual(5);
+      expect(WaterCodec.normalizePersons(9)).assertEqual(4);
       expect(WaterCodec.normalizeMonth(' 2026-11 ')).assertEqual('2026-11');
       expect(WaterCodec.normalizeMonth('2026-13') === undefined).assertTrue();
       expect(WaterCodec.round2(12.345)).assertEqual(12.35);
