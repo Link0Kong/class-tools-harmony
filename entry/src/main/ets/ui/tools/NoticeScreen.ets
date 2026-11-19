@@ -3,7 +3,7 @@ import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksRefreshResult, MarksUpdateResult } from '../../data/marks/MarksRepository';
 import { NoticeArchiveFile, NoticeItemMeta, NoticeMsgMeta, NoticeSegment } from '../../data/notices/NoticeModels';
-import { NoticeEntry, NoticesRepository, NoticesResult } from '../../data/notices/NoticesRepository';
+import { NoticeEntry, NoticeDetailResult, NoticesRepository, NoticesResult } from '../../data/notices/NoticesRepository';
 import { NoticeCard, NoticeCards, NoticeComposeChip, NoticeStats } from '../../features/notices/NoticeCards';
 import { NoticeSection } from '../../features/notices/NoticeRecurrence';
 import { NoticeStatus } from '../../features/notices/NoticeStatus';
@@ -86,6 +86,8 @@ export struct NoticeScreen {
   @State private rawBlocks: NoticeItemMeta[] = [];
   private shareSpec: ExportCardSpec = new ExportCardSpec();
   private reloadTimer: number = -1;
+  /** 正在按需拉取完整 body 的通知行 id（防重复请求）。 */
+  private detailLoadingIds: string[] = [];
 
   aboutToAppear(): void {
     HomeNtBadge.markOpened(Services.currentSid);
@@ -156,14 +158,15 @@ export struct NoticeScreen {
     if (this.reloadTimer > 0) {
       clearTimeout(this.reloadTimer);
     }
-    // 网络挂起时兜底退出加载态，避免通知页一直转圈
+    // 网络挂起时兜底退出加载态，避免通知页一直转圈。
+    // meta 超时 30s、旧整表回退最长 55s，故这里必须覆盖最坏情况。
     this.reloadTimer = setTimeout(() => {
       if (this.loading || this.syncing) {
         this.loading = false;
         this.syncing = false;
         this.errorMsg = '通知加载超时，请点击重试';
       }
-    }, 8000);
+    }, 60000);
     try {
     // 已处理状态与通知并行拉取
     const marksPromise = Services.marks.refresh(false);
@@ -401,8 +404,58 @@ export struct NoticeScreen {
       copy.splice(index, 1);
     } else {
       copy.push(key);
+      // 轻量 meta 列表：展开时才拉这一条的完整 body（图片/附件）
+      const card: NoticeCard | undefined = this.cardByKey(key);
+      if (card !== undefined) {
+        this.loadDetailForCard(card);
+      }
     }
     this.expandedKeys = copy;
+  }
+
+  private cardByKey(key: string): NoticeCard | undefined {
+    for (let i = 0; i < this.cards.length; i++) {
+      if (this.cards[i].key === key) {
+        return this.cards[i];
+      }
+    }
+    return undefined;
+  }
+
+  private loadDetailByKey(key: string): void {
+    const card: NoticeCard | undefined = this.cardByKey(key);
+    if (card !== undefined) {
+      this.loadDetailForCard(card);
+    }
+  }
+
+  /** 按需拉取单条完整 body；成功后重建卡片（保留展开态）。 */
+  private async loadDetailForCard(card: NoticeCard): Promise<boolean> {
+    const entry: NoticeEntry | undefined = card.entry;
+    if (entry === undefined || !entry.needsDetail()) {
+      return true;
+    }
+    const rowId: string = entry.row.id;
+    if (rowId.length === 0 || this.detailLoadingIds.indexOf(rowId) >= 0) {
+      return false;
+    }
+    this.detailLoadingIds.push(rowId);
+    try {
+      const result: NoticeDetailResult = await Services.notices.loadDetail(rowId);
+      if (!result.ok || result.entry === undefined) {
+        this.notice = result.message;
+        return false;
+      }
+      Services.notices.applyDetail(result.entry);
+      this.applyEntries(Services.notices.local(), true);
+      this.notice = '';
+      return true;
+    } finally {
+      const index: number = this.detailLoadingIds.indexOf(rowId);
+      if (index >= 0) {
+        this.detailLoadingIds.splice(index, 1);
+      }
+    }
   }
 
   private openPreview(src: string): void {
@@ -797,9 +850,14 @@ export struct NoticeScreen {
             .fontSize(10)
             .fontColor(NT_BL_INK)
         } else {
-          Text('待获取')
+          Text(item.lazy ? '点此加载' : '待获取')
             .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontColor(item.lazy ? NT_CY_INK : NT_INK_3)
+            .onClick(() => {
+              if (item.lazy) {
+                this.loadDetailByKey(cardKey);
+              }
+            })
         }
       }
       .width('100%')
@@ -968,16 +1026,33 @@ export struct NoticeScreen {
       .padding({ top: 8, bottom: 8 })
       .border({ width: { bottom: 1 }, color: NT_LINE })
     } else if (item.kind === 'img') {
-      Image(item.url)
-        .width('48.5%')
-        .height(110)
-        .objectFit(ImageFit.Cover)
-        .borderRadius(8)
-        .backgroundColor(NT_GREY_TINT)
-        .margin({ top: 6 })
-        .onClick(() => {
-          this.openPreview(item.url);
-        })
+      if (item.url.length > 0) {
+        Image(item.url)
+          .width('48.5%')
+          .height(110)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(8)
+          .backgroundColor(NT_GREY_TINT)
+          .margin({ top: 6 })
+          .onClick(() => {
+            this.openPreview(item.url);
+          })
+      } else {
+        Text(item.text.length > 0 ? item.text : '图片')
+          .fontSize(11)
+          .fontColor(item.lazy ? NT_CY_INK : NT_INK_3)
+          .width('48.5%')
+          .height(110)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(NT_GREY_TINT)
+          .borderRadius(8)
+          .margin({ top: 6 })
+          .onClick(() => {
+            if (item.lazy) {
+              this.loadDetailByKey(cardKey);
+            }
+          })
+      }
     }
   }
 

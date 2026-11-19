@@ -4,9 +4,16 @@ import { NoticeFilter, NoticeGroup, NoticeItemMeta, NoticeRow, NoticeSigRow } fr
 import { NoticeBodyParser } from './NoticeParser';
 import { NoticeCacheBlob, NoticeCacheStore } from './NoticeCacheStore';
 
+const META_PATH: string = 'rpc/class_notices_meta';
 const SIG_PATH: string = 'notices?select=id,ts,hidden,edited_at&archived=eq.false&order=ts.asc,id.asc';
 const FULL_PATH: string = 'notices?select=*&archived=eq.false&order=ts.asc,id.asc';
+const DETAIL_PATH: string = 'notices?select=*&id=eq.';
 const DEFAULT_TTL_MS: number = 10 * 60 * 1000;
+/** 轻量列表（约 0.3MB）给 30s；旧整表（约 12MB）给 55s；单条详情给 30s。 */
+const META_TIMEOUT_MS: number = 30000;
+const SIG_TIMEOUT_MS: number = 20000;
+const FULL_TIMEOUT_MS: number = 55000;
+const DETAIL_TIMEOUT_MS: number = 30000;
 /** 磁盘缓存最多回放 7 天，避免离线时展示过旧内容。 */
 const MAX_DISK_AGE_MS: number = 7 * 24 * 60 * 60 * 1000;
 
@@ -16,9 +23,24 @@ export class NoticeEntry {
   group: NoticeGroup | undefined = undefined;
   items: NoticeItemMeta[] = [];
   attachmentCount: number = 0;
+  /** true = 来自轻量 meta，图片/附件内容尚未拉取。 */
+  lazy: boolean = false;
 
   id(): string {
     return this.row.id;
+  }
+
+  /** 是否有条目需要按需拉完整 body。 */
+  needsDetail(): boolean {
+    if (this.lazy) {
+      return true;
+    }
+    for (let i = 0; i < this.items.length; i++) {
+      if (this.items[i].lazy) {
+        return true;
+      }
+    }
+    return false;
   }
 
   title(): string {
@@ -87,6 +109,27 @@ export class NoticesResult {
   }
 }
 
+/** 单条通知完整 body 的按需加载结果。 */
+export class NoticeDetailResult {
+  ok: boolean;
+  entry: NoticeEntry | undefined = undefined;
+  message: string = '';
+
+  constructor(ok: boolean, entry: NoticeEntry | undefined, message: string) {
+    this.ok = ok;
+    this.entry = entry;
+    this.message = message;
+  }
+
+  static success(entry: NoticeEntry): NoticeDetailResult {
+    return new NoticeDetailResult(true, entry, '');
+  }
+
+  static failure(message: string): NoticeDetailResult {
+    return new NoticeDetailResult(false, undefined, message);
+  }
+}
+
 /**
  * 通知仓库（契约 `docs/api/NOTICES.md`）：
  *
@@ -107,6 +150,8 @@ export class NoticesRepository {
   private cachedAt: number = 0;
   private loaded: boolean = false;
   private hydratedKey: string = '';
+  /** 并发合并：工作台与通知扫描同时冷启动时只发一轮签名/整表请求。 */
+  private inflight: Promise<NoticesResult> | undefined = undefined;
 
   constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS,
     sidProvider: () => string = () => '', adminProvider: () => boolean = () => false) {
@@ -200,19 +245,49 @@ export class NoticesRepository {
   }
 
   async load(force: boolean): Promise<NoticesResult> {
+    if (this.inflight !== undefined) {
+      return await this.inflight;
+    }
+    const pending: Promise<NoticesResult> = this.loadOnce(force);
+    this.inflight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.inflight === pending) {
+        this.inflight = undefined;
+      }
+    }
+  }
+
+  private async loadOnce(force: boolean): Promise<NoticesResult> {
     await this.hydrate();
     const now: number = this.clock();
     if (!force && this.loaded && now - this.cachedAt < this.ttlMs) {
       return new NoticesResult(true, this.cache, true, '');
     }
-    const sigResult: ApiResult = await this.api.get(SIG_PATH, true);
-    if (!sigResult.ok) {
-      if (this.loaded) {
-        return new NoticesResult(true, this.cache, true,
-          sigResult.error !== undefined ? sigResult.error.displayMessage() : '通知签名加载失败');
+    // 列表优先轻量 RPC（约 0.3MB）；只有 404/405（旧云端没有该函数）才回退旧整表。
+    const metaResult: ApiResult = await this.api.post(META_PATH, '{}', '', true, META_TIMEOUT_MS);
+    if (metaResult.ok) {
+      if (!NoticeBodyParser.isRowsPayload(metaResult.value)) {
+        return this.cacheOrFailure('通知列表格式异常');
       }
-      return new NoticesResult(false, [], false,
-        sigResult.error !== undefined ? sigResult.error.displayMessage() : '通知签名加载失败');
+      const rows: NoticeRow[] = this.filterAudience(NoticeBodyParser.parseRows(metaResult.value));
+      return await this.commitRows(rows, now, metaResult.value, NoticesRepository.signatureOfRows(rows));
+    }
+    const status: number = metaResult.error !== undefined ? metaResult.error.status : 0;
+    if (status === 404 || status === 405) {
+      return await this.loadLegacy(now, force);
+    }
+    return this.cacheOrFailure(metaResult.error !== undefined
+      ? metaResult.error.displayMessage() : '通知加载失败');
+  }
+
+  /** 旧云端回退：轻量签名 → 整表（仅 meta 接口不存在时走这里）。 */
+  private async loadLegacy(now: number, force: boolean): Promise<NoticesResult> {
+    const sigResult: ApiResult = await this.api.get(SIG_PATH, true, SIG_TIMEOUT_MS);
+    if (!sigResult.ok) {
+      return this.cacheOrFailure(sigResult.error !== undefined
+        ? sigResult.error.displayMessage() : '通知签名加载失败');
     }
     const sigRows: NoticeSigRow[] = NoticeBodyParser.parseSigRows(sigResult.value);
     const signature: string = NoticeSigRow.signatureOf(sigRows);
@@ -220,16 +295,17 @@ export class NoticesRepository {
       this.cachedAt = now;
       return new NoticesResult(true, this.cache, true, '');
     }
-    const fullResult: ApiResult = await this.api.get(FULL_PATH, true);
+    const fullResult: ApiResult = await this.api.get(FULL_PATH, true, FULL_TIMEOUT_MS, false);
     if (!fullResult.ok) {
-      if (this.loaded) {
-        return new NoticesResult(true, this.cache, true,
-          fullResult.error !== undefined ? fullResult.error.displayMessage() : '通知加载失败');
-      }
-      return new NoticesResult(false, [], false,
-        fullResult.error !== undefined ? fullResult.error.displayMessage() : '通知加载失败');
+      return this.cacheOrFailure(fullResult.error !== undefined
+        ? fullResult.error.displayMessage() : '通知加载失败');
     }
     const rows: NoticeRow[] = this.filterAudience(NoticeBodyParser.parseRows(fullResult.value));
+    return await this.commitRows(rows, now, fullResult.value, signature);
+  }
+
+  private async commitRows(rows: NoticeRow[], now: number, rawJson: string,
+    signature: string): Promise<NoticesResult> {
     const entries: NoticeEntry[] = NoticesRepository.buildEntries(rows);
     this.cache = entries;
     this.signature = signature;
@@ -238,9 +314,69 @@ export class NoticesRepository {
     const blob: NoticeCacheBlob = new NoticeCacheBlob();
     blob.signature = signature;
     blob.savedAt = now;
-    blob.rowsJson = fullResult.value;
+    blob.rowsJson = rawJson;
     await NoticeCacheStore.save(this.sidProvider(), blob);
     return new NoticesResult(true, entries, false, '');
+  }
+
+  private cacheOrFailure(message: string): NoticesResult {
+    if (this.loaded) {
+      return new NoticesResult(true, this.cache, true, message);
+    }
+    return new NoticesResult(false, [], false, message);
+  }
+
+  /** 按需拉单条完整 body（图片/附件 data URI 只在此时下载）。 */
+  async loadDetail(rowId: string): Promise<NoticeDetailResult> {
+    const id: string = rowId.trim();
+    if (id.length === 0) {
+      return NoticeDetailResult.failure('通知不存在');
+    }
+    const result: ApiResult = await this.api.get(DETAIL_PATH + encodeURIComponent(id), true,
+      DETAIL_TIMEOUT_MS, false);
+    if (!result.ok) {
+      return NoticeDetailResult.failure(result.error !== undefined
+        ? result.error.displayMessage() : '通知详情加载失败');
+    }
+    const rows: NoticeRow[] = this.filterAudience(NoticeBodyParser.parseRows(result.value));
+    if (rows.length === 0) {
+      return NoticeDetailResult.failure('通知不存在或已隐藏');
+    }
+    const entries: NoticeEntry[] = NoticesRepository.buildEntries(rows);
+    if (entries.length === 0) {
+      return NoticeDetailResult.failure('通知详情为空');
+    }
+    return NoticeDetailResult.success(entries[0]);
+  }
+
+  /** 详情加载完成后替换内存缓存中的同一行（列表顺序由 UI 重建）。 */
+  applyDetail(entry: NoticeEntry): void {
+    for (let i = 0; i < this.cache.length; i++) {
+      if (this.cache[i].row.id === entry.row.id) {
+        this.cache[i] = entry;
+        return;
+      }
+    }
+  }
+
+  /** 与轻量签名同一口径：按 ts/id 排序后拼 id|ts|hidden|editedAt（避免 RPC 行序变化误报）。 */
+  static signatureOfRows(rows: NoticeRow[]): string {
+    const sorted: NoticeRow[] = rows.slice(0);
+    sorted.sort((a: NoticeRow, b: NoticeRow) => {
+      if (a.ts !== b.ts) {
+        return a.ts - b.ts;
+      }
+      if (a.id === b.id) {
+        return 0;
+      }
+      return a.id < b.id ? -1 : 1;
+    });
+    let out: string = '';
+    for (let i = 0; i < sorted.length; i++) {
+      out += sorted[i].id + '|' + sorted[i].ts + '|' + (sorted[i].hidden ? '1' : '0') + '|'
+        + sorted[i].editedAt + ';';
+    }
+    return out;
   }
 
   local(): NoticeEntry[] {
@@ -260,6 +396,12 @@ export class NoticesRepository {
       if (group !== undefined) {
         entry.group = NoticeBodyParser.applyOverride(group, row.overrideJson);
         entry.items = NoticeBodyParser.parseItems(entry.group.items);
+        for (let j = 0; j < entry.items.length; j++) {
+          if (entry.items[j].lazy) {
+            entry.lazy = true;
+            break;
+          }
+        }
       }
       entry.attachmentCount = NoticeBodyParser.attachmentCount(row.attachments);
       built.push(entry);

@@ -8,7 +8,7 @@ import {
   NoticeSigRow
 } from '../main/ets/data/notices/NoticeModels';
 import { NoticeBodyParser } from '../main/ets/data/notices/NoticeParser';
-import { NoticeEntry, NoticesRepository, NoticesResult } from '../main/ets/data/notices/NoticesRepository';
+import { NoticeEntry, NoticeDetailResult, NoticesRepository, NoticesResult } from '../main/ets/data/notices/NoticesRepository';
 import { FakeApi } from './support/FakeApi';
 
 const AUTO_BODY: string = NOTICE_BODY_PREFIX + '{"id":"g1","title":"关于班会","cat":"班会",'
@@ -20,6 +20,13 @@ const AUTO_BODY: string = NOTICE_BODY_PREFIX + '{"id":"g1","title":"关于班会
   + '{"kind":"file","name":"材料.zip","size":"2.0 MB"},'
   + '{"kind":"form","realTitle":"报名表","close":"11-19"},'
   + '{"kind":"link","name":"在线文档","url":"https://example.com/doc"}]}';
+
+/** 云端 `class_notices_meta` 返回的轻量 body：图片 src 置空、条目 lazy=true。 */
+const META_LAZY_BODY: string = NOTICE_BODY_PREFIX + '{"id":"g1","title":"关于班会","cat":"班会",'
+  + '"summary":"本周五开班会","aiSummary":"周五 19:00 班会",'
+  + '"items":[{"kind":"text","text":"原通知正文","fromName":"班长","time":"11-14 10:00"},'
+  + '{"kind":"img","caption":"座位表","src":"","lazy":true},'
+  + '{"kind":"file","name":"材料.zip","size":"2.0 MB","lazy":true}]}';
 
 function rowJson(id: string, title: string, ts: number, pin: boolean, hidden: boolean, body: string): string {
   const escaped: string = body.replace(new RegExp('\\\\', 'g'), '\\\\')
@@ -150,52 +157,129 @@ export default function noticeTest() {
       expect(NoticesRepository.filterEntries(entries, NoticeFilter.DONE, ['n1']).length).assertEqual(1);
     });
 
-    it('signature_short_circuits_full_fetch', 0, async () => {
+    it('meta_list_is_preferred_and_cached', 0, async () => {
       const api: FakeApi = new FakeApi();
-      api.noticesSigBody = '[{"id":"n1","ts":100,"hidden":false,"edited_at":0}]';
-      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, '正文') + ']';
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
       let now: number = 1000;
-      // TTL = 0：强制每次都先拉签名，才能验证「签名未变就不再拉整表」
-      const repo: NoticesRepository = new NoticesRepository(api, () => now, 0);
+      const repo: NoticesRepository = new NoticesRepository(api, () => now, 1000);
       const first: NoticesResult = await repo.load(false);
       expect(first.ok).assertTrue();
       expect(first.entries.length).assertEqual(1);
-      const getsAfterFirst: number = api.getPaths.length;
-      expect(getsAfterFirst).assertEqual(2);
-      now = 2000;
+      expect(first.entries[0].needsDetail()).assertTrue();
+      expect(api.postPaths.length).assertEqual(1);
+      expect(api.postPaths[0]).assertEqual('rpc/class_notices_meta');
+      expect(api.postTimeouts[0] >= 25000).assertTrue();
+      // 不再先拉签名/整表
+      expect(api.getPaths.length).assertEqual(0);
+
+      now = 1500;
       const second: NoticesResult = await repo.load(false);
       expect(second.fromCache).assertTrue();
-      expect(api.getPaths.length).assertEqual(getsAfterFirst + 1);
+      expect(api.postPaths.length).assertEqual(1);
     });
 
-    it('signature_change_refetches_full_table', 0, async () => {
+    it('meta_refetch_after_ttl', 0, async () => {
       const api: FakeApi = new FakeApi();
-      api.noticesSigBody = '[{"id":"n1","ts":100,"hidden":false,"edited_at":0}]';
-      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, '正文') + ']';
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
       let now: number = 1000;
       const repo: NoticesRepository = new NoticesRepository(api, () => now, 0);
       await repo.load(false);
-      const before: number = api.getPaths.length;
-      api.noticesSigBody = '[{"id":"n1","ts":200,"hidden":false,"edited_at":0}]';
       now = 5000;
       const second: NoticesResult = await repo.load(false);
       expect(second.ok).assertTrue();
-      expect(api.getPaths.length).assertEqual(before + 2);
+      expect(api.postPaths.length).assertEqual(2);
+      expect(api.getPaths.length).assertEqual(0);
+    });
+
+    it('meta_404_falls_back_to_legacy_full_table', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaStatus = 404;
+      api.noticesSigBody = '[{"id":"n1","ts":100,"hidden":false,"edited_at":0}]';
+      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, '正文') + ']';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 0);
+      const result: NoticesResult = await repo.load(false);
+      expect(result.ok).assertTrue();
+      expect(result.entries.length).assertEqual(1);
+      expect(api.postPaths.length).assertEqual(1);
+      expect(api.getPaths.length).assertEqual(2);
+      expect(api.getTimeouts[0] >= 15000).assertTrue();
+      expect(api.getTimeouts[1] >= 45000).assertTrue();
+      expect(api.getRetryFlags[1]).assertFalse();
+    });
+
+    it('meta_500_does_not_fetch_full_table', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaStatus = 500;
+      api.noticesSigBody = '[{"id":"n1","ts":100,"hidden":false,"edited_at":0}]';
+      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, '正文') + ']';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 0);
+      const result: NoticesResult = await repo.load(false);
+      expect(result.ok).assertFalse();
+      expect(api.getPaths.length).assertEqual(0);
+      expect(result.message.length > 0).assertTrue();
+    });
+
+    it('coalesces_concurrent_loads', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 0);
+      const first = repo.load(false);
+      const second = repo.load(false);
+      const a: NoticesResult = await first;
+      const b: NoticesResult = await second;
+      expect(a.ok).assertTrue();
+      expect(b.ok).assertTrue();
+      expect(a.entries.length).assertEqual(1);
+      expect(b.entries.length).assertEqual(1);
+      expect(api.postPaths.length).assertEqual(1);
     });
 
     it('failure_falls_back_to_cache', 0, async () => {
       const api: FakeApi = new FakeApi();
-      api.noticesSigBody = '[{"id":"n1","ts":100,"hidden":false,"edited_at":0}]';
-      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, '正文') + ']';
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
       let now: number = 1000;
       const repo: NoticesRepository = new NoticesRepository(api, () => now, 0);
       await repo.load(false);
       now = 5000;
-      api.failGets = true;
+      api.noticesMetaStatus = 500;
       const second: NoticesResult = await repo.load(true);
       expect(second.ok).assertTrue();
       expect(second.fromCache).assertTrue();
       expect(second.entries.length).assertEqual(1);
+    });
+
+    it('lazy_items_load_detail_on_demand', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
+      api.noticesBody = '[' + rowJson('n1', '标题', 100, false, false, AUTO_BODY) + ']';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 0);
+      const first: NoticesResult = await repo.load(false);
+      const entry: NoticeEntry = first.entries[0];
+      expect(entry.needsDetail()).assertTrue();
+      expect(entry.items[1].url).assertEqual('');
+      expect(api.getPaths.length).assertEqual(0);
+
+      const detail: NoticeDetailResult = await repo.loadDetail('n1');
+      expect(detail.ok).assertTrue();
+      expect(api.getPaths.length).assertEqual(1);
+      expect(api.getPaths[0].indexOf('id=eq.n1') > 0).assertTrue();
+      expect(api.getTimeouts[0] >= 25000).assertTrue();
+      expect(api.getRetryFlags[0]).assertFalse();
+      if (detail.entry !== undefined) {
+        expect(detail.entry.needsDetail()).assertFalse();
+        expect(detail.entry.items[1].url.length > 0).assertTrue();
+      }
+    });
+
+    it('detail_missing_returns_failure', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';
+      api.noticesBody = '[]';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 0);
+      await repo.load(false);
+      const detail: NoticeDetailResult = await repo.loadDetail('n1');
+      expect(detail.ok).assertFalse();
+      expect(detail.message.length > 0).assertTrue();
     });
   });
 

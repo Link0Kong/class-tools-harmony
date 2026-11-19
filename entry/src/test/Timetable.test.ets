@@ -274,6 +274,21 @@ export default function timetableTest() {
       expect(fallback.snapshot !== undefined).assertTrue();
     });
 
+    it('coalesces_concurrent_loads', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.siteAssetsBody = '[{"id":"tt","body":{"c":[{"name":"高数","day":5,"start":1,"end":2}],"t":"2026-09-07"}}]';
+      const repo: TimetableRepository = new TimetableRepository(api, () => undefined, () => SATURDAY, 0);
+      const first = repo.load(false);
+      const second = repo.load(false);
+      const a: TtResult = await first;
+      const b: TtResult = await second;
+      expect(a.ok).assertTrue();
+      expect(b.ok).assertTrue();
+      expect(a.snapshot !== undefined).assertTrue();
+      expect(b.snapshot !== undefined).assertTrue();
+      expect(api.getPaths.length).assertEqual(1);
+    });
+
     it('empty_site_asset_is_failure', 0, async () => {
       const api: FakeApi = new FakeApi();
       api.siteAssetsBody = '[]';

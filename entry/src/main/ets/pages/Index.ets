@@ -108,8 +108,8 @@ struct Index {
     Services.currentToken = session.token;
     Services.currentIsAdmin = session.isAdmin;
     // 先恢复本机偏好（离线/未同步时 UI 也看到上次设置），再后台拉云端
-    await Services.userdata.hydrateFromLocal();
-    await Services.notices.hydrate();
+    // 两份本机缓存互不依赖，并行读取，缩短冷启动首帧等待
+    await Promise.all([Services.userdata.hydrateFromLocal(), Services.notices.hydrate()]);
     this.applySections(Services.userdata.currentSections());
     this.syncNow();
     this.appReady = true;

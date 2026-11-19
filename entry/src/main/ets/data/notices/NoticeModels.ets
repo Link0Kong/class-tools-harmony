@@ -130,6 +130,8 @@ export class NoticeItemMeta {
   extText: string = '';
   extKind: string = '';
   hasUrl: boolean = false;
+  /** 轻量 meta：该条目的图片/附件内容被服务端置空，展开时需按 row id 拉完整 body。 */
+  lazy: boolean = false;
   archiveOk: boolean = false;
   archiveCount: number = 0;
   archiveSummary: string = '';

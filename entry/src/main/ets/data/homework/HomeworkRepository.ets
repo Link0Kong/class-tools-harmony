@@ -32,6 +32,8 @@ export class HomeworkRepository {
   private cache: HomeworkRow[] = [];
   private cachedAt: number = 0;
   private loaded: boolean = false;
+  /** 并发合并：同一时刻只发一个请求（工作台与通知扫描会同时触发）。 */
+  private inflight: Promise<HomeworkResult> | undefined = undefined;
 
   constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS) {
     this.api = api;
@@ -40,6 +42,21 @@ export class HomeworkRepository {
   }
 
   async load(force: boolean): Promise<HomeworkResult> {
+    if (this.inflight !== undefined) {
+      return await this.inflight;
+    }
+    const pending: Promise<HomeworkResult> = this.loadOnce(force);
+    this.inflight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.inflight === pending) {
+        this.inflight = undefined;
+      }
+    }
+  }
+
+  private async loadOnce(force: boolean): Promise<HomeworkResult> {
     const now: number = this.clock();
     if (!force && this.loaded && now - this.cachedAt < this.ttlMs) {
       return new HomeworkResult(true, this.cache, true, '');

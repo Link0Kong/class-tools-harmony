@@ -2,6 +2,8 @@
 import { Tokens } from '../theme/Tokens';
 import { Breakpoints } from '../theme/Breakpoints';
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { HuaweiAccount } from '../../data/account/HuaweiAccount';
 import { AccountBindingRepository, BindItem } from '../../data/account/AccountBindingRepository';
 import { BrandMark } from '../components/BrandMark';
@@ -12,6 +14,7 @@ import { AppPush } from '../../features/push/AppPush';
 import { NotifyCenter } from '../../data/notify/NotifyCenter';
 import { NotifySettings } from '../../features/notify/NotifySettings';
 import { AppUpdate, UpdateCheckResult } from '../../features/update/AppUpdate';
+import { LegalDoc, LegalInfo, LegalSection, LegalTexts } from '../../data/legal/LegalTexts';
 
 /** 我的：身份卡 + 设置项 + 退出登录。 */
 @Component
@@ -46,6 +49,10 @@ export struct MeScreen {
   @State private hwNotice: string = '';
   @State private updateBusy: boolean = false;
   @State private updateNotice: string = '';
+  @State private legalOpen: boolean = false;
+  @State private legalInfo: LegalInfo = LegalTexts.info(LegalTexts.PRIVACY);
+  @State private legalDoc: LegalDoc = LegalTexts.fallback(LegalTexts.info(LegalTexts.PRIVACY));
+  @State private legalNotice: string = '';
   @State private layoutWidth: number = 0;
   @State private topFade: number = 0;
   private scroller: Scroller = new Scroller();
@@ -59,6 +66,34 @@ export struct MeScreen {
     const result: UpdateCheckResult = await AppUpdate.check(true);
     this.updateBusy = false;
     this.updateNotice = result.message;
+  }
+
+  /** 打开端内法律文本：优先 rawfile 正文，读取失败用要点摘要兜底。 */
+  private openLegal(kind: string): void {
+    this.legalInfo = LegalTexts.info(kind);
+    this.legalNotice = '';
+    let raw: string = '';
+    try {
+      const context = this.getUIContext().getHostContext() as common.Context;
+      const bytes: Uint8Array = context.resourceManager.getRawFileContentSync(this.legalInfo.rawPath);
+      raw = util.TextDecoder.create('utf-8').decodeToString(bytes);
+    } catch (e) {
+      raw = '';
+    }
+    this.legalDoc = LegalTexts.loadOrFallback(raw, this.legalInfo);
+    if (this.legalDoc.fallback) {
+      this.legalNotice = '端内正文读取失败，已显示要点摘要；可在线查看全文。';
+    }
+    this.notifyOpen = false;
+    this.legalOpen = true;
+  }
+
+  /** 在线正式文本（当前为 ECS IP 调试入口；域名恢复后改正式域名）。 */
+  private openLegalOnline(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    context.openLink(this.legalInfo.onlineUrl).catch((error: BusinessError) => {
+      this.legalNotice = '无法打开浏览器，请手动访问：' + this.legalInfo.onlineUrl;
+    });
   }
 
   aboutToAppear(): void {
@@ -653,6 +688,132 @@ export struct MeScreen {
     .borderRadius({ topLeft: 26, topRight: 26 })
   }
 
+  @Builder
+  legalPanel() {
+    Column() {
+      Row()
+        .width(38)
+        .height(4)
+        .borderRadius(2)
+        .backgroundColor('#DDE5E1')
+        .margin({ top: 8 })
+
+      Row() {
+        Column() {
+          Text(this.legalDoc.title.length > 0 ? this.legalDoc.title : this.legalInfo.title)
+            .fontSize(Tokens.F_HEADING)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(Tokens.TEXT_PRIMARY)
+          Text(this.legalInfo.version + ' · 生效 ' + this.legalInfo.effectiveDate)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .margin({ top: 4 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Text('关闭')
+          .fontSize(Tokens.F_LABEL)
+          .fontColor(Tokens.MIST_TEAL)
+          .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, top: Tokens.GAP_SM, bottom: Tokens.GAP_SM })
+          .backgroundColor('#EEF5F2')
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.legalOpen = false;
+          })
+      }
+      .width('100%')
+      .padding({ left: Tokens.SPACE_20, right: Tokens.SPACE_16, top: Tokens.SPACE_12, bottom: Tokens.GAP_SM })
+
+      Column() {
+        Text('运营者：' + this.legalInfo.operator)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .width('100%')
+        Text('联系邮箱：' + this.legalInfo.email)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .width('100%')
+          .margin({ top: 4 })
+        Text('最近更新：' + this.legalInfo.lastUpdated)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .width('100%')
+          .margin({ top: 4 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+      .padding(Tokens.SPACE_12)
+      .backgroundColor('#F1F7F4')
+      .borderRadius(14)
+      .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.GAP_SM })
+
+      if (this.legalNotice.length > 0) {
+        Text(this.legalNotice)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor('#9C5147')
+          .width('100%')
+          .padding({ left: Tokens.SPACE_20, right: Tokens.SPACE_20, bottom: Tokens.GAP_SM })
+      }
+
+      Scroll() {
+        Column() {
+          ForEach(this.legalDoc.sections, (section: LegalSection, index: number) => {
+            Column() {
+              if (section.heading.length > 0) {
+                Text(section.heading)
+                  .fontSize(section.level === 1 ? Tokens.F_BODY : Tokens.F_LABEL)
+                  .fontWeight(section.level === 1 ? FontWeight.Medium : FontWeight.Normal)
+                  .fontColor(section.level === 1 ? Tokens.TEXT_PRIMARY : Tokens.MIST_TEAL)
+                  .width('100%')
+                  .margin({ bottom: 6 })
+              }
+              if (section.body.length > 0) {
+                Text(section.body)
+                  .fontSize(13)
+                  .lineHeight(21)
+                  .fontColor(Tokens.TEXT_SECONDARY)
+                  .width('100%')
+                  .copyOption(CopyOptions.LocalDevice)
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
+            .margin({ bottom: Tokens.SPACE_12 })
+          }, (section: LegalSection, index: number) => index.toString())
+
+          Button('在线查看全文')
+            .type(ButtonType.Capsule)
+            .width('100%')
+            .height(42)
+            .fontSize(Tokens.F_LABEL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Tokens.MIST_TEAL)
+            .backgroundColor('#EEF5F2')
+            .margin({ top: Tokens.GAP_SM })
+            .onClick(() => {
+              this.openLegalOnline();
+            })
+          Text(this.legalInfo.onlineUrl)
+            .fontSize(10)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .margin({ top: 8, bottom: 28 })
+        }
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+      .padding({ left: Tokens.SPACE_20, right: Tokens.SPACE_20 })
+    }
+    .width('100%')
+    .height('92%')
+    .backgroundColor(Tokens.CARD)
+    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+    .borderRadius({ topLeft: 26, topRight: 26 })
+  }
+
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Stack({ alignContent: Alignment.Top }) {
@@ -896,6 +1057,14 @@ export struct MeScreen {
             this.onOpenTool('usage');
           })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow('隐私政策', 'V1.0', () => {
+            this.openLegal(LegalTexts.PRIVACY);
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow('用户协议', 'V1.0', () => {
+            this.openLegal(LegalTexts.TERMS);
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.linkRow(this.updateBusy ? '检查更新中…' : '检查更新',
             this.updateNotice.length > 0 ? this.updateNotice : 'v' + CloudConfig.APP_VERSION, () => {
               this.checkUpdate();
@@ -990,6 +1159,18 @@ export struct MeScreen {
         .backgroundColor('#55000000')
         .onClick(() => {
           this.notifyOpen = false;
+        })
+      }
+      if (this.legalOpen) {
+        Column() {
+          this.legalPanel()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+        .backgroundColor('#55000000')
+        .onClick(() => {
+          this.legalOpen = false;
         })
       }
     }

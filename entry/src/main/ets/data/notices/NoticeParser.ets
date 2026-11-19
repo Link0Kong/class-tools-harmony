@@ -136,6 +136,7 @@ export class NoticeBodyParser {
       const kind: string = JsonBlob.asString(JsonBlob.get(item, 'kind'), '').trim();
       const meta: NoticeItemMeta = new NoticeItemMeta();
       meta.kind = kind.length > 0 ? kind : 'text';
+      meta.lazy = JsonBlob.asBoolean(JsonBlob.get(item, 'lazy'), false);
       meta.timeText = JsonBlob.asString(JsonBlob.get(item, 'time'), '').trim();
       if (meta.kind === 'text' || meta.kind === 'follow') {
         const isFollow: boolean = meta.kind === 'follow';
@@ -376,6 +377,20 @@ export class NoticeBodyParser {
       }
     }
     return out;
+  }
+
+  /** 响应是否为 JSON 数组（区分「合法空列表」与「RPC 返回错误对象/非数组」）。 */
+  static isRowsPayload(raw: string): boolean {
+    if (raw.trim().length === 0) {
+      return false;
+    }
+    let parsed: Object | null = null;
+    try {
+      parsed = JSON.parse(raw) as Object;
+    } catch (e) {
+      return false;
+    }
+    return JsonBlob.asArray(parsed) !== undefined;
   }
 
   /** 解析整表行。 */

@@ -23,6 +23,8 @@ export class HttpRequestSpec {
   authenticated: boolean = true;
   extraHeaders: Record<string, string> = {};
   retryOnNetworkFailure: boolean = false;
+  /** >0 时覆盖全局 READ_TIMEOUT_MS（大响应/通知整表等单独放宽）。 */
+  readTimeoutMs: number = 0;
 }
 
 interface PostgrestErrorBody {
@@ -53,22 +55,26 @@ export class HttpClient implements Api {
     this.onTokenInvalid = handler;
   }
 
-  async get(path: string, authenticated: boolean = true): Promise<ApiResult> {
+  async get(path: string, authenticated: boolean = true, readTimeoutMs: number = 0,
+    retryOnNetworkFailure: boolean = true): Promise<ApiResult> {
     const spec: HttpRequestSpec = new HttpRequestSpec();
     spec.method = HttpMethod.GET;
     spec.path = path;
     spec.authenticated = authenticated;
-    spec.retryOnNetworkFailure = true;
+    spec.retryOnNetworkFailure = retryOnNetworkFailure;
+    spec.readTimeoutMs = readTimeoutMs;
     return await this.request(spec);
   }
 
-  async post(path: string, body: string, prefer: string = '', authenticated: boolean = true): Promise<ApiResult> {
+  async post(path: string, body: string, prefer: string = '', authenticated: boolean = true,
+    readTimeoutMs: number = 0): Promise<ApiResult> {
     const spec: HttpRequestSpec = new HttpRequestSpec();
     spec.method = HttpMethod.POST;
     spec.path = path;
     spec.body = body;
     spec.prefer = prefer;
     spec.authenticated = authenticated;
+    spec.readTimeoutMs = readTimeoutMs;
     return await this.request(spec);
   }
 
@@ -135,7 +141,7 @@ export class HttpClient implements Api {
       method: toNetMethod(spec.method),
       header: this.buildHeaders(spec),
       connectTimeout: CloudConfig.CONNECT_TIMEOUT_MS,
-      readTimeout: CloudConfig.READ_TIMEOUT_MS,
+      readTimeout: spec.readTimeoutMs > 0 ? spec.readTimeoutMs : CloudConfig.READ_TIMEOUT_MS,
       expectDataType: http.HttpDataType.STRING,
       usingCache: false
     };

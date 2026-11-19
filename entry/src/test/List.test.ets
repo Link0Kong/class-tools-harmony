@@ -31,6 +31,7 @@ import mapTest from './Map.test';
 import cloudSpaceTest from './CloudSpace.test';
 import breakpointsTest from './Breakpoints.test';
 import notifyTest from './Notify.test';
+import legalTest from './Legal.test';
 
 export default function testsuite() {
   sessionTest();
@@ -66,4 +67,5 @@ export default function testsuite() {
   cloudSpaceTest();
   breakpointsTest();
   notifyTest();
+  legalTest();
 }

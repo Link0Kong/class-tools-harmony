@@ -24,6 +24,9 @@ export class FakeApi implements Api {
   noticesSigBody: string = '[]';
   /** 云端 notices 整表响应原文。 */
   noticesBody: string = '[]';
+  /** 云端 rpc/class_notices_meta 响应原文（数组）；status>=400 时模拟接口不存在。 */
+  noticesMetaBody: string = '[]';
+  noticesMetaStatus: number = 200;
   /** 云端 site_assets 响应原文。 */
   siteAssetsBody: string = '[]';
   /** 云端 power 当前值响应原文。 */
@@ -58,14 +61,20 @@ export class FakeApi implements Api {
   hwListBody: string = '[]';
 
   getPaths: string[] = [];
+  getTimeouts: number[] = [];
+  getRetryFlags: boolean[] = [];
   postPaths: string[] = [];
   postBodies: string[] = [];
+  postTimeouts: number[] = [];
   patchPaths: string[] = [];
   patchBodies: string[] = [];
   deletePaths: string[] = [];
 
-  async get(path: string, authenticated: boolean = true): Promise<ApiResult> {
+  async get(path: string, authenticated: boolean = true, readTimeoutMs: number = 0,
+    retryOnNetworkFailure: boolean = true): Promise<ApiResult> {
     this.getPaths.push(path);
+    this.getTimeouts.push(readTimeoutMs);
+    this.getRetryFlags.push(retryOnNetworkFailure);
     if (this.failGets) {
       return ApiResult.failure(new ApiError(ApiErrorKind.Network, 0, 'network', 'fake get failure'));
     }
@@ -125,9 +134,17 @@ export class FakeApi implements Api {
     return ApiResult.success('[]');
   }
 
-  async post(path: string, body: string, prefer: string = '', authenticated: boolean = true): Promise<ApiResult> {
+  async post(path: string, body: string, prefer: string = '', authenticated: boolean = true,
+    readTimeoutMs: number = 0): Promise<ApiResult> {
     this.postPaths.push(path);
     this.postBodies.push(body);
+    this.postTimeouts.push(readTimeoutMs);
+    if (path === 'rpc/class_notices_meta') {
+      if (this.noticesMetaStatus >= 400) {
+        return ApiResult.failure(new ApiError(ApiErrorKind.Http, this.noticesMetaStatus, 'meta', 'fake meta failure'));
+      }
+      return ApiResult.success(this.noticesMetaBody);
+    }
     if (this.failPosts) {
       return ApiResult.failure(new ApiError(ApiErrorKind.Network, 0, 'network', 'fake post failure'));
     }

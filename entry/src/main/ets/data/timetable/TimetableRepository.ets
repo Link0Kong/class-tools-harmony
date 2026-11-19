@@ -44,6 +44,8 @@ export class TimetableRepository {
   private cache: TtSnapshot | undefined = undefined;
   private cachedAt: number = 0;
   private loaded: boolean = false;
+  /** 并发合并：工作台与通知扫描同时刷新时只保留一个请求。 */
+  private inflight: Promise<TtResult> | undefined = undefined;
 
   constructor(api: Api, personalProvider: () => Blob | undefined = () => undefined,
     clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS) {
@@ -54,6 +56,21 @@ export class TimetableRepository {
   }
 
   async load(force: boolean): Promise<TtResult> {
+    if (this.inflight !== undefined) {
+      return await this.inflight;
+    }
+    const pending: Promise<TtResult> = this.loadOnce(force);
+    this.inflight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.inflight === pending) {
+        this.inflight = undefined;
+      }
+    }
+  }
+
+  private async loadOnce(force: boolean): Promise<TtResult> {
     const now: number = this.clock();
     const personal: TtSnapshot | undefined = this.personalSnapshot();
     if (personal !== undefined && personal.c.length > 0) {

@@ -173,6 +173,21 @@ export default function homeworkTest() {
       expect(second.rows.length).assertEqual(1);
     });
 
+    it('coalesces_concurrent_loads', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.homeworkBody = '[' + rowJson('hw_1', '数学', '2026-11-20', '18:00') + ']';
+      const repo: HomeworkRepository = new HomeworkRepository(api, () => 1000, 600000);
+      const first = repo.load(false);
+      const second = repo.load(false);
+      const a: HomeworkResult = await first;
+      const b: HomeworkResult = await second;
+      expect(a.ok).assertTrue();
+      expect(b.ok).assertTrue();
+      expect(a.rows.length).assertEqual(1);
+      expect(b.rows.length).assertEqual(1);
+      expect(api.getPaths.length).assertEqual(1);
+    });
+
     it('skips_rows_without_id', 0, () => {
       const raw: string = '[{"subject":"无 id"},{"id":"hw_1","subject":"有 id"}]';
       const rows = HomeworkRepository.parseRows(raw);
