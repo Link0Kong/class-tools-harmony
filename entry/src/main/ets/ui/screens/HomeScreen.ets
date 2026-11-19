@@ -616,14 +616,28 @@ export struct HomeScreen {
     return Math.max(half, Math.min(max, this.resizeStartWidth + this.resizeDx));
   }
 
+  private spanAt(index: number): number {
+    return HomeCards.normalizeSpan(this.cards[index].span);
+  }
+
+  /**
+   * 槽位行号：必须把目标卡片自身也算进去。
+   * 半宽卡后面紧跟整行卡时，整行卡要先换行，否则会落在右列并溢出屏幕。
+   */
   private slotRow(index: number): number {
+    if (index < 0 || index >= this.cards.length) {
+      return 0;
+    }
     let row: number = 0;
     let used: number = 0;
-    for (let i = 0; i < index && i < this.cards.length; i++) {
-      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
+    for (let i = 0; i <= index; i++) {
+      const span: number = this.spanAt(i);
       if (used + span > HomeCards.PER_ROW) {
         row += 1;
         used = 0;
+      }
+      if (i === index) {
+        return row;
       }
       used += span;
       if (used >= HomeCards.PER_ROW) {
@@ -635,11 +649,17 @@ export struct HomeScreen {
   }
 
   private slotCol(index: number): number {
+    if (index < 0 || index >= this.cards.length) {
+      return 0;
+    }
     let used: number = 0;
-    for (let i = 0; i < index && i < this.cards.length; i++) {
-      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
+    for (let i = 0; i <= index; i++) {
+      const span: number = this.spanAt(i);
       if (used + span > HomeCards.PER_ROW) {
         used = 0;
+      }
+      if (i === index) {
+        return used;
       }
       used += span;
       if (used >= HomeCards.PER_ROW) {
@@ -693,12 +713,12 @@ export struct HomeScreen {
   private dragStartCenterY: number = 0;
   private dragReordered: boolean = false;
 
-  /** 卡片槽位左上角（相对内容区）。 */
+  /** 卡片槽位左上角（相对内容区）。整行卡片永远从第 0 列开始。 */
   private slotX(index: number): number {
     if (index < 0 || index >= this.cards.length) {
       return 0;
     }
-    if (this.slotCol(index) === 0) {
+    if (this.spanAt(index) === HomeCards.FULL || this.slotCol(index) === 0) {
       return 0;
     }
     return this.widthForSpan(HomeCards.HALF) + Tokens.GAP;
