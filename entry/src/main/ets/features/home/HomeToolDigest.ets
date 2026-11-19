@@ -51,7 +51,7 @@ export class HomeToolDigest {
     const gradeText: string = latest.grade.trim();
     const primary: string = latest.totalText() + ' 分' + (gradeText.length > 0 ? ' · ' + gradeText : '');
     const lines: ToolDigestLine[] = [];
-    lines.push(new ToolDigestLine(latest.timeText() + ' 录入', HomeToolDigest.filledText(latest.fields)));
+    lines.push(new ToolDigestLine(HomeToolDigest.filledText(latest.fields), latest.timeText() + ' 录入'));
     const weak: string = HomeToolDigest.weakText(latest);
     if (weak.length > 0) {
       lines.push(new ToolDigestLine('待提升', weak));

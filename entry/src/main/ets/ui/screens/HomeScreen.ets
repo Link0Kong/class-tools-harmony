@@ -814,7 +814,7 @@ export struct HomeScreen {
   }
 
   /**
-   * 拖动实时排序：手指越过邻卡中心就立即交换位置，
+   * 拖动实时排序：被拖卡片中心进入某个槽位就立即交换，
    * 其余卡片由隐式动画让位；被拖卡片用绝对中心减去新槽位中心，保持在手指下不跳。
    */
   private updateDrag(dx: number, dy: number): void {
@@ -827,7 +827,7 @@ export struct HomeScreen {
     if (from < 0) {
       return;
     }
-    const to: number = this.nearestIndexAt(absX, absY, from);
+    const to: number = this.targetIndexAt(absX, absY, from);
     if (to !== from) {
       this.cards = HomeCards.moveTo(this.cards, from, to);
       this.dragReordered = true;
@@ -865,7 +865,16 @@ export struct HomeScreen {
     }, 260);
   }
 
-  private nearestIndexAt(x: number, y: number, exclude: number): number {
+  /** 命中槽位：中心落进哪个卡片的矩形就换到哪个位置；落在间隙时取最近中心。 */
+  private targetIndexAt(x: number, y: number, exclude: number): number {
+    for (let i = 0; i < this.cards.length; i++) {
+      const sx: number = this.slotX(i);
+      const sy: number = this.slotY(i);
+      const w: number = this.widthForSpan(this.spanAt(i));
+      if (x >= sx && x <= sx + w && y >= sy && y <= sy + HOME_CARD_H) {
+        return i;
+      }
+    }
     let best: number = exclude;
     let bestDistance: number = Number.MAX_VALUE;
     for (let i = 0; i < this.cards.length; i++) {
@@ -1113,6 +1122,24 @@ export struct HomeScreen {
     .alignItems(VerticalAlign.Center)
   }
 
+  /** 卡片底部提示行：填入半宽卡片的剩余空间，避免大片空白。 */
+  @Builder
+  cardFooter(text: string) {
+    Row({ space: 2 }) {
+      Text(text)
+        .fontSize(10)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .layoutWeight(1)
+        .maxLines(1)
+      SymbolGlyph(AppSymbols.ARROW_RIGHT)
+        .fontSize(10)
+        .fontColor([Tokens.TEXT_TERTIARY])
+    }
+    .width('100%')
+    .height(14)
+    .alignItems(VerticalAlign.Center)
+  }
+
   @Builder
   ttBody(wide: boolean) {
     this.cardTitleRow(AppSymbols.TIMETABLE, '#6E8CA8', '今日课程',
@@ -1134,21 +1161,22 @@ export struct HomeScreen {
           .fontColor(Tokens.TEXT_PRIMARY)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 10 })
+          .margin({ top: 6 })
         Text(this.plan.today[0].startText + ' · ' + this.plan.today[0].span
           + (this.plan.today[0].room.length > 0 ? ' · ' + this.plan.today[0].room : ''))
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_SECONDARY)
           .maxLines(1)
-          .margin({ top: 4 })
+          .margin({ top: 3 })
         if (this.plan.today.length > 1) {
           Text('下一节 ' + this.plan.today[1].startText + ' ' + this.plan.today[1].name)
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.TEXT_TERTIARY)
             .maxLines(1)
-            .margin({ top: 4 })
+            .margin({ top: 3 })
         }
         Blank()
+        this.cardFooter('查看本周课表')
       }
     } else if (this.plan.hasData) {
       Text(wide ? '今天没课' : '没课')
@@ -1163,6 +1191,7 @@ export struct HomeScreen {
         .maxLines(1)
         .margin({ top: 4 })
       Blank()
+      this.cardFooter('查看本周课表')
     } else {
       Text('课表未同步')
         .fontSize(Tokens.F_BODY)
@@ -1175,6 +1204,7 @@ export struct HomeScreen {
         .maxLines(1)
         .margin({ top: 4 })
       Blank()
+      this.cardFooter('去同步课表')
     }
   }
 
@@ -1209,7 +1239,18 @@ export struct HomeScreen {
           .margin({ top: 4 })
           .opacity(this.hwFade ? 0 : 1)
           .translate({ y: this.hwFade ? -6 : 0 })
+        if (this.hwItems.length > 1) {
+          Text('· ' + this.hwItems[1].title)
+            .fontSize(11)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 6 })
+        }
         Blank()
+        if (this.hwOpen > 0) {
+          this.cardFooter('共 ' + this.hwOpen + ' 项待交')
+        }
       }
     } else {
       Text('作业都完成了')
@@ -1344,6 +1385,9 @@ export struct HomeScreen {
       }
     }
     Blank()
+    if (!wide) {
+      this.cardFooter('查看用电趋势')
+    }
   }
 
   @Builder
@@ -1458,6 +1502,14 @@ export struct HomeScreen {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 3 })
+        if (!wide && this.digestOf(def.id).lines.length > 0) {
+          Text(this.digestOf(def.id).lines[0].text)
+            .fontSize(11)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 4 })
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -1481,6 +1533,9 @@ export struct HomeScreen {
       .margin({ top: 6 })
     }
     Blank()
+    if (!wide) {
+      this.cardFooter('点击进入')
+    }
   }
 
   @Builder
@@ -1526,6 +1581,12 @@ export struct HomeScreen {
       Text(this.clockDate)
         .fontSize(Tokens.F_CAPTION)
         .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(1)
+        .margin({ top: 2 })
+      Text(this.clockWeek + (HomeDigest.weekText(this.plan.week).length > 0
+        ? ' · ' + HomeDigest.weekText(this.plan.week) : ''))
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
         .maxLines(1)
         .margin({ top: 2 })
     }
@@ -1574,6 +1635,9 @@ export struct HomeScreen {
         .margin({ top: 4 })
     }
     Blank()
+    if (!wide) {
+      this.cardFooter('在系统天气中查看')
+    }
   }
   @Builder
   cardBody(cfg: HomeCardConfig) {
@@ -1646,8 +1710,8 @@ export struct HomeScreen {
       y: this.slotYOf(cfg.id) + (this.dragId === cfg.id ? this.dragDy : 0)
     })
     .scale({
-      x: this.dragId === cfg.id ? 1.04 : 1,
-      y: this.dragId === cfg.id ? 1.04 : 1
+      x: this.dragId === cfg.id ? 1.0 : 1,
+      y: this.dragId === cfg.id ? 1.0 : 1
     })
     .zIndex(this.dragId === cfg.id ? 20 : 0)
     .opacity(this.dragId.length > 0 && this.dragId !== cfg.id ? 0.72 : 1)
