@@ -2,7 +2,7 @@
 # 用法：powershell -File scripts\gen_sync_fixtures.ps1
 $ErrorActionPreference = 'Stop'
 
-$src = 'C:\Users\Ko_Li\.openclaw\workspace\mp-class-tools-tests\_sync_fixtures'
+$src = 'G:\ClassTools\mp-class-tools\tests\_sync_fixtures'
 $out = Join-Path (Split-Path -Parent $PSScriptRoot) 'entry\src\test\fixtures\SyncFixtures.ets'
 
 function Esc([string]$s) {
