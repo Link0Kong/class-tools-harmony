@@ -1012,32 +1012,98 @@ export struct HomeScreen {
     .width('100%')
   }
 
+  /** 整行课程卡的一节课：时间 + 课程 + 教室。 */
+  @Builder
+  sessionRow(s: SessionInfo) {
+    Row({ space: 8 }) {
+      Text(s.startText)
+        .fontSize(10)
+        .fontColor('#6E8CA8')
+        .width(40)
+        .maxLines(1)
+      Text(s.name)
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (s.room.length > 0) {
+        Text(s.room)
+          .fontSize(10)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+      }
+    }
+    .width('100%')
+    .height(24)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 整行列表卡的一行：标题 + 右侧辅助信息。 */
+  @Builder
+  listRow(title: string, sub: string, accent: string) {
+    Row({ space: 6 }) {
+      Row()
+        .width(4)
+        .height(4)
+        .borderRadius(2)
+        .backgroundColor(accent)
+      Text(title)
+        .fontSize(12)
+        .fontColor(Tokens.TEXT_PRIMARY)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (sub.length > 0) {
+        Text(sub)
+          .fontSize(10)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+      }
+    }
+    .width('100%')
+    .height(24)
+    .alignItems(VerticalAlign.Center)
+  }
+
   @Builder
   ttBody(wide: boolean) {
     this.cardTitleRow(AppSymbols.TIMETABLE, '#6E8CA8', '今日课程',
       this.plan.hasData && this.plan.today.length > 0 ? '' + this.plan.today.length + ' 节' : '')
     if (this.plan.hasData && this.plan.today.length > 0) {
-      Text(this.plan.today[0].name)
-        .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 10 })
-      Text(this.plan.today[0].startText + ' · ' + this.plan.today[0].span
-        + (this.plan.today[0].room.length > 0 ? ' · ' + this.plan.today[0].room : ''))
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_SECONDARY)
-        .maxLines(1)
-        .margin({ top: 4 })
-      if (this.plan.today.length > 1) {
-        Text('下一节 ' + this.plan.today[1].startText + ' ' + this.plan.today[1].name)
+      if (wide) {
+        Column() {
+          ForEach(this.plan.today.slice(0, 3), (s: SessionInfo) => {
+            this.sessionRow(s)
+          }, (s: SessionInfo, index: number) => 'ts_' + index + '_' + s.name)
+        }
+        .width('100%')
+        .margin({ top: 6 })
+        Blank()
+      } else {
+        Text(this.plan.today[0].name)
+          .fontSize(Tokens.F_BODY)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 10 })
+        Text(this.plan.today[0].startText + ' · ' + this.plan.today[0].span
+          + (this.plan.today[0].room.length > 0 ? ' · ' + this.plan.today[0].room : ''))
           .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
+          .fontColor(Tokens.TEXT_SECONDARY)
           .maxLines(1)
           .margin({ top: 4 })
+        if (this.plan.today.length > 1) {
+          Text('下一节 ' + this.plan.today[1].startText + ' ' + this.plan.today[1].name)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .maxLines(1)
+            .margin({ top: 4 })
+        }
+        Blank()
       }
-      Blank()
     } else if (this.plan.hasData) {
       Text(wide ? '今天没课' : '没课')
         .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
@@ -1071,29 +1137,41 @@ export struct HomeScreen {
     this.cardTitleRow(AppSymbols.HOMEWORK, Tokens.WARM_SAND, '作业待交',
       this.hwOpen > 0 ? '' + this.hwOpen : '')
     if (this.hwItems.length > 0) {
-      Text(this.hwTitle())
-        .fontSize(wide ? Tokens.F_BODY : Tokens.F_LABEL)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .maxLines(wide ? 2 : 1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 10 })
-        .opacity(this.hwFade ? 0 : 1)
-        .translate({ y: this.hwFade ? -6 : 0 })
-      Text(this.hwSub())
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
-        .maxLines(1)
-        .margin({ top: 4 })
-        .opacity(this.hwFade ? 0 : 1)
-        .translate({ y: this.hwFade ? -6 : 0 })
+      if (wide) {
+        Column() {
+          ForEach(this.hwItems.slice(0, 3), (item: HomeCardItem, index: number) => {
+            this.listRow(item.title, item.sub, Tokens.WARM_SAND)
+          }, (item: HomeCardItem, index: number) => 'hw_' + index)
+        }
+        .width('100%')
+        .margin({ top: 6 })
+        Blank()
+      } else {
+        Text(this.hwTitle())
+          .fontSize(Tokens.F_LABEL)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 10 })
+          .opacity(this.hwFade ? 0 : 1)
+          .translate({ y: this.hwFade ? -6 : 0 })
+        Text(this.hwSub())
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+          .margin({ top: 4 })
+          .opacity(this.hwFade ? 0 : 1)
+          .translate({ y: this.hwFade ? -6 : 0 })
+        Blank()
+      }
     } else {
       Text('作业都完成了')
         .fontSize(Tokens.F_LABEL)
         .fontColor(Tokens.TEXT_SECONDARY)
         .margin({ top: 10 })
+      Blank()
     }
-    Blank()
   }
 
   @Builder
@@ -1102,36 +1180,49 @@ export struct HomeScreen {
       this.ntPending > 0 ? '' + this.ntPending : '')
     if (this.ntState === 'ok') {
       if (this.ntItems.length > 0) {
-        Text(this.ntTitle())
-          .fontSize(wide ? Tokens.F_BODY : Tokens.F_LABEL)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .maxLines(wide ? 2 : 1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 10 })
-          .opacity(this.ntFade ? 0 : 1)
-          .translate({ y: this.ntFade ? -6 : 0 })
-        Text(this.ntSub())
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
-          .maxLines(1)
-          .margin({ top: 4 })
-          .opacity(this.ntFade ? 0 : 1)
-          .translate({ y: this.ntFade ? -6 : 0 })
-        if (this.ntNew) {
-          Text('新通知')
+        if (wide) {
+          Column() {
+            ForEach(this.ntItems.slice(0, 3), (item: HomeCardItem, index: number) => {
+              this.listRow(item.title, item.sub, '#B06A55')
+            }, (item: HomeCardItem, index: number) => 'nt_' + index)
+          }
+          .width('100%')
+          .margin({ top: 6 })
+          Blank()
+        } else {
+          Text(this.ntTitle())
+            .fontSize(Tokens.F_LABEL)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Tokens.TEXT_PRIMARY)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ top: 10 })
+            .opacity(this.ntFade ? 0 : 1)
+            .translate({ y: this.ntFade ? -6 : 0 })
+          Text(this.ntSub())
             .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.SLATE_BLUE)
-            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-            .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.14))
-            .borderRadius(6)
-            .margin({ top: 6 })
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .maxLines(1)
+            .margin({ top: 4 })
+            .opacity(this.ntFade ? 0 : 1)
+            .translate({ y: this.ntFade ? -6 : 0 })
+          if (this.ntNew) {
+            Text('新通知')
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(Tokens.SLATE_BLUE)
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.14))
+              .borderRadius(6)
+              .margin({ top: 6 })
+          }
+          Blank()
         }
       } else {
         Text('暂无待处理通知')
           .fontSize(Tokens.F_LABEL)
           .fontColor(Tokens.TEXT_SECONDARY)
           .margin({ top: 10 })
+        Blank()
       }
     } else {
       Text(this.ntState === 'off' ? '通知需联网同步'
@@ -1140,8 +1231,8 @@ export struct HomeScreen {
         .fontColor(Tokens.TEXT_SECONDARY)
         .maxLines(2)
         .margin({ top: 10 })
+      Blank()
     }
-    Blank()
   }
 
   @Builder
@@ -1150,34 +1241,61 @@ export struct HomeScreen {
     if (this.powerHas) {
       Row() {
         Text(this.powerQ)
-          .fontSize(wide ? 30 : 26)
+          .fontSize(wide ? 32 : 26)
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Text(this.powerUnit)
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
           .margin({ left: 2, bottom: 4 })
+        if (wide) {
+          Blank()
+          Text(HomeDigest.powerStateText(this.powerState))
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(this.powerPillColor())
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
+            .borderRadius(Tokens.RADIUS_PILL)
+        }
       }
+      .width('100%')
       .alignItems(VerticalAlign.Bottom)
-      .margin({ top: 8 })
+      .margin({ top: wide ? 6 : 8 })
       Text(this.powerLabel + (this.powerUpd.length > 0 ? ' · ' + this.powerUpd : ''))
         .fontSize(Tokens.F_CAPTION)
         .fontColor(Tokens.TEXT_SECONDARY)
         .maxLines(1)
-        .margin({ top: 2 })
-      Text(HomeDigest.powerStateText(this.powerState))
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(this.powerPillColor())
-        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-        .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
-        .borderRadius(Tokens.RADIUS_PILL)
-        .margin({ top: 6 })
+        .margin({ top: 4 })
+      if (wide) {
+        if (this.powerState === 'low' || this.powerState === 'warn') {
+          Text('电量偏低，建议及时充值')
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.TEXT_TERTIARY)
+            .maxLines(1)
+            .margin({ top: 4 })
+        }
+      } else {
+        Text(HomeDigest.powerStateText(this.powerState))
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(this.powerPillColor())
+          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+          .backgroundColor(Tokens.tint(this.powerPillColor(), 0.12))
+          .borderRadius(Tokens.RADIUS_PILL)
+          .margin({ top: 6 })
+      }
     } else {
       Text('关注宿舍后显示电量')
         .fontSize(Tokens.F_LABEL)
         .fontColor(Tokens.TEXT_SECONDARY)
-        .maxLines(2)
+        .maxLines(wide ? 2 : 1)
         .margin({ top: 10 })
+      if (wide) {
+        Text('在「我的 · 宿舍电费」选择房间后自动同步')
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .maxLines(1)
+          .margin({ top: 4 })
+      }
     }
     Blank()
   }
@@ -1255,10 +1373,10 @@ export struct HomeScreen {
   @Builder
   entryBody(def: HomeCardDef, wide: boolean) {
     Row() {
-      this.iconBadge(def.symbol, def.accent, 36, 20)
+      this.iconBadge(def.symbol, def.accent, wide ? 40 : 34, wide ? 22 : 18)
       Column() {
         Text(def.title)
-          .fontSize(Tokens.F_BODY)
+          .fontSize(wide ? Tokens.F_BODY : Tokens.F_LABEL)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.TEXT_PRIMARY)
           .maxLines(1)
@@ -1272,9 +1390,11 @@ export struct HomeScreen {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       .margin({ left: 10 })
-      SymbolGlyph(AppSymbols.ARROW_RIGHT)
-        .fontSize(15)
-        .fontColor([Tokens.TEXT_TERTIARY])
+      if (wide) {
+        SymbolGlyph(AppSymbols.ARROW_RIGHT)
+          .fontSize(15)
+          .fontColor([Tokens.TEXT_TERTIARY])
+      }
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
@@ -1296,21 +1416,37 @@ export struct HomeScreen {
     .width('100%')
 
     Text(this.clockText)
-      .fontSize(wide ? 36 : 30)
+      .fontSize(wide ? 34 : 30)
       .fontWeight(FontWeight.Bold)
       .fontColor(Tokens.TEXT_PRIMARY)
-      .margin({ top: 8 })
+      .margin({ top: wide ? 8 : 8 })
       .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
 
-    Text(this.clockDate)
-      .fontSize(Tokens.F_CAPTION)
-      .fontColor(Tokens.TEXT_SECONDARY)
-      .margin({ top: 2 })
-    Text(this.clockWeek + (HomeDigest.weekText(this.plan.week).length > 0
-      ? ' · ' + HomeDigest.weekText(this.plan.week) : ''))
-      .fontSize(Tokens.F_CAPTION)
-      .fontColor(Tokens.TEXT_TERTIARY)
-      .margin({ top: 2 })
+    if (wide) {
+      Row({ space: 6 }) {
+        Text(this.clockWeek + ' · ' + this.clockDate)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .layoutWeight(1)
+          .maxLines(1)
+        if (HomeDigest.weekText(this.plan.week).length > 0) {
+          Text(HomeDigest.weekText(this.plan.week))
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(Tokens.MIST_TEAL)
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .backgroundColor(Tokens.tint(Tokens.MIST_TEAL, 0.12))
+            .borderRadius(6)
+        }
+      }
+      .width('100%')
+      .margin({ top: 4 })
+    } else {
+      Text(this.clockDate)
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(1)
+        .margin({ top: 2 })
+    }
     Blank()
   }
 
@@ -1329,24 +1465,32 @@ export struct HomeScreen {
     }
     .width('100%')
 
-    Row() {
+    Row({ space: 8 }) {
       SymbolGlyph(AppSymbols.WEATHER)
         .fontSize(wide ? 30 : 24)
         .fontColor(['#4A88A8'])
         .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
+      Text('天气数据未接入')
+        .fontSize(Tokens.F_LABEL)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(1)
     }
-    .margin({ top: 12 })
-    Text('天气数据未接入')
-      .fontSize(Tokens.F_LABEL)
-      .fontColor(Tokens.TEXT_SECONDARY)
-      .maxLines(1)
-      .margin({ top: 6 })
-    Text('当前设备未提供天气服务，可在系统天气中查看')
-      .fontSize(Tokens.F_CAPTION)
-      .fontColor(Tokens.TEXT_TERTIARY)
-      .maxLines(wide ? 2 : 1)
-      .textOverflow({ overflow: TextOverflow.Ellipsis })
-      .margin({ top: 2 })
+    .alignItems(VerticalAlign.Center)
+    .margin({ top: wide ? 12 : 10 })
+
+    if (wide) {
+      Text('当前设备未提供天气服务，可在系统天气中查看')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(2)
+        .margin({ top: 6 })
+    } else {
+      Text('可在系统天气查看')
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_TERTIARY)
+        .maxLines(1)
+        .margin({ top: 4 })
+    }
     Blank()
   }
   @Builder
