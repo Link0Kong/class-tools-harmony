@@ -4,10 +4,10 @@
 > 与网页、微信小程序、安卓端共用同一套 CloudBase 数据契约。
 
 - 包名：`com.furina.classtools`
-- 版本：**1.0.7**（HarmonyOS 独立版本线；通知中心细化 + 手表端）
+- 版本：**1.0.8**（HarmonyOS 独立版本线；工作台卡片自定义 + 编辑态）
 - 目标 SDK：HarmonyOS SDK API 26（DevEco Studio 26.0.0.865，模拟器 HarmonyOS 7.0.0）
 - 语言/UI：ArkTS + ArkUI（Stage 模型），**零第三方依赖**（不引 UI 库/网络库/图标库）
-- 状态：**1.0.7**：最新整合包已产出（396 单测全绿），桌面已交付
+- 状态：**1.0.8**：工作台卡片自定义（添加/排序/缩放/移除）+ 编辑态 + 顶部整合已完成，签名包已交付
 - 已实现工具：全部 16 个 —— `draw`、`group`、`fit`、`hw`、`nt`、`tt`、`power`、`water`、`vote`、`ppt`、`roll`、`diag`、`roster`、`jw`、`map`、`file`
 - 已删除工具（2026-11-16，用户要求）：`chsi` 学信网、`today` 今日校园（不再恢复入口；相关 `features/chsi/`、`data/todaycampus/`、`ui/tools/ChsiScreen.ets`、`ui/tools/TodayCampusScreen.ets` 与对应单测均已移除）
 
@@ -63,7 +63,7 @@ $env:DEVECO_SDK_HOME = 'C:\Program Files\Huawei\DevEco Studio\sdk'
 .\scripts\test.ps1                 # 本地单测（hypium），打印汇总并以失败退出码结束
 ```
 
-当前 **382 个用例全绿**，其中包含与跨端 oracle（`mp-class-tools-tests/_sync_fixtures/merge_ref.js`）
+当前 **396 个用例全绿**，其中包含与跨端 oracle（`mp-class-tools-tests/_sync_fixtures/merge_ref.js`）
 逐字段对比的 userdata v6 合并用例：mp 写/web 读、web 写/mp 读、v5 迁移三条真实 fixture。
 结果明细：`entry/.test/default/intermediates/test/coverage_data/test_result.txt`。
 
@@ -123,8 +123,8 @@ node scripts\contract_write_probe.mjs   # 校验 userdata upsert（Prefer: retur
 
 ```powershell
 cd C:\Users\Ko_Li\.openclaw\workspace\harmony-class-tools
-.\scripts\test.ps1            # 382 条单测
+.\scripts\test.ps1            # 396 条单测
 .\scripts\build.ps1           # 产出 unsigned HAP
 .\scripts\smoke_emulator.ps1  # 启动模拟器并安装
 ```
-交付物：`entry/build/default/outputs/default/entry-default-unsigned.hap`（1.0.7，模拟器可直装；真机需 DevEco 自动签名）。
+交付物：`entry/build/default/outputs/default/entry-default-unsigned.hap`（1.0.8，模拟器可直装；真机需 DevEco 自动签名）。

@@ -104,7 +104,7 @@ export default function breakpointsTest() {
         expect(seen.indexOf(tool.id)).assertEqual(-1);
         seen.push(tool.id);
         expect(tool.name.length > 0).assertTrue();
-        expect(tool.glyph.length > 0).assertTrue();
+        expect(tool.symbol !== undefined).assertTrue();
         expect(tool.features.length > 0).assertTrue();
         expect(ToolCatalog.byId(tool.id) !== undefined).assertTrue();
       }

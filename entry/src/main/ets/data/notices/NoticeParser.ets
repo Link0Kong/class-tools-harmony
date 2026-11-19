@@ -319,52 +319,28 @@ export class NoticeBodyParser {
       return group;
     }
     if (JsonBlob.has(override, 'title')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'title'), '');
-      if (value.length > 0) {
-        group.title = value;
-      }
+      group.title = JsonBlob.asString(JsonBlob.get(override, 'title'), '');
     }
     if (JsonBlob.has(override, 'cat')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'cat'), '');
-      if (value.length > 0) {
-        group.cat = value;
-      }
+      group.cat = JsonBlob.asString(JsonBlob.get(override, 'cat'), '');
     }
     if (JsonBlob.has(override, 'summary')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'summary'), '');
-      if (value.length > 0) {
-        group.summary = value;
-      }
+      group.summary = JsonBlob.asString(JsonBlob.get(override, 'summary'), '');
     }
     if (JsonBlob.has(override, 'aiSummary')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'aiSummary'), '');
-      if (value.length > 0) {
-        group.aiSummary = value;
-      }
+      group.aiSummary = JsonBlob.asString(JsonBlob.get(override, 'aiSummary'), '');
     }
     if (JsonBlob.has(override, 'deadline')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'deadline'), '');
-      if (value.length > 0) {
-        group.deadline = value;
-      }
+      group.deadline = JsonBlob.asString(JsonBlob.get(override, 'deadline'), '');
     }
     if (JsonBlob.has(override, 'eventAt')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'eventAt'), '');
-      if (value.length > 0) {
-        group.eventAt = value;
-      }
+      group.eventAt = JsonBlob.asString(JsonBlob.get(override, 'eventAt'), '');
     }
     if (JsonBlob.has(override, 'expireAt')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'expireAt'), '');
-      if (value.length > 0) {
-        group.expireAt = value;
-      }
+      group.expireAt = JsonBlob.asString(JsonBlob.get(override, 'expireAt'), '');
     }
     if (JsonBlob.has(override, 'timeLabel')) {
-      const value: string = JsonBlob.asString(JsonBlob.get(override, 'timeLabel'), '');
-      if (value.length > 0) {
-        group.timeLabel = value;
-      }
+      group.timeLabel = JsonBlob.asString(JsonBlob.get(override, 'timeLabel'), '');
     }
     return group;
   }

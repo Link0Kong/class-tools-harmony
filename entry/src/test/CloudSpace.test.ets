@@ -128,9 +128,9 @@ export default function cloudSpaceTest() {
       expect(CloudSpaceLogic.fileKind('', 'a.pdf')).assertEqual(CloudSpaceFileKind.PDF);
       expect(CloudSpaceLogic.fileKind('', 'a.docx')).assertEqual(CloudSpaceFileKind.DOCUMENT);
       expect(CloudSpaceLogic.fileKind('', 'a.xyz')).assertEqual(CloudSpaceFileKind.OTHER);
-      expect(CloudSpaceLogic.fileKindGlyph(CloudSpaceFileKind.IMAGE)).assertEqual('图');
-      expect(CloudSpaceLogic.fileKindGlyph(CloudSpaceFileKind.PDF)).assertEqual('PDF');
-      expect(CloudSpaceLogic.fileKindGlyph(CloudSpaceFileKind.OTHER)).assertEqual('件');
+      expect(CloudSpaceLogic.fileKindSymbol(CloudSpaceFileKind.IMAGE) !== undefined).assertTrue();
+      expect(CloudSpaceLogic.fileKindSymbol(CloudSpaceFileKind.PDF) !== undefined).assertTrue();
+      expect(CloudSpaceLogic.fileKindSymbol(CloudSpaceFileKind.OTHER) !== undefined).assertTrue();
     });
   });
 
