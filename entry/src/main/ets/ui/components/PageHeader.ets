@@ -112,7 +112,19 @@ export struct PageHeader {
 
   build() {
     Column() {
-      this.headerBar()
+      Stack({ alignContent: Alignment.Center }) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(Tokens.GLASS)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+          .border({ width: { bottom: 0.5 }, color: Tokens.GLASS_STROKE })
+          .opacity(this.progress)
+          .hitTestBehavior(HitTestMode.None)
+        this.headerBar()
+      }
+      .width('100%')
+      .height(56)
       Column() {
         this.content()
       }

@@ -309,7 +309,8 @@ export struct AppShell {
       .barPosition(this.sideNav() ? BarPosition.Start : BarPosition.End)
       .barMode(BarMode.Fixed)
       .barOverlap(!this.sideNav())
-      .barBackgroundColor(this.sideNav() ? '#D9FFFFFF' : Color.Transparent)
+      .barBackgroundColor(this.sideNav() ? Tokens.GLASS : Color.Transparent)
+      .barBackgroundBlurStyle(BlurStyle.COMPONENT_THICK)
       .scrollable(!this.sideNav())
       .animationDuration(Motion.NORMAL)
       .barFloatingStyle(this.sideNav() ? undefined : {
@@ -371,6 +372,10 @@ export struct AppShell {
         scrollEffectOpts: {
           enableScrollEffect: false,
           scrollEffectType: ScrollEffectType.GRADIENT_BLUR
+        },
+        systemMaterialEffect: {
+          materialType: hdsMaterial.MaterialType.ADAPTIVE,
+          materialLevel: this.materialLevel
         },
         blurStrategy: BlurStrategy.ENABLE
       }
