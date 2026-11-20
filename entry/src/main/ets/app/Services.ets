@@ -7,6 +7,7 @@ import { MarksRepository, FileMarksLocalStore } from '../data/marks/MarksReposit
 import { ClassMembersRepository, FileClassMemberCache } from '../data/member/ClassMembersRepository';
 import { ClassLeagueRepository } from '../data/member/ClassLeagueRepository';
 import { PreferencesVisitsStore, VisitsReporter } from '../data/visits/VisitsReporter';
+import { VisitsRepository } from '../data/visits/VisitsRepository';
 import { FitRecsRepository } from '../data/fitrecs/FitRecsRepository';
 import { HomeworkRepository } from '../data/homework/HomeworkRepository';
 import { NoticesRepository } from '../data/notices/NoticesRepository';
@@ -92,4 +93,7 @@ export class Services {
     new PreferencesVisitsStore(),
     () => Services.currentSid,
     () => Services.currentName);
+
+  /** 访问统计读取（仅管理员；页面在非管理员时不调用）。 */
+  static readonly visitsRepository: VisitsRepository = new VisitsRepository(Services.api);
 }

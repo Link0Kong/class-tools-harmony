@@ -6,6 +6,7 @@ import userdataRepositoryTest from './UserdataRepository.test';
 import marksRepositoryTest from './MarksRepository.test';
 import membersTest from './Members.test';
 import visitsTest from './Visits.test';
+import visitStatsTest from './VisitStats.test';
 import drawTest from './Draw.test';
 import exportTest from './Export.test';
 import groupTest from './Group.test';
@@ -42,6 +43,7 @@ export default function testsuite() {
   marksRepositoryTest();
   membersTest();
   visitsTest();
+  visitStatsTest();
   drawTest();
   exportTest();
   groupTest();

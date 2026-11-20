@@ -3,6 +3,7 @@ import { ApiResult } from '../net/ApiResult';
 import { Blob } from '../sync/JsonBlob';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Log } from '../../common/Log';
+import { VisitDevice } from './VisitDevice';
 import { preferences } from '@kit.ArkData';
 
 const TAG: string = 'Visits';
@@ -111,8 +112,10 @@ export class PreferencesVisitsStore implements VisitsStore {
  * 访问上报（与网页 `visitLog()` 同口径）：
  * - `POST visits` **不带** `Prefer: return=representation`（returning 会被 RLS 拒绝）；
  * - `id = "<sid>|<slot>|<随机6位>"`、`slot = YYYY-MM-DD-HH`；
- * - 行含 `client = "harmony"`（统计多端契约 §1：各端记录具体登录端）；
- * - 同一 sid 同一 slot 只报一次（本机记录），失败不记，下次重试。
+ * - 行含 `client = "harmony"`、`ver`（`CloudConfig.APP_VERSION`）、`dev`（设备短标签，
+ *   统计多端详细统计契约 §1/§5）；
+ * - 同一 sid 同一 slot 只报一次（本机记录），失败不记，下次重试；
+ * - 版本/设备取不到也照常上报（空串 / 兜底），不阻断、不重试风暴。
  */
 export class VisitsReporter {
   private api: Api;
@@ -120,14 +123,16 @@ export class VisitsReporter {
   private sidProvider: () => string;
   private nameProvider: () => string;
   private clock: () => number;
+  private devProvider: () => string;
 
   constructor(api: Api, store: VisitsStore, sidProvider: () => string, nameProvider: () => string,
-    clock: () => number = () => Date.now()) {
+    clock: () => number = () => Date.now(), devProvider: () => string = () => VisitDevice.current()) {
     this.api = api;
     this.store = store;
     this.sidProvider = sidProvider;
     this.nameProvider = nameProvider;
     this.clock = clock;
+    this.devProvider = devProvider;
   }
 
   async reportOnce(): Promise<boolean> {
@@ -142,6 +147,13 @@ export class VisitsReporter {
     }
     const did: string = await this.store.deviceId();
     const random: string = randomBase36(6);
+    let dev: string = '';
+    try {
+      dev = this.devProvider();
+    } catch (e) {
+      // 契约：设备信息拿不到就写空串，不能因此阻断上报。
+      dev = '';
+    }
     const row: Blob = {
       'id': sid + '|' + slot + '|' + random,
       'slot': slot,
@@ -149,7 +161,9 @@ export class VisitsReporter {
       'name': this.nameProvider().trim(),
       'did': did,
       'ts': this.clock(),
-      'client': 'harmony'
+      'client': 'harmony',
+      'ver': VisitDevice.appVersion(),
+      'dev': dev
     };
     const rows: Object[] = [row];
     const result: ApiResult = await this.api.post('visits', JSON.stringify(rows), '', true);

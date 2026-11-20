@@ -1,6 +1,7 @@
 ﻿import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { formatSlot, InMemoryVisitsStore, VisitsReporter } from '../main/ets/data/visits/VisitsReporter';
+import { CloudConfig } from '../main/ets/config/CloudConfig';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 
 const SID: string = '3260799999';
@@ -36,6 +37,24 @@ export default function visitsTest() {
       expect(JsonBlob.asString(JsonBlob.get(row, 'slot'), '')).assertEqual('2026-11-14-09');
       expect(JsonBlob.asString(JsonBlob.get(row, 'sid'), '')).assertEqual(SID);
       expect(JsonBlob.asString(JsonBlob.get(row, 'did'), '')).assertEqual('aabbccddeeff0011');
+      expect(JsonBlob.asString(JsonBlob.get(row, 'client'), '')).assertEqual('harmony');
+      // 契约（详细统计 2026-11-20）：行必须含版本与设备短标签。
+      expect(JsonBlob.asString(JsonBlob.get(row, 'ver'), '')).assertEqual(CloudConfig.APP_VERSION);
+      const dev: string = JsonBlob.asString(JsonBlob.get(row, 'dev'), '');
+      expect(dev.length > 0).assertTrue();
+      expect(dev.length <= 48).assertTrue();
+      expect(dev.indexOf('undefined') < 0).assertTrue();
+    });
+
+    it('posts_ver_and_dev_from_providers', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      const store: InMemoryVisitsStore = new InMemoryVisitsStore('aabbccddeeff0011');
+      const reporter: VisitsReporter = new VisitsReporter(api, store, () => SID, () => '测试账号',
+        () => new Date(2026, 10, 20, 21, 3, 0).getTime(), () => 'Mate 60 · HarmonyOS 5.0.0');
+      expect(await reporter.reportOnce()).assertTrue();
+      const row: Blob = payload(api);
+      expect(JsonBlob.asString(JsonBlob.get(row, 'ver'), '')).assertEqual(CloudConfig.APP_VERSION);
+      expect(JsonBlob.asString(JsonBlob.get(row, 'dev'), '')).assertEqual('Mate 60 · HarmonyOS 5.0.0');
       expect(JsonBlob.asString(JsonBlob.get(row, 'client'), '')).assertEqual('harmony');
     });
 

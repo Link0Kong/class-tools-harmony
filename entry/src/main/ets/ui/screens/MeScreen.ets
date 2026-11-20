@@ -1049,6 +1049,12 @@ export struct MeScreen {
               .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
           }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          if (this.isAdmin) {
+            this.linkRow('统计', '访问次数 · 登录端 · 设备', () => {
+              this.onOpenTool('stats');
+            })
+            Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          }
           this.linkRow('诊断', '服务健康 · 设备自检', () => {
             this.onOpenTool('diag');
           })

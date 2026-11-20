@@ -94,7 +94,8 @@ export default function breakpointsTest() {
       }
       expect(ids.indexOf('map') >= 0).assertTrue();
       expect(ids.indexOf('file') >= 0).assertTrue();
-      expect(ids.length).assertEqual(16);
+      expect(ids.indexOf('stats') >= 0).assertTrue();
+      expect(ids.length).assertEqual(17);
     });
 
     it('ids_unique_and_features_present', 0, () => {

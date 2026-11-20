@@ -16,6 +16,7 @@ import { VoteScreen } from './VoteScreen';
 import { PptScreen } from './PptScreen';
 import { RollScreen } from './RollScreen';
 import { DiagScreen } from './DiagScreen';
+import { StatsScreen } from './StatsScreen';
 import { JwScreen } from './JwScreen';
 import { MapScreen } from './MapScreen';
 import { FileTransferScreen } from './FileTransferScreen';
@@ -124,6 +125,12 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'roll') {
       RollScreen({
+        onClose: () => {
+          this.onClose();
+        }
+      })
+    } else if (this.toolId === 'stats') {
+      StatsScreen({
         onClose: () => {
           this.onClose();
         }

@@ -49,6 +49,8 @@ export class AppSymbols {
   static readonly MAP: Resource = $r('sys.symbol.map');
   static readonly FILE: Resource = $r('sys.symbol.arrow_left_arrow_right');
   static readonly USAGE: Resource = $r('sys.symbol.reports');
+  /** 访问统计（仅管理员；系统 Symbol，无需新增资源文件）。 */
+  static readonly STATS: Resource = $r('sys.symbol.reports');
 
   static readonly IMAGE: Resource = $r('sys.symbol.ohos_photo');
   static readonly VIDEO: Resource = $r('sys.symbol.video');
@@ -97,6 +99,9 @@ export class AppSymbols {
     }
     if (id === 'diag') {
       return AppSymbols.DIAG;
+    }
+    if (id === 'stats') {
+      return AppSymbols.STATS;
     }
     if (id === 'jw') {
       return AppSymbols.JW;

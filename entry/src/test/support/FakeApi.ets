@@ -54,6 +54,8 @@ export class FakeApi implements Api {
   diagAnalysisBody: string = '[]';
   /** 云端 repair_tasks 响应原文。 */
   diagRepairBody: string = '[]';
+  /** 云端 visits 统计查询响应原文。 */
+  visitsBody: string = '[]';
   failGets: boolean = false;
   failPosts: boolean = false;
   hwActionBody: string = '{"ok":true,"count":1}';
@@ -130,6 +132,9 @@ export class FakeApi implements Api {
     }
     if (path.startsWith('repair_tasks')) {
       return ApiResult.success(this.diagRepairBody);
+    }
+    if (path.startsWith('visits')) {
+      return ApiResult.success(this.visitsBody);
     }
     return ApiResult.success('[]');
   }
