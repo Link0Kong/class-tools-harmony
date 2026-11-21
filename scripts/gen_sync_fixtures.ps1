@@ -1,9 +1,19 @@
-# 生成鸿蒙本地单测用的同步契约 fixture（来源：mp-class-tools-tests/_sync_fixtures/）
-# 用法：powershell -File scripts\gen_sync_fixtures.ps1
+# 生成鸿蒙本地单测用的同步契约 fixture（来源：手机端测试仓的 _sync_fixtures/）
+# 用法：powershell -File scripts\gen_sync_fixtures.ps1 [-Src <fixtures 目录>]
+# 注意：提交前确认 fixture 已脱敏（真实姓名 / 教师名 / 宿舍号一律改为虚构值）。
+param([string]$Src = '')
 $ErrorActionPreference = 'Stop'
 
-$src = 'G:\ClassTools\mp-class-tools\tests\_sync_fixtures'
-$out = Join-Path (Split-Path -Parent $PSScriptRoot) 'entry\src\test\fixtures\SyncFixtures.ets'
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $Src) {
+    $Src = if ($env:MP_FIXTURES_DIR) { $env:MP_FIXTURES_DIR } else {
+        Join-Path (Split-Path -Parent $root) 'mp-class-tools\tests\_sync_fixtures'
+    }
+}
+if (-not (Test-Path $Src)) {
+    throw "未找到 fixtures 目录：$Src（用 -Src 或 MP_FIXTURES_DIR 指定）"
+}
+$out = Join-Path $root 'entry\src\test\fixtures\SyncFixtures.ets'
 
 function Esc([string]$s) {
     $sb = New-Object System.Text.StringBuilder
@@ -36,7 +46,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine(' */')
 [void]$sb.AppendLine('')
 foreach ($n in $names) {
-    $raw = [System.IO.File]::ReadAllText((Join-Path $src $n[1]))
+    $raw = [System.IO.File]::ReadAllText((Join-Path $Src $n[1]))
     [void]$sb.AppendLine("export const $($n[0]): string = $(Esc $raw);")
     [void]$sb.AppendLine('')
 }

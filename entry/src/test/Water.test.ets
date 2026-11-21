@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   WaterRecord,
   WaterRecordReview,
@@ -12,7 +12,7 @@ import { WaterMonth } from '../main/ets/features/water/WaterMonth';
 import { WaterMutator } from '../main/ets/features/water/WaterMutator';
 import { Blob, JsonBlob } from '../main/ets/data/sync/JsonBlob';
 
-const ROOM: string = '4-23A---321';
+const ROOM: string = '4-23A---305';
 
 function record(month: string, reading: number): WaterRecord {
   const r: WaterRecord = new WaterRecord();
@@ -42,7 +42,7 @@ function parseJson(text: string): Blob {
 export default function waterTest() {
   describe('WaterCodec', () => {
     it('parses_tolerant_section', 0, () => {
-      const raw: Blob = parseJson('{"rooms":{"4-23A---321":{"p":7,"recs":['
+      const raw: Blob = parseJson('{"rooms":{"4-23A---305":{"p":7,"recs":['
         + '{"m":"2026-10","r":120.456,"ts":11},'
         + '{"m":"2026-09","r":100,"ts":10},'
         + '{"m":"2026-09","r":101,"ts":12},'

@@ -1,4 +1,4 @@
-﻿import { Tokens } from '../theme/Tokens';
+import { Tokens } from '../theme/Tokens';
 import { AppSymbols } from '../theme/AppSymbols';
 import { PageHeader } from '../components/PageHeader';
 import { UsageCard, UsageCategory, UsageData } from '../../features/usage/UsageData';
@@ -170,7 +170,7 @@ export struct UsageScreen {
     if (id === 'tt' || id === 'ppt') {
       return 'grid';
     }
-    if (id === 'hw' || id === 'jw' || id === 'chsi') {
+    if (id === 'hw' || id === 'jw') {
       return 'list';
     }
     if (id === 'nt' || id === 'fb') {

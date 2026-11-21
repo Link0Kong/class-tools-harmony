@@ -17,7 +17,13 @@
 **/.cache
 **/oh_modules
 
+# 环境变量
+.env
+push.env
+
 # 签名与密钥（绝不入库）
+*.pem
+*.key
 *.p12
 *.cer
 *.p7b
@@ -25,6 +31,21 @@
 *.keystore
 *.pfx
 /signing/
+
+# 内部运维脚本 / 说明（保留在本机，不进公开仓库）
+AGENTS.md
+sync_repos.py
+sync-repos.cmd
+
+# 临时脚本、抓取语料与调试产物
+__pycache__/
+tmp_*
+head_corpus.txt
+
+# 构建产物
+*.hap
+*.app
+docs/sql/
 
 # 日志 / 系统文件
 *.log

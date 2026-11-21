@@ -1,4 +1,4 @@
-﻿/** 使用说明文案（与网页端 __UG_CARDS_V1__ 一致）。 */
+/** 使用说明文案（与网页端 __UG_CARDS_V1__ 一致）。 */
 export class UsageCategory {
   key: string = '';
   label: string = '';
@@ -136,12 +136,6 @@ export class UsageData {
         "首次登录时勾选浏览器『保存密码』",
         "之后打开即自动填充账号密码",
       ], "自动填充由浏览器完成；校外打不开时先连学校 VPN"),
-    buildCard(
-      "chsi", "study", "学信网入口", "学信档案、学历学位查询官方入口", "blue", [
-        "工具栏或「全部」页打开学信网",
-        "点工具卡在新窗口打开官方页面",
-        "学信档案/照片校对需先登录学信网账号",
-      ], "本站不保存学信网账号；查询与报告以官方页面为准"),
   ];
 
   static ofCategory(key: string): UsageCard[] {

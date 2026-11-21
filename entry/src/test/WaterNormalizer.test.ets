@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import { WaterNormalizer } from '../main/ets/data/sync/WaterNormalizer';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 
@@ -21,7 +21,7 @@ export default function waterNormalizerTest() {
   describe('WaterNormalizer', () => {
     it('keeps_valid_rooms_and_drops_bad_ones', 0, () => {
       const rooms: Blob = {};
-      rooms['1-16---305'] = room(6, [rec('2026-09', 80, 1), rec('2026-10', 93.555, 2)]);
+      rooms['1-16---303'] = room(6, [rec('2026-09', 80, 1), rec('2026-10', 93.555, 2)]);
       rooms[''] = room(4, []);
       rooms['bad'] = 'not-an-object';
       const out: Blob = WaterNormalizer.normalize(sectionWithRooms(rooms));
@@ -29,7 +29,7 @@ export default function waterNormalizerTest() {
       expect(outRooms !== undefined).assertTrue();
       if (outRooms !== undefined) {
         expect(JsonBlob.keys(outRooms).length).assertEqual(1);
-        const kept: Blob | undefined = JsonBlob.asBlob(outRooms['1-16---305']);
+        const kept: Blob | undefined = JsonBlob.asBlob(outRooms['1-16---303']);
         expect(kept !== undefined).assertTrue();
         if (kept !== undefined) {
           expect(JsonBlob.asNumber(JsonBlob.get(kept, 'p'), 0)).assertEqual(6);

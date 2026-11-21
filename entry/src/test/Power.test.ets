@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   PowerPoint,
   PowerCompare,
@@ -31,19 +31,19 @@ export default function powerTest() {
     it('catalog_is_17_rooms', 0, () => {
       expect(PowerRooms.ROOMS.length).assertEqual(17);
       expect(PowerRooms.BUILDINGS.length).assertEqual(4);
-      expect(PowerRooms.labelOf('4-23A---321')).assertEqual('23号楼A座321');
-      expect(PowerRooms.buildingOf('4-23A---321')).assertEqual('23号楼A座');
+      expect(PowerRooms.labelOf('4-23A---305')).assertEqual('23号楼A座305');
+      expect(PowerRooms.buildingOf('4-23A---305')).assertEqual('23号楼A座');
     });
 
     it('normalize_rejects_unknown', 0, () => {
-      expect(PowerRooms.normalizeSel(' 4-23A---321 ')).assertEqual('4-23A---321');
+      expect(PowerRooms.normalizeSel(' 4-23A---305 ')).assertEqual('4-23A---305');
       expect(PowerRooms.normalizeSel('bogus')).assertEqual('');
       expect(PowerRooms.normalizeSel('')).assertEqual('');
     });
 
     it('rooms_by_building_and_rv', 0, () => {
       expect(PowerRooms.roomsOfBuilding('23号楼B座').length).assertEqual(4);
-      expect(PowerRooms.rvOf('23号楼B座', '422')).assertEqual('4-23B---422');
+      expect(PowerRooms.rvOf('23号楼B座', '314')).assertEqual('4-23B---314');
       expect(PowerRooms.rvOf('23号楼B座', '999')).assertEqual('');
     });
 
@@ -258,10 +258,10 @@ export default function powerTest() {
       const empty: Blob = {};
       expect(PowerPrefs.read(empty).sel).assertEqual('');
       expect(PowerPrefs.read(empty).low).assertEqual(30);
-      const section: Blob = { 'sel': '4-23A---321', 'at': 5, 'low': 50 };
+      const section: Blob = { 'sel': '4-23A---305', 'at': 5, 'low': 50 };
       const sections: Blob = { 'power': section };
       const data: PowerPrefsData = PowerPrefs.read(sections);
-      expect(data.sel).assertEqual('4-23A---321');
+      expect(data.sel).assertEqual('4-23A---305');
       expect(data.low).assertEqual(50);
       const bad: Blob = { 'sel': 'nope', 'low': 37 };
       const badSections: Blob = { 'power': bad };
@@ -272,10 +272,10 @@ export default function powerTest() {
     it('write_preserves_other_keys', 0, () => {
       const draw: Blob = { 'count': 3 };
       const current: Blob = { 'v': 6, 'draw': draw };
-      const next: Blob = PowerPrefs.write(current, '4-23B---422', 40, 1234);
+      const next: Blob = PowerPrefs.write(current, '4-23B---314', 40, 1234);
       expect(JsonBlob.keys(next).join(',')).assertEqual('v,draw,power');
       const power: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(next, 'power'));
-      expect(JsonBlob.asString(JsonBlob.get(power, 'sel'), '')).assertEqual('4-23B---422');
+      expect(JsonBlob.asString(JsonBlob.get(power, 'sel'), '')).assertEqual('4-23B---314');
       expect(JsonBlob.asNumber(JsonBlob.get(power, 'low'), 0)).assertEqual(40);
       expect(JsonBlob.asNumber(JsonBlob.get(power, 'at'), 0)).assertEqual(1234);
     });
@@ -289,8 +289,8 @@ export default function powerTest() {
 
   describe('PowerRepository', () => {
     it('parses_row', 0, () => {
-      const row = PowerRepository.parseRow('[{"id":"4-23A---321","label":"23号楼A座321","building":"23号楼A座",'
-        + '"room":"321","quantity":42.5,"unit":"度","low":false,"updated_at":"2026-11-14T12:00:00+08:00"}]');
+      const row = PowerRepository.parseRow('[{"id":"4-23A---305","label":"23号楼A座305","building":"23号楼A座",'
+        + '"room":"305","quantity":42.5,"unit":"度","low":false,"updated_at":"2026-11-14T12:00:00+08:00"}]');
       expect(row !== undefined).assertTrue();
       if (row !== undefined) {
         expect(row.q).assertEqual(42.5);
@@ -320,38 +320,38 @@ export default function powerTest() {
 
     it('loads_row_and_history_with_cache', 0, async () => {
       const api: FakeApi = new FakeApi();
-      api.powerBody = '[{"id":"4-23A---321","quantity":33.3,"unit":"度","updated_at":"2026-11-14T12:00:00+08:00"}]';
+      api.powerBody = '[{"id":"4-23A---305","quantity":33.3,"unit":"度","updated_at":"2026-11-14T12:00:00+08:00"}]';
       api.powerHistoryBody = '[{"ts":"2026-11-14T11:00:00+08:00","quantity":34},'
         + '{"ts":"2026-11-14T12:00:00+08:00","quantity":33.3}]';
       let now: number = 1000000;
       const repo: PowerRepository = new PowerRepository(api, () => now);
-      const row: PowerRowResult = await repo.loadRow('4-23A---321', false);
+      const row: PowerRowResult = await repo.loadRow('4-23A---305', false);
       expect(row.ok).assertTrue();
       expect(row.row !== undefined && row.row.q === 33.3).assertTrue();
-      expect(api.getPaths[0].indexOf('id=eq.4-23A---321') > 0).assertTrue();
-      const history: PowerHistoryResult = await repo.loadHistory('4-23A---321', PowerRange.D7, false);
+      expect(api.getPaths[0].indexOf('id=eq.4-23A---305') > 0).assertTrue();
+      const history: PowerHistoryResult = await repo.loadHistory('4-23A---305', PowerRange.D7, false);
       expect(history.points.length).assertEqual(2);
-      expect(api.getPaths[1].indexOf('roomverify=eq.4-23A---321') > 0).assertTrue();
+      expect(api.getPaths[1].indexOf('roomverify=eq.4-23A---305') > 0).assertTrue();
       expect(api.getPaths[1].indexOf('order=ts.asc') > 0).assertTrue();
       expect(api.getPaths[1].indexOf('limit=2000') > 0).assertTrue();
-      const cachedRow: PowerRowResult = await repo.loadRow('4-23A---321', false);
+      const cachedRow: PowerRowResult = await repo.loadRow('4-23A---305', false);
       expect(cachedRow.fromCache).assertTrue();
       expect(api.getPaths.length).assertEqual(2);
       now = 1000000 + 4 * 60 * 1000;
-      const cachedHistory: PowerHistoryResult = await repo.loadHistory('4-23A---321', PowerRange.D7, false);
+      const cachedHistory: PowerHistoryResult = await repo.loadHistory('4-23A---305', PowerRange.D7, false);
       expect(cachedHistory.fromCache).assertTrue();
       expect(api.getPaths.length).assertEqual(2);
     });
 
     it('failure_falls_back_to_cache', 0, async () => {
       const api: FakeApi = new FakeApi();
-      api.powerBody = '[{"id":"4-23A---321","quantity":10}]';
+      api.powerBody = '[{"id":"4-23A---305","quantity":10}]';
       let now: number = 0;
       const repo: PowerRepository = new PowerRepository(api, () => now);
-      await repo.loadRow('4-23A---321', false);
+      await repo.loadRow('4-23A---305', false);
       now = 10 * 60 * 1000;
       api.failGets = true;
-      const fallback: PowerRowResult = await repo.loadRow('4-23A---321', true);
+      const fallback: PowerRowResult = await repo.loadRow('4-23A---305', true);
       expect(fallback.ok).assertTrue();
       expect(fallback.fromCache).assertTrue();
       expect(fallback.row !== undefined && fallback.row.q === 10).assertTrue();

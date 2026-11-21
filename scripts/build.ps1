@@ -10,9 +10,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$deveco = 'C:\Program Files\Huawei\DevEco Studio'
+$deveco = if ($env:DEVECO_HOME) { $env:DEVECO_HOME } else { 'C:\Program Files\Huawei\DevEco Studio' }
 if (-not (Test-Path $deveco)) {
-    throw "未找到 DevEco Studio：$deveco"
+    throw "未找到 DevEco Studio：$deveco（可用环境变量 DEVECO_HOME 指定安装目录）"
 }
 $env:DEVECO_SDK_HOME = Join-Path $deveco 'sdk'
 $hvigorw = Join-Path $deveco 'tools\hvigor\bin\hvigorw.bat'

@@ -12,8 +12,8 @@ export default function legalTest() {
       expect(info.version).assertEqual('V1.0');
       expect(info.effectiveDate).assertEqual('2026年11月17日');
       expect(info.lastUpdated).assertEqual('2026年11月17日');
-      expect(info.operator).assertEqual('陈子麒（个人开发者）');
-      expect(info.email).assertEqual('Ko_Link@outlook.com');
+      expect(info.operator.indexOf('个人开发者') >= 0).assertTrue();
+      expect(info.email.indexOf('@') > 0).assertTrue();
       expect(info.rawPath).assertEqual('legal/privacy.txt');
       expect(info.onlineUrl.indexOf('/legal/harmony/privacy.html') > 0).assertTrue();
 
@@ -25,7 +25,7 @@ export default function legalTest() {
 
     it('parse_title_meta_and_sections', 0, () => {
       const info = LegalTexts.info(LegalTexts.PRIVACY);
-      const raw: string = '# 隐私政策\n\n文档版本：V1.0\n生效日期：2026年11月17日\n运营者：陈子麒（个人开发者）\n'
+      const raw: string = '# 隐私政策\n\n文档版本：V1.0\n生效日期：2026年11月17日\n运营者：示例运营者（个人开发者）\n'
         + '---\n## 一、定义与适用范围\n正文 A\n继续 A\n### 1.1 小节\n正文 B\n';
       const doc: LegalDoc = LegalTexts.parse(raw, info);
       expect(doc.title).assertEqual('隐私政策');
@@ -37,7 +37,7 @@ export default function legalTest() {
       expect(doc.sections[1].heading).assertEqual('1.1 小节');
       expect(doc.sections[1].level).assertEqual(2);
       expect(doc.sections[1].body).assertEqual('正文 B');
-      expect(LegalTexts.metaValue(doc, '运营者')).assertEqual('陈子麒（个人开发者）');
+      expect(LegalTexts.metaValue(doc, '运营者')).assertEqual('示例运营者（个人开发者）');
       expect(LegalTexts.metaValue(doc, '不存在')).assertEqual('');
     });
 
@@ -46,10 +46,10 @@ export default function legalTest() {
       const doc: LegalDoc = LegalTexts.fallback(info);
       expect(doc.fallback).assertTrue();
       expect(doc.sections.length >= 5).assertTrue();
-      expect(doc.sections[0].body.indexOf('陈子麒（个人开发者）') >= 0).assertTrue();
+      expect(doc.sections[0].body.indexOf('个人开发者') >= 0).assertTrue();
       expect(doc.sections[0].body.indexOf('15 个工作日') >= 0).assertTrue();
       expect(doc.sections[2].body.indexOf('香港') >= 0).assertTrue();
-      expect(LegalTexts.metaValue(doc, '联系邮箱')).assertEqual('Ko_Link@outlook.com');
+      expect(LegalTexts.metaValue(doc, '联系邮箱').indexOf('@') > 0).assertTrue();
       expect(doc.usable()).assertFalse();
     });
 

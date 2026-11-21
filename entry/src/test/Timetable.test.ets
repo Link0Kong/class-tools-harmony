@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   Course,
   SessionInfo,
@@ -24,7 +24,7 @@ function course(name: string, day: number, start: number, end: number, weeks: st
   c.end = end;
   c.weeks = weeks;
   c.parity = parity;
-  c.room = '自强楼(教室01105)';
+  c.room = '综合楼(教室01105)';
   return c;
 }
 
@@ -89,7 +89,7 @@ export default function timetableTest() {
     });
 
     it('room_short_and_span', 0, () => {
-      expect(TtCalendar.roomShort('自强楼(教室01105)')).assertEqual('01105');
+      expect(TtCalendar.roomShort('综合楼(教室01105)')).assertEqual('01105');
       expect(TtCalendar.roomShort('A101')).assertEqual('A101');
       expect(TtCalendar.roomShort('很长的教室名字没有数字'.substring(0, 12))).assertEqual('很长的教室名字…');
       expect(TtCalendar.spanText(1, 2)).assertEqual('1-2 节');

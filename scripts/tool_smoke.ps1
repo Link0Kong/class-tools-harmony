@@ -1,6 +1,7 @@
 # Smoke-check all 16 tools: from 全部 page, open each tool, assert title text contains its name, close via header back.
 $ErrorActionPreference = 'Stop'
-$Hdc = 'C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe'
+$deveco = if ($env:DEVECO_HOME) { $env:DEVECO_HOME } else { 'C:\Program Files\Huawei\DevEco Studio' }
+$Hdc = Join-Path $deveco 'sdk\default\openharmony\toolchains\hdc.exe'
 $Target = '127.0.0.1:5555'
 $Tmp = Join-Path $env:TEMP 'ct_smoke2.json'
 

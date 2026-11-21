@@ -1,4 +1,4 @@
-﻿import { Services } from '../../app/Services';
+import { Services } from '../../app/Services';
 import { Blob } from '../../data/sync/JsonBlob';
 import {
   PowerPoint,

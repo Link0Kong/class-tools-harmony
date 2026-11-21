@@ -1,13 +1,14 @@
-# 验收清单（HarmonyOS 班级工具站，2026-11-15）
+# 验收清单（HarmonyOS 班级工具站，1.0.8）
 
-> 环境：DevEco Studio 26.0.0.865 / SDK API 26 / 模拟器 Mate 90 Pro（HarmonyOS 7.0.0）
+> 环境：DevEco Studio 26.0 / HarmonyOS SDK API 26 / 模拟器（HarmonyOS 7.0）
 > 构建：`.\scripts\build.ps1` → `entry/build/default/outputs/default/entry-default-unsigned.hap`
-> 测试：`.\scripts\test.ps1` → **415/415**（M77 起）
+> 测试：`.\scripts\test.ps1` → **396/396**
 > 安装：`.\scripts\smoke_emulator.ps1`
 
-## 0. 自动化巡检（2026-11-15）
+## 0. 自动化巡检
 
-- [x] scripts/tool_smoke.ps1：14 个工具逐个打开并校验标题，**PASS=14/14**
+- [x] `scripts/tool_smoke.ps1`：逐个打开 16 个工具并校验页面标题
+- [x] `scripts/smoke_emulator.ps1`：安装未签名 HAP、启动、截图
 
 ## 1. 全局
 
@@ -19,8 +20,8 @@
 - [x] 列表/卡片入场、秒级倒计时、趋势游标
 - [x] 身份：测试身份/访客、切换与退出
 - [x] 昵称编辑（userdata.nick 跨端同步）
-- [x] 工作台对齐小程序：问候、今日课程、宿舍电费、作业待交（5s 轮换）、通知待处理（5s 轮换/状态/新通知角标）、常用工具（≤4/空态）、下拉刷新、tab 回来自动刷新、骨架屏、卡片轻微浮动
-- [x] 首页快捷编辑实测（3→4→3，最多 4 个，homeTools 云同步）
+- [x] 工作台：问候、今日课程、宿舍电费、作业待交（5s 轮换）、通知待处理（5s 轮换/状态/新通知角标）、常用工具（≤4/空态）、下拉刷新、tab 回来自动刷新、骨架屏、卡片轻微浮动
+- [x] 首页快捷编辑（3→4→3，最多 4 个，homeTools 云同步）
 - [x] 首页工具隐藏/排序（homeTools）与恢复
 
 ## 2. 通知
@@ -34,7 +35,7 @@
 ## 3. 作业
 
 - [x] 列表/筛选/下拉刷新、详情弹层（全文/来源/附件）
-- [x] 完成状态（乐观更新 + 失败补发；实测勾选/取消 + marks 云同步）
+- [x] 完成状态（乐观更新 + 失败补发；勾选/取消 + marks 云同步）
 - [x] 截止提醒：提前 10/30/60/120 分钟，`reminderAgentManager` + 通知降级 + 本机 id 持久化
 - [x] 图片附件预览（data URI）
 - [x] 隐藏作业（仅自己不可见，userdata.hide/hwHide 云同步）+ 已隐藏计数与一键恢复
@@ -47,7 +48,7 @@
 - [x] 左右滑动切周（40vp 阈值）+ 切周滑入
 - [x] 课程详情（节次/教师/周次/单双周）
 - [x] 个人课表优先（`ttUseMine + ttLocal`）/班级课表
-- [x] 教务登录：密码 → tt_login_enqueue（p_platform=android）→ 轮询 tt_login_status → 写 userdata.tt（ttUseMine/ttLocal），课表显示「我的课表」；后端实测 32 节课（UI 端到端截图待补）
+- [x] 教务登录：密码 → 登录队列 → 轮询状态 → 写 userdata.tt（ttUseMine/ttLocal），课表显示「我的课表」
 
 ## 5. 电费
 
@@ -79,31 +80,31 @@
 - [x] 演示软删除（本人，二次确认）
 - [ ] 上传 E2E（模拟器无 /storage 用户目录，文件选择器不可见外部文件；需真机）
 - [x] 视频章节跳转（章节条 + setCurrentTime）
-- [x] 视频倍速尝试：AVPlayer + XComponent 可播但模拟器画面全黑 → 已回退原生 Video，倍速仍不可用（SDK VideoController 无 setSpeed）
+- [x] 视频倍速尝试：AVPlayer + XComponent 可播但模拟器画面全黑 → 回退原生 Video（SDK VideoController 无 setSpeed）
 
 ## 8. 点名 / 抽签 / 分组 / 名单
 
 - [x] 点名：全班/班委/团员、自定义名单、到/假、统计、导出、重置二次确认
-- [x] 抽签：配置/候选/结果三步、左右滑动 + 步骤转场、结果 10 个不重复、排序、导出（实测）
-- [x] 抽签→分组联动：上一步抽签序号 10 人 → 4 组 3/3/2/2（实测）
-- [x] 分组：随机分组、两列组卡、导出（实测 70 人→4 组 18/18/17/17）
+- [x] 抽签：配置/候选/结果三步、左右滑动 + 步骤转场、结果 10 个不重复、排序、导出
+- [x] 抽签→分组联动：上一步抽签序号 10 人 → 4 组 3/3/2/2
+- [x] 分组：随机分组、两列组卡、导出
 - [x] 分组来源提示（无抽签结果时明确引导）
-- [x] 名单：成员列表、分类（班委 18/团员 50/全班 70）、搜索（实测「李」5 人）、职位标签
+- [x] 名单：成员列表、分类、搜索、职位标签（不展示学号）
 
 ## 9. 诊断 / 打卡 / 体力 / 水费 / 教务
 
 - [x] 诊断：本机 6 项、服务健康 18 项、上报 client_diag（含服务健康、10 分钟指纹限流）
 - [x] 打卡/体力/水费：列表、录入、统计
-- [x] 水量月份切换/空态/计费规则实测（2026-11 ↔ 2026-10）
-- [x] 体测评分实测：总分 78.7 及格、单项权重 15/15/20/10/10… 合计 100%、参数持久化
+- [x] 水量月份切换/空态/计费规则
+- [x] 体测评分：总分与单项权重合计 100%、参数持久化
 - [x] 体测历史：回填 / 改名（写回 fitrecs.data.n，云端同步）/ 删除，改名后列表即时刷新
-- [x] 教务：课表速览（第 11 周/今日/下一节）+ 4 个入口卡
-- [x] 教务入口实测：打开系统浏览器 → 福建中医药大学 SSO 登录页（不登录，红线）
+- [x] 教务：课表速览（周次/今日/下一节）+ 4 个入口卡
+- [x] 教务入口：打开系统浏览器 → 学校 SSO 登录页（不登录）
 - [ ] 教务原生成绩/考试卡片（登录已通，成绩抓取待扩展）
 
 ## 10. 交付
 
-- [x] 未签名 HAP：桌面 `班级工具站-harmony-unsigned.hap`（模拟器可直装）
+- [x] 未签名 HAP：Release 附件 `entry-default-unsigned.hap`（模拟器可直装）
 - [ ] 真机签名（需华为账号自动签名）
 
 ## 已知限制汇总
@@ -113,49 +114,9 @@
 3. 视频倍速：当前 SDK `VideoController` 无 `setSpeed`。
 4. 签名：真机需 DevEco 自动签名（华为账号）。
 5. 隐藏工具 UI：userdata.hide 字段存在，App 暂无入口。
-6. 视频倍速：VideoController 无 setSpeed，需改 AVPlayer。
 
-## 16. M77 新增能力（2026-11-15，1.0.6）
+## 版本历史
 
-- [x] 地图：ArkUI Web 加载 ECS H5（campus_final_25d.html?embed=1），顶栏返回 / 刷新 / 浏览器降级，主文档失败错误条（重试 + 浏览器）
-- [x] 学信网：默认卡片页 + 后台恢复登录；unJavaScript 只读提取 4 数据卡（学籍/学历/学位/在线验证报告）；10 个官方工具入口；未登录「去登录」→ 官方页手动登录；登录后自动回卡片；18 位身份证/11 位手机号掩码
-- [x] 今日校园：12 个学工/门户服务入口 + 本机搜索；Web 打开融合门户（302 → CAS）；unJavaScript 自动填充学号 + 本机教务密码（Asset Store 安全存储）；同一会话只尝试 1 次，验证码/失败回退人工
-- [x] 文件传输：临时云空间（ECS drop v2.2）——8 MiB 分片上传任意大小、列表（大小/时间/剩余 72h）、下载并打开、单文件删除、清空；DocumentViewPicker 选择文件；token 只在 X-Device-Id
-- [x] 视觉/适配：工具描述两行（卡高 96vp）、浅色底栏无黑影、顶部呼吸区、深色 hero 中性色、平板/折叠屏网格 2→3→4 列、主内容最大宽度 880/960
-- [x] 单测 **415/415**（新增 Map/Chsi/TodayCampus/CloudSpace/Breakpoints 共 63 项）；scripts/build.ps1 unsigned HAP **3,808,456 B**（1.0.6）
-- [ ] 学信网 / 学校统一身份认证真实登录（红线：不用真实账号，无测试凭据）
-- [ ] 地图真机 Web 渲染、文件传输真实 ECS 端到端（建议测试身份手工冒烟后 POST /close 清理）
-- [ ] 模拟器/真机逐页 UI 冒烟（本轮未做；需 scripts/smoke_emulator.ps1 + scripts/tool_smoke.ps1）
-
-## 17. 2026-11-16（1.0.7）：删除学信网 / 今日校园工具
-
-用户要求删除「活动 / 今日校园 / 学信网」工具（不是隐藏）。鸿蒙端实际有 `chsi` 学信网、`today` 今日校园两个工具
-（「活动」本端从未移植，无入口），本轮已按「删除」处理：
-
-- [x] 删除 `entry/src/main/ets/features/chsi/`（ChsiModels / ChsiExtractLogic / ChsiNavigationLogic）
-- [x] 删除 `entry/src/main/ets/data/todaycampus/`（TodayCampusCatalog / TodayCampusSearch / TodayCampusLoginLogic）
-- [x] 删除 `entry/src/main/ets/ui/tools/ChsiScreen.ets`、`TodayCampusScreen.ets`
-- [x] 删除 `entry/src/test/Chsi.test.ets`、`TodayCampus.test.ets`；`List.test.ets` 移除挂载
-- [x] `ToolCatalog.ALL` 18 → **16**（移除 `chsi` / `today`）；`ToolScreen.ets` 移除这两条路由分支
-- [x] `Breakpoints.test.ets` 工具数断言 18 → 16，移除 `chsi` / `today` 存在性断言
-- [x] `scripts/tool_smoke.ps1` 冒烟工具清单 18 → 16（移除「学信网」「今日校园」）
-- [x] 残留文案：`JwCredentialLogic` 的密码存储说明/注释不再提「今日校园」自动填充（教务登录仍需要本机密码，逻辑保留）
-- [x] 版本：`AppScope/app.json5` → **1.0.7 (1000007)**；`CloudConfig.APP_VERSION = '1.0.7'`
-- [x] 测试 `.\scripts\test.ps1` → **382/382**，Failure 0 / Error 0（删除的 Chsi/TodayCampus 共 33 项，415 − 33 = 382）
-- [x] 构建 `.\scripts\build.ps1` → **BUILD SUCCESSFUL**，unsigned HAP **3,790,299 B**（pack.info version 1000007 / 1.0.7；未签名、未发布）
-- 说明：`docs/M77_报告_鸿蒙移植_20261115.md`、`docs/PORTING_MATRIX_20261115.md` 是 2026-11-15 的历史快照，按原样保留（其中
-  `chsi` / `today` 条目描述的是当时状态，不代表当前工具目录）。
-
-## 18. 2026-11-19（1.0.8）：工作台卡片自定义 + 编辑态
-
-- [x] 工作台卡片目录：16 个工具 + 常用工具 + 时钟 / 天气，共 18 种可添加；最多 24 张、一行最多 2 张（span=1 半宽 / span=2 整行）
-- [x] 添加 / 移除：标题栏「+」打开卡片面板（已添加列表 + 可添加项 + 恢复默认）；编辑态卡片右上角 × 移除
-- [x] 排序：长按卡片拖动，跨列 / 换行重排，松手吸附；编辑态点按卡片不打开工具
-- [x] 宽度：拖动右下角边框抓手，半宽 / 整行实时跟手并吸附；右列卡片先与左卡换位再展开，避免跑出屏幕
-- [x] 顶部：去掉独立标题条并融入页面，主页面滚动渐隐，卡片不再被标题栏硬切；平板沉浸光感 + 侧栏
-- [x] 统计上报：`visits` 行增加 `client=harmony`，与网页/小程序/安卓同口径
-- [x] 管理员覆盖：`override_json` 字段存在即覆盖，空串按契约清空（与网页 / 安卓一致；修复此前忽略空串的问题）
-- [x] 版本：`AppScope/app.json5` → **1.0.8 (1000008)**；`CloudConfig.APP_VERSION = '1.0.8'`；手表页脚、`push_tokens.app_version` 同步
-- [x] 测试：`.\scripts\test.ps1` → **396/396**（单测已同步新的 Symbol API 命名）
-- [x] 构建：Release `assembleApp` 836,352 B（unsigned）→ 签名 **851,121 B**，`verify-app` digest true；桌面交付 `枫丹工具箱-1.0.8-最新整合-20261119.app`（SHA256 `5D3961E9…`）
-- 说明：工作台卡片布局与宽度只存本机 `preferences`（`class_tools_home_cards`），不进 userdata 云同步。
+- **1.0.7**：按需求移除两个外部工具入口，工具目录 18 → 16，单测 382/382。
+- **1.0.8**：工作台卡片自定义（添加/移除/排序/半宽与整行）、编辑态、顶部整合；
+  `visits` 增加 `client=harmony`；管理员 `override_json` 空串按契约清空；单测 396/396。

@@ -12,12 +12,16 @@
 # 说明：模拟器接受**未签名** HAP（本次实测 bm install 成功），无需华为账号签名。
 param(
     [switch]$Fresh,
-    [string]$Hdc = 'C:\Program Files\Huawei\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe',
+    [string]$Hdc = '',
     [string]$Target = '127.0.0.1:5555'
 )
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Hdc) {
+    $deveco = if ($env:DEVECO_HOME) { $env:DEVECO_HOME } else { 'C:\Program Files\Huawei\DevEco Studio' }
+    $Hdc = Join-Path $deveco 'sdk\default\openharmony\toolchains\hdc.exe'
+}
 $hap = Join-Path $projectRoot 'entry\build\default\outputs\default\entry-default-unsigned.hap'
 if (-not (Test-Path $hap)) {
     throw "未找到 HAP：$hap（先跑 .\scripts\build.ps1）"

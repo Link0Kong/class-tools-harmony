@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
 import { InMemoryUserdataLocalStore } from '../main/ets/data/sync/UserdataLocalStore';
 import { UserdataRepository, UserdataPullResult, UserdataPushResult } from '../main/ets/data/sync/UserdataRepository';
@@ -164,7 +164,7 @@ export default function userdataRepositoryTest() {
       recs.push(oct);
       recs.push(sep);
       const room: Blob = { 'p': 5, 'recs': recs };
-      rooms['1-16---305'] = room;
+      rooms['1-16---303'] = room;
       const waterSection: Blob = { 'rooms': rooms };
       const update: Blob = { 'water': waterSection };
       await repo.updateCurrent(update);
@@ -173,7 +173,7 @@ export default function userdataRepositoryTest() {
       const blob: Blob = postedBlob(api);
       const water: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(blob, 'water'));
       const outRooms: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(water, 'rooms'));
-      const kept: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(outRooms, '1-16---305'));
+      const kept: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(outRooms, '1-16---303'));
       expect(JsonBlob.asNumber(JsonBlob.get(kept, 'p'), 0)).assertEqual(4);
       const outRecs: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(kept, 'recs'));
       if (outRecs !== undefined) {

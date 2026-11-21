@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import { ClassMember } from '../main/ets/data/member/ClassMember';
 import {
   RollCodec,
@@ -29,7 +29,7 @@ export default function rollTest() {
     it('reads_roll_fields_and_preserves_others', 0, () => {
       const sections: Blob = JSON.parse('{"roster":{"rosterSel":[1,2],"groupSel":[3],"rollSel":[2,3],'
         + '"rollNames":"名单","rollSt":{"1":"到","2":"假","3":"x","0":"到"}},'
-        + '"power":{"sel":"4-23A---321","low":30},"draw":{"count":3}}') as Blob;
+        + '"power":{"sel":"4-23A---305","low":30},"draw":{"count":3}}') as Blob;
       const state: RollState = RollCodec.read(sections);
       expect(state.rollSel.join(',')).assertEqual('2,3');
       expect(state.rosterSel.join(',')).assertEqual('1,2');

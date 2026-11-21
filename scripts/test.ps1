@@ -5,7 +5,7 @@
 # 退出码：0 = 全绿；1 = 有失败或编译错误
 $ErrorActionPreference = 'Stop'
 
-$deveco = 'C:\Program Files\Huawei\DevEco Studio'
+$deveco = if ($env:DEVECO_HOME) { $env:DEVECO_HOME } else { 'C:\Program Files\Huawei\DevEco Studio' }
 $env:DEVECO_SDK_HOME = Join-Path $deveco 'sdk'
 $hvigorw = Join-Path $deveco 'tools\hvigor\bin\hvigorw.bat'
 $projectRoot = Split-Path -Parent $PSScriptRoot

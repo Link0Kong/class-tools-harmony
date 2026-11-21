@@ -1,4 +1,4 @@
-﻿import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
+import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
 
 const DAY_MS: number = 24 * 60 * 60 * 1000;
 
@@ -103,7 +103,7 @@ export class TtCalendar {
     return (date.getDay() + 6) % 7;
   }
 
-  /** 教室短标识：优先取房间号（如「自强楼(教室01105)」→ "01105"）。 */
+  /** 教室短标识：优先取房间号（如「综合楼(教室01105)」→ "01105"）。 */
   static roomShort(room: string): string {
     const s: string = room.trim();
     if (s.length === 0) {
