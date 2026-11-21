@@ -110,6 +110,13 @@ export class PowerPoint {
   t: number = 0;
 }
 
+/** 一次充值/上调：t=采样时间，reset=充值后余额，delta=本次充值量（度）。 */
+export class PowerRecharge {
+  t: number = 0;
+  reset: number = 0;
+  delta: number = 0;
+}
+
 export enum PowerRangeKey {
   H24 = '24h',
   D7 = '7d',
@@ -320,10 +327,39 @@ export class PowerStats {
     return out;
   }
 
-  /** 最近一次充值/上调（窗口内），无则 undefined。 */
-  static lastRecharge(points: PowerPoint[]): PowerPoint | undefined {
-    const rises: PowerPoint[] = PowerStats.recharges(points);
-    return rises.length > 0 ? rises[rises.length - 1] : undefined;
+  /** 清洗采样：只留合法 {q,t}（q 有限且 t>0）并按时间升序（不插值、不改采样）。 */
+  static cleanPoints(points: PowerPoint[]): PowerPoint[] {
+    const out: PowerPoint[] = [];
+    for (let i = 0; i < points.length; i++) {
+      if (Number.isFinite(points[i].q) && points[i].t > 0) {
+        out.push(points[i]);
+      }
+    }
+    out.sort((a: PowerPoint, b: PowerPoint) => a.t - b.t);
+    return out;
+  }
+
+  /**
+   * 最近一次充值/上调（跨区间）：清洗并按时间升序后扫描相邻上升（Δq > 0.05），
+   * 取最后一次；reset=充值后余额，delta=本次充值量（度）。
+   *
+   * 调用方必须传入 30d 全量历史（云端历史只保留 30 天），因此结果不随所选 24h/7d/30d 变化。
+   * 与 deriveRange 的区间内统计不同，本函数不裁剪窗口。
+   */
+  static lastRecharge(points: PowerPoint[]): PowerRecharge | undefined {
+    const sorted: PowerPoint[] = PowerStats.cleanPoints(points);
+    let last: PowerRecharge | undefined = undefined;
+    for (let i = 1; i < sorted.length; i++) {
+      const diff: number = sorted[i].q - sorted[i - 1].q;
+      if (Number.isFinite(diff) && diff > 0.05) {
+        const recharge: PowerRecharge = new PowerRecharge();
+        recharge.t = sorted[i].t;
+        recharge.reset = sorted[i].q;
+        recharge.delta = PowerStats.round2(diff);
+        last = recharge;
+      }
+    }
+    return last;
   }
 
   /** 任意窗口统计：[startMs, endMs] 内只累计下降段（基线取窗口前最后一点）。 */

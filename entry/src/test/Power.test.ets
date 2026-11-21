@@ -2,6 +2,7 @@
 import {
   PowerPoint,
   PowerCompare,
+  PowerRecharge,
   SlowEstimate,
   PowerEstimate,
   PowerRange,
@@ -167,19 +168,50 @@ export default function powerTest() {
     });
 
     it('detects_recharges', 0, () => {
-      const pts: PowerPoint[] = [point(10, 0), point(20, 1000), point(19, 2000), point(30, 3000)];
-      const last: PowerPoint | undefined = PowerStats.lastRecharge(pts);
+      const pts: PowerPoint[] = [point(10, 1000), point(20, 2000), point(19, 3000), point(30, 4000)];
+      const last: PowerRecharge | undefined = PowerStats.lastRecharge(pts);
       expect(last !== undefined).assertTrue();
       if (last !== undefined) {
-        expect(last.q).assertEqual(30);
-        expect(last.t).assertEqual(3000);
+        expect(last.reset).assertEqual(30);  // 充值后余额
+        expect(last.t).assertEqual(4000);
+        expect(last.delta).assertEqual(11);  // 充值量（19 → 30），不是余额
       }
-      expect(PowerStats.lastRecharge([point(10, 0), point(9, 1)]) === undefined).assertTrue();
+      expect(PowerStats.lastRecharge([point(10, 1000), point(9, 2000)]) === undefined).assertTrue();
       const points: PowerPoint[] = [point(10, 0), point(9, 1000), point(20, 2000), point(19, 3000)];
       const rises: PowerPoint[] = PowerStats.recharges(points);
       expect(rises.length).assertEqual(1);
       expect(rises[0].q).assertEqual(20);
       expect(PowerStats.recharges([point(10, 0), point(10.01, 1)]).length).assertEqual(0);
+    });
+
+    it('last_recharge_cleans_sorts_and_rounds', 0, () => {
+      // 乱序输入：先按时间升序清洗再找最后一次上升
+      const unsorted: PowerPoint[] = [point(30, 4000), point(10, 1000), point(20, 2000), point(19, 3000)];
+      const last: PowerRecharge | undefined = PowerStats.lastRecharge(unsorted);
+      expect(last !== undefined).assertTrue();
+      if (last !== undefined) {
+        expect(last.t).assertEqual(4000);
+        expect(last.reset).assertEqual(30);
+        expect(last.delta).assertEqual(11);
+      }
+      // 非法点（q=NaN / t<=0）不参与扫描；delta 保留两位小数
+      const dirty: PowerPoint[] = [point(Number.NaN, 500), point(10, 500), point(10.333, 1000), point(5, 0)];
+      const cleaned: PowerRecharge | undefined = PowerStats.lastRecharge(dirty);
+      expect(cleaned !== undefined).assertTrue();
+      if (cleaned !== undefined) {
+        expect(cleaned.t).assertEqual(1000);
+        expect(cleaned.reset).assertEqual(10.333);
+        expect(cleaned.delta).assertEqual(0.33);
+      }
+      // 30d 内较早的充值仍会被找到（不按所选区间裁剪）
+      const oldRise: PowerPoint[] = [point(5, HOUR), point(50, 2 * HOUR), point(40, 20 * 24 * HOUR)];
+      const old: PowerRecharge | undefined = PowerStats.lastRecharge(oldRise);
+      expect(old !== undefined).assertTrue();
+      if (old !== undefined) {
+        expect(old.t).assertEqual(2 * HOUR);
+        expect(old.delta).assertEqual(45);
+      }
+      expect(PowerStats.lastRecharge([]) === undefined).assertTrue();
     });
 
     it('slow_estimate_segments', 0, () => {

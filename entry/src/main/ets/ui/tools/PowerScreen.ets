@@ -3,6 +3,7 @@ import { Blob } from '../../data/sync/JsonBlob';
 import {
   PowerPoint,
   PowerCompare,
+  PowerRecharge,
   SlowEstimate,
   PowerEstimate,
   PowerRange,
@@ -38,6 +39,8 @@ export struct PowerScreen {
   @State private low: number = PowerStats.defaultLow();
   @State private row: PowerRow | undefined = undefined;
   @State private points: PowerPoint[] = [];
+  /** 30d 全量历史（云端只保留 30 天）：仅用于「最近充值」跨区间口径，与所选区间无关。 */
+  @State private rechargePoints30: PowerPoint[] = [];
   @State private stats: RangeStats = new RangeStats();
   @State private rangeKey: string = PowerRangeKey.D7;
   @State private loading: boolean = false;
@@ -90,22 +93,43 @@ export struct PowerScreen {
     } else if (rowResult.message.length > 0) {
       this.errorMsg = rowResult.message;
     }
-    const historyResult: PowerHistoryResult = await Services.power.loadHistory(this.sel, this.range(), force);
+    const range: PowerRange = this.range();
+    const historyResult: PowerHistoryResult = await Services.power.loadHistory(this.sel, range, force);
     this.points = historyResult.points;
-    this.stats = PowerStats.deriveRange(this.points, this.range(), this.now);
+    this.stats = PowerStats.deriveRange(this.points, range, this.now);
     this.cursor = -1;
     this.cursorText = '';
-    await this.refreshCompare(force);
     if (rowResult.row !== undefined && PowerPrefs.isLow(rowResult.row.q, rowResult.row.hasValue, this.low)) {
       PowerNotifier.notifyIfLow(PowerRooms.labelOf(this.sel), rowResult.row.q, this.low);
     }
     if (!historyResult.ok && this.errorMsg.length === 0) {
       this.errorMsg = historyResult.message;
     }
+    await this.loadRecharge30(range, historyResult, force);
+    await this.refreshCompare(force);
     this.loading = false;
     setTimeout(() => {
       this.drawChart();
     }, 60);
+  }
+
+  /**
+   * 「最近充值」取数：始终加载 30d 全量历史（云端只保留 30 天），与所选 24h/7d/30d 无关。
+   * 所选区间已是 30d 时直接复用刚加载的点，避免重复请求；失败时保留已有数据（不打扰主流程）。
+   */
+  private async loadRecharge30(range: PowerRange, current: PowerHistoryResult, force: boolean): Promise<void> {
+    if (range.key === PowerRangeKey.D30) {
+      this.rechargePoints30 = current.points;
+      return;
+    }
+    const result: PowerHistoryResult = await Services.power.loadHistory(this.sel, PowerRange.D30, force);
+    if (result.ok) {
+      this.rechargePoints30 = result.points;
+      return;
+    }
+    if (this.rechargePoints30.length === 0 && this.errorMsg.length === 0) {
+      this.errorMsg = result.message;
+    }
   }
 
   private async savePrefs(sel: string, low: number): Promise<void> {
@@ -121,12 +145,14 @@ export struct PowerScreen {
     this.rangeKey = PowerRooms.isSlowBuilding(this.pickBuilding) ? PowerRangeKey.D7 : PowerRangeKey.H24;
     this.row = undefined;
     this.points = [];
+    this.rechargePoints30 = [];
     this.stats = new RangeStats();
     this.savePrefs(rv, this.low);
     this.load(false);
   }
 
-  private rechargePoints(): PowerPoint[] {
+  /** 所选区间内的充值点（趋势卡角标 / 金色圆点用）；「最近充值」文案走 30d，见 lastRechargeText。 */
+  private windowRecharges(): PowerPoint[] {
     return PowerStats.recharges(PowerStats.windowPoints(this.points, this.range(), this.now));
   }
 
@@ -162,6 +188,10 @@ export struct PowerScreen {
     this.points = result.points;
     this.now = Date.now();
     this.stats = PowerStats.deriveRange(this.points, this.range(), this.now);
+    // 切到 30d 时复用这次请求，不必再为「最近充值」重复拉取；其它档位保持原有 30d 数据不变。
+    if (key === PowerRangeKey.D30 && result.ok) {
+      this.rechargePoints30 = result.points;
+    }
     await this.refreshCompare(false);
     setTimeout(() => {
       this.drawChart();
@@ -543,13 +573,16 @@ export struct PowerScreen {
       + this.compare.deltaPct.toFixed(1) + '%';
   }
 
+  /**
+   * 「最近充值」：取 30d 全量历史里最后一次相邻上升的充值量（delta），
+   * 不随所选 24h/7d/30d 变化；无记录返回 ""（不展示该 metaTag）。
+   */
   private lastRechargeText(): string {
-    const rises: PowerPoint[] = this.rechargePoints();
-    if (rises.length === 0) {
+    const recharge: PowerRecharge | undefined = PowerStats.lastRecharge(this.rechargePoints30);
+    if (recharge === undefined) {
       return '';
     }
-    const lastPoint: PowerPoint = rises[rises.length - 1];
-    return '最近充值 ' + shortTime(lastPoint.t) + ' · ' + lastPoint.q.toFixed(2) + ' 度';
+    return '最近充值 ' + shortTime(recharge.t) + ' · +' + recharge.delta.toFixed(2) + ' 度';
   }
 
   private slowText(): string {
@@ -622,8 +655,8 @@ export struct PowerScreen {
           .fontWeight(FontWeight.Bold)
           .fontColor(Tokens.TEXT_PRIMARY)
         Blank()
-        if (this.rechargePoints().length > 0) {
-          Text('充值 ' + this.rechargePoints().length)
+        if (this.windowRecharges().length > 0) {
+          Text('充值 ' + this.windowRecharges().length)
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.WARM_SAND)
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
