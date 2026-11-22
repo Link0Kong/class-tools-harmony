@@ -1,9 +1,10 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   GroupConfig,
   GroupErrorCode,
   GroupMember,
   GroupMode,
+  groupSourceLabel,
   GroupResult,
   GroupSource,
   GroupValidation,
@@ -122,6 +123,34 @@ export default function groupTest() {
       expect(result.snapshot.modeLabel).assertEqual('按每组人数(3 人)');
       expect(result.snapshot.innerLabel).assertEqual('打乱后随机分配');
     });
+
+    it('snapshot_uses_recent_draw_label', 0, () => {
+      const result: GroupResult = GroupEngine.group(members(10), config(GroupSource.PREV, GroupMode.GROUPS, 4, false),
+        new SeededGroupRandom(7));
+      expect(result.snapshot.sourceLabel).assertEqual('最近抽签（10 人）');
+      expect(groupSourceLabel(GroupSource.PREV)).assertEqual('最近抽签');
+    });
+
+    it('summary_reports_total_groups_and_range', 0, () => {
+      const uneven: GroupResult = GroupEngine.group(members(10), config(GroupSource.PREV, GroupMode.GROUPS, 3, false),
+        new SeededGroupRandom(8));
+      expect(uneven.summary()).assertEqual('共 10 人 · 3 组 · 每组 3–4 人');
+
+      const even: GroupResult = GroupEngine.group(members(9), config(GroupSource.PREV, GroupMode.GROUPS, 3, false),
+        new SeededGroupRandom(9));
+      expect(even.summary()).assertEqual('共 9 人 · 3 组 · 每组 3 人');
+      expect(new GroupResult().summary()).assertEqual('共 0 人 · 0 组');
+    });
+
+    it('copy_text_lists_groups_without_student_ids', 0, () => {
+      const result: GroupResult = GroupEngine.group(members(6), config(GroupSource.PREV, GroupMode.GROUPS, 3, false),
+        new SeededGroupRandom(10));
+      const text: string = result.copyText();
+      expect(text.indexOf('随机分组结果（共 6 人 · 3 组 · 每组 2 人）') === 0).assertTrue();
+      expect(text.indexOf('第 1 组（2 人）：1、4') > 0).assertTrue();
+      expect(text.indexOf('第 2 组（2 人）：2 名2、5') > 0).assertTrue();
+      expect(text.indexOf('学号') < 0).assertTrue();
+    });
   });
 
   describe('GroupEngineValidate', () => {
@@ -129,6 +158,7 @@ export default function groupTest() {
       const validation: GroupValidation = GroupEngine.validate([], config(GroupSource.PREV, GroupMode.GROUPS, 4, false));
       expect(validation.ok).assertFalse();
       expect(validation.error!.code).assertEqual(GroupErrorCode.NO_MEMBERS);
+      expect(validation.error!.message.indexOf('最近抽签') >= 0).assertTrue();
     });
 
     it('rejects_empty_roster_selection', 0, () => {

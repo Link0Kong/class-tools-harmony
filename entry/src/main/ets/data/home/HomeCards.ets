@@ -77,7 +77,7 @@ export class HomeCards {
     new HomeCardDef('vote', '投票', '限时/长时 · 实时结果', AppSymbols.VOTE, '#8A6A92', HomeCardKind.ENTRY, 'vote'),
     new HomeCardDef('water', '水量', '4/6 人间 · 月份记录', AppSymbols.WATER, '#4A88A8', HomeCardKind.ENTRY, 'water'),
     new HomeCardDef('draw', '抽签', '公平随机 · 可导出', AppSymbols.DRAW, '#4E9082', HomeCardKind.ENTRY, 'draw'),
-    new HomeCardDef('group', '分组', '随机分组 · 两列组卡', AppSymbols.GROUP, '#6E8CA8', HomeCardKind.ENTRY, 'group'),
+    new HomeCardDef('group', '分组', '全班/最近抽签 · 分组', AppSymbols.GROUP, '#6E8CA8', HomeCardKind.ENTRY, 'group'),
     new HomeCardDef('roster', '名单', '班委 · 团员 · 全班', AppSymbols.ROSTER, '#8A6A92', HomeCardKind.ENTRY, 'roster'),
     new HomeCardDef('roll', '点名', '到 · 假 · 一键点名', AppSymbols.ROLL, '#B06A55', HomeCardKind.ENTRY, 'roll'),
     new HomeCardDef('jw', '教务', '卡片速览 · 自动登录', AppSymbols.JW, '#6E8CA8', HomeCardKind.ENTRY, 'jw'),

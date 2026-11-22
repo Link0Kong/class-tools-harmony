@@ -1,4 +1,4 @@
-﻿import {
+import {
   GroupConfig,
   GroupConfigSnapshot,
   GroupError,
@@ -108,7 +108,7 @@ export class GroupEngine {
     snapshot.groupCount = groups.length;
     snapshot.sourceLabel = config.source === GroupSource.NAMES
       ? '班级名单（' + total + ' 人）'
-      : '上一步抽签序号';
+      : '最近抽签（' + total + ' 人）';
     snapshot.modeLabel = config.mode === GroupMode.PER_GROUP
       ? '按每组人数(' + config.n + ' 人)'
       : '按组数(' + groups.length + ' 组)';
@@ -116,13 +116,14 @@ export class GroupEngine {
     return snapshot;
   }
 
-  /** 校验来源成员与参数（配置 → 结果前调用）。 */
+  /** 校验来源成员与参数（开始分组前调用）。 */
   static validate(members: GroupMember[], config: GroupConfig): GroupValidation {
     if (members.length === 0) {
       if (config.source === GroupSource.NAMES && config.selectedSeats.length === 0) {
-        return GroupValidation.invalid(new GroupError(GroupErrorCode.ROSTER_EMPTY, '请先选择班级名单'));
+        return GroupValidation.invalid(new GroupError(GroupErrorCode.ROSTER_EMPTY, '请先勾选班级名单成员'));
       }
-      return GroupValidation.invalid(new GroupError(GroupErrorCode.NO_MEMBERS, '没有可分组的成员，请先抽签或选择名单'));
+      return GroupValidation.invalid(new GroupError(GroupErrorCode.NO_MEMBERS,
+        '没有可分组的成员，请选择「最近抽签」或勾选班级名单'));
     }
     if (members.length < 2) {
       return GroupValidation.invalid(new GroupError(GroupErrorCode.MEMBERS_TOO_FEW, '成员不足 2 人，无法分组'));

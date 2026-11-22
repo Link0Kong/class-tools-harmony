@@ -1,4 +1,4 @@
-﻿/** 结果排序模式（wire 值必须与 userdata.draw.sort 对齐：draw|num|desc|rand）。 */
+/** 结果排序模式（wire 值必须与 userdata.draw.sort 对齐：draw|num|desc|rand）。 */
 export enum DrawSortMode {
   DRAW_ORDER = 'draw',
   ASCENDING = 'num',
@@ -96,7 +96,7 @@ export class DrawRemoveLog {
   }
 }
 
-/** 一次抽签的完整结果（含候选池与参数快照，便于结果单/导出/重抽）。 */
+/** 一次抽签的完整结果（含候选池与参数快照，便于结果页/导出/重抽）。 */
 export class DrawResult {
   entries: DrawEntry[] = [];
   pool: DrawEntry[] = [];

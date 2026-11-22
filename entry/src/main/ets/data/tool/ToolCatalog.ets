@@ -1,4 +1,4 @@
-﻿import { AppSymbols } from '../../ui/theme/AppSymbols';
+import { AppSymbols } from '../../ui/theme/AppSymbols';
 
 /** 工具分类（首页分组与「全部工具」排序）。 */
 export enum ToolCategory {
@@ -47,9 +47,9 @@ export class ToolCatalog {
 
   static readonly ALL: ToolDef[] = [
     new ToolDef('draw', '抽签', AppSymbols.DRAW, '公平随机 · 可导出', ToolCatalog.TEAL, ToolCategory.STUDY,
-      ['STEP 1 配置范围与人数', 'STEP 2 预览名单', 'STEP 3 结果与导出卡片', '排除号 / 不重复 / 分组抽签']),
+      ['配置范围 / 人数 / 排除号', '候选预览与名单姓名', '结果剔除补抽 / 排序 / 导出', '不重复抽签 · 最近结果本机留存']),
     new ToolDef('group', '分组', AppSymbols.GROUP, '随机分组 · 两列组卡', ToolCatalog.BLUE, ToolCategory.CLASS,
-      ['按人数或组数分组', '名单选择与去重', '导出分组卡片']),
+      ['全班 / 最近抽签 / 手动名单', '按组数或每组人数分组', '复制与导出分组卡片']),
     new ToolDef('fit', '体测', AppSymbols.FIT, '录入 · 评分 · 历史', ToolCatalog.LEAF, ToolCategory.CLASS,
       ['项目成绩录入', '按性别/年级评分', '历史趋势与导出']),
     new ToolDef('hw', '作业', AppSymbols.HOMEWORK, '截止提醒 · 完成状态', ToolCatalog.SAND, ToolCategory.STUDY,

@@ -1,10 +1,11 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
-import { DrawConfig, DrawEntry, DrawPoolSource, DrawSortMode } from '../main/ets/features/draw/DrawModels';
+import { describe, it, expect } from '@ohos/hypium';
+import { DrawConfig, DrawEntry, DrawPoolSource, DrawResult, DrawSortMode } from '../main/ets/features/draw/DrawModels';
 import { DrawRandom, SeededDrawRandom, shuffledInts } from '../main/ets/features/draw/DrawRandom';
 import { DrawValidator, ExcludedParse } from '../main/ets/features/draw/DrawValidator';
 import { DrawEngine, DrawOutcome } from '../main/ets/features/draw/DrawEngine';
 import { DrawStep, DrawTransition, DrawWorkflow, DrawWorkflowState } from '../main/ets/features/draw/DrawWorkflow';
 import { DrawConfigCodec } from '../main/ets/features/draw/DrawConfigCodec';
+import { DrawLast, DrawLastCodec } from '../main/ets/features/draw/DrawLastCodec';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 import { FakeApi } from './support/FakeApi';
 import { InMemoryUserdataLocalStore } from '../main/ets/data/sync/UserdataLocalStore';
@@ -404,6 +405,92 @@ export default function drawTest() {
           expect(UserdataV6.atValue(blob, 'draw')).assertEqual(5000);
         }
       }
+    });
+  });
+
+  describe('DrawLastCodec', () => {
+    it('roundtrip_keeps_result_names_pool_and_config', 0, () => {
+      const result: DrawResult = new DrawResult();
+      result.entries = [new DrawEntry(7, '甲'), new DrawEntry(3, '')];
+      result.pool = [new DrawEntry(1, ''), new DrawEntry(3, ''), new DrawEntry(5, ''),
+        new DrawEntry(7, '甲')];
+      result.config = config(1, 70, 2);
+      result.config.sort = DrawSortMode.DESCENDING;
+      result.config.allowDuplicates = true;
+
+      const blob: Blob = DrawLastCodec.encode(result, 1700000000000);
+      expect(JsonBlob.keys(blob).join(',')).assertEqual('v,at,result,names,pool,cfg');
+
+      const last: DrawLast | undefined = DrawLastCodec.decode(blob);
+      expect(last !== undefined).assertTrue();
+      if (last !== undefined) {
+        expect(last.at).assertEqual(1700000000000);
+        expect(last.result.entries.length).assertEqual(2);
+        expect(last.result.entries[0].number).assertEqual(7);
+        expect(last.result.entries[0].name).assertEqual('甲');
+        expect(last.result.entries[1].name).assertEqual('');
+        expect(last.result.pool.length).assertEqual(4);
+        expect(last.result.config.start).assertEqual(1);
+        expect(last.result.config.end).assertEqual(70);
+        expect(last.result.config.count).assertEqual(2);
+        expect(last.result.config.allowDuplicates).assertTrue();
+        expect(last.result.config.sort).assertEqual(DrawSortMode.DESCENDING);
+      }
+    });
+
+    it('partial_payload_falls_back_to_defaults', 0, () => {
+      const blob: Blob = { 'result': [3, '7', 0, 1000], 'names': ['甲', 7] };
+      const last: DrawLast | undefined = DrawLastCodec.decode(blob);
+      expect(last !== undefined).assertTrue();
+      if (last !== undefined) {
+        expect(last.at).assertEqual(0);
+        expect(last.result.entries.length).assertEqual(2);
+        expect(last.result.entries[0].number).assertEqual(3);
+        expect(last.result.entries[0].name).assertEqual('甲');
+        expect(last.result.entries[1].number).assertEqual(7);
+        expect(last.result.entries[1].name).assertEqual('');
+        expect(last.result.pool.length).assertEqual(0);
+        expect(last.result.config.start).assertEqual(DrawConfig.DEFAULT_START);
+        expect(last.result.config.sort).assertEqual(DrawSortMode.DRAW_ORDER);
+      }
+    });
+
+    it('empty_or_malformed_payload_is_ignored', 0, () => {
+      expect(DrawLastCodec.decode(undefined) === undefined).assertTrue();
+      expect(DrawLastCodec.decode({}) === undefined).assertTrue();
+      expect(DrawLastCodec.decode({ 'result': [] }) === undefined).assertTrue();
+      expect(DrawLastCodec.decode({ 'result': [0, 1000] }) === undefined).assertTrue();
+    });
+
+    it('duplicates_are_preserved_for_dup_mode', 0, () => {
+      const result: DrawResult = new DrawResult();
+      result.entries = [new DrawEntry(5, ''), new DrawEntry(5, '')];
+      result.config = config(1, 5, 2);
+      result.config.allowDuplicates = true;
+      const last: DrawLast | undefined = DrawLastCodec.decode(DrawLastCodec.encode(result, 1));
+      expect(last !== undefined).assertTrue();
+      if (last !== undefined) {
+        expect(last.result.entries.length).assertEqual(2);
+        expect(last.result.entries[0].number).assertEqual(5);
+        expect(last.result.entries[1].number).assertEqual(5);
+        expect(last.result.config.allowDuplicates).assertTrue();
+      }
+    });
+
+    it('encodes_current_result_only', 0, () => {
+      const first: DrawResult = new DrawResult();
+      first.entries = [new DrawEntry(2, '')];
+      const second: DrawResult = new DrawResult();
+      second.entries = [new DrawEntry(9, '乙')];
+      const last: DrawLast | undefined = DrawLastCodec.decode(DrawLastCodec.encode(second, 2));
+      expect(last !== undefined).assertTrue();
+      if (last !== undefined) {
+        expect(last.result.entries.length).assertEqual(1);
+        expect(last.result.entries[0].number).assertEqual(9);
+        expect(last.result.entries[0].name).assertEqual('乙');
+      }
+      const earlier: DrawLast | undefined = DrawLastCodec.decode(DrawLastCodec.encode(first, 1));
+      expect(earlier !== undefined && earlier.result.entries[0].number === 2).assertTrue();
     });
   });
 }

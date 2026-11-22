@@ -1,17 +1,16 @@
-﻿import { Services } from '../../app/Services';
+import { Services } from '../../app/Services';
 import { DrawSession } from '../../app/DrawSession';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { DrawEntry, DrawResult } from '../../features/draw/DrawModels';
 import {
   GroupConfig,
   GroupError,
-  GroupErrorCode,
   GroupMember,
   GroupMode,
   groupModeLabel,
   GroupResult,
   GroupSource,
-  groupSourceLabel,
   GroupStep,
   GroupValidation,
   MemberGroup
@@ -25,10 +24,11 @@ import { GlassBar } from '../components/GlassBar';
 import { ExportPreview } from './ExportPreview';
 
 /**
- * 分组工具：配置（来源/方式/打乱/名单选择）→ 结果（两列组卡）→ 导出。
+ * 分组工具（独立）：配置（全班/最近抽签/手动选择、方式、打乱）→ 结果（组卡）→ 导出。
  *
- * 来源「上一步抽签序号」使用本次会话的抽签结果（DrawSession，进程内）；
- * 参数写回 `userdata.group`（source/mode/n/shuffle/sel，保留未知字段）。
+ * 「最近抽签」读取本机持久化的最近一次抽签结果（DrawSession → DrawLastStore，按 sid 隔离），
+ * 不依赖从抽签页跳转，进程重启后仍可用；参数写回 `userdata.group`
+ * （source/mode/n/shuffle/sel，保留未知字段；「全班」仍等价于 names + 全选，不新增枚举）。
  */
 @Component
 export struct GroupScreen {
@@ -44,6 +44,8 @@ export struct GroupScreen {
   @State private seats: number[] = [];
   @State private names: string[] = [];
   @State private selected: number[] = [];
+  @State private lastResult: DrawResult | undefined = undefined;
+  @State private lastAt: number = 0;
   @State private groups: GroupResult | undefined = undefined;
   @State private errorMsg: string = '';
   @State private showExport: boolean = false;
@@ -52,6 +54,7 @@ export struct GroupScreen {
   aboutToAppear(): void {
     this.restoreConfig();
     this.loadRoster();
+    this.loadLastDraw();
   }
 
   private restoreConfig(): void {
@@ -77,6 +80,13 @@ export struct GroupScreen {
     if (this.selected.length === 0 && seats.length > 0 && this.source === GroupSource.NAMES) {
       this.selected = seats.slice(0);
     }
+  }
+
+  /** 读「最近抽签」：内存命中优先，否则读本机快照（跨进程重启仍可用）。 */
+  private async loadLastDraw(): Promise<void> {
+    const loaded: DrawResult | undefined = await DrawSession.load();
+    this.lastResult = loaded;
+    this.lastAt = DrawSession.lastAt;
   }
 
   private currentConfig(): GroupConfig {
@@ -106,7 +116,7 @@ export struct GroupScreen {
     return index >= 0 && index < this.names.length ? this.names[index] : '';
   }
 
-  /** 当前来源的成员。 */
+  /** 当前来源的成员（最近抽签按快照序号 + 快照姓名/班级名单兜底）。 */
   private members(): GroupMember[] {
     if (this.source === GroupSource.NAMES) {
       const out: GroupMember[] = [];
@@ -116,16 +126,69 @@ export struct GroupScreen {
       }
       return out;
     }
-    const last: DrawResult | undefined = DrawSession.lastResult;
+    const last: DrawResult | undefined = this.lastResult;
     if (last === undefined) {
       return [];
     }
     const out: GroupMember[] = [];
     for (let i = 0; i < last.entries.length; i++) {
       const entry: DrawEntry = last.entries[i];
-      out.push(new GroupMember(entry.number, entry.name));
+      // 名称优先级：抽签快照里的名称（名称映射/名单派生）> 当前班级名单派生名 > 空
+      const name: string = entry.name.length > 0 ? entry.name : this.nameOf(entry.number);
+      out.push(new GroupMember(entry.number, name));
     }
     return out;
+  }
+
+  /** 已选集合 == 全班集合（契约：全班不新增 source 值）。 */
+  private isAllSelected(): boolean {
+    return this.source === GroupSource.NAMES && this.seats.length > 0
+      && this.selected.length === this.seats.length;
+  }
+
+  private isManualSelected(): boolean {
+    return this.source === GroupSource.NAMES && !this.isAllSelected();
+  }
+
+  /** 「最近抽签」chip 文案：人数 + 时间（无结果时只显示标题并置灰）。 */
+  private recentLabel(): string {
+    const last: DrawResult | undefined = this.lastResult;
+    if (last === undefined) {
+      return '最近抽签';
+    }
+    return '最近抽签 ' + last.entries.length + ' 人' + GroupScreen.timeSuffix(this.lastAt);
+  }
+
+  private recentHint(): string {
+    const last: DrawResult | undefined = this.lastResult;
+    if (last === undefined) {
+      return '还没有抽签结果，请先到「抽签」抽一次；抽签结果会保存在本机';
+    }
+    return '最近一次抽签 ' + last.entries.length + ' 个序号' + GroupScreen.timeSuffix(this.lastAt)
+      + '，可直接沿用';
+  }
+
+  private namesHint(): string {
+    if (this.isAllSelected()) {
+      return '已选全班 ' + this.selected.length + ' 人';
+    }
+    if (this.selected.length === 0) {
+      return '还没有选人：可点「全选」取全班，或逐个勾选座号';
+    }
+    return '已选 ' + this.selected.length + ' 人';
+  }
+
+  private static timeSuffix(at: number): string {
+    if (at <= 0) {
+      return '';
+    }
+    const date: Date = new Date(at);
+    return ' · ' + GroupScreen.pad2(date.getMonth() + 1) + '-' + GroupScreen.pad2(date.getDate())
+      + ' ' + GroupScreen.pad2(date.getHours()) + ':' + GroupScreen.pad2(date.getMinutes());
+  }
+
+  private static pad2(value: number): string {
+    return value < 10 ? '0' + value : '' + value;
   }
 
   private plannedGroups(): number {
@@ -174,21 +237,75 @@ export struct GroupScreen {
     this.showExport = true;
   }
 
-  /** 来源 chip：active 在内部按 this.source 计算（@Builder 值参数不参与刷新）。 */
+  /** 复制分组结果纯文本（与网页/小程序「复制」同口径，不含学号）。 */
+  private async copyResult(): Promise<void> {
+    if (this.groups === undefined) {
+      return;
+    }
+    try {
+      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
+        this.groups.copyText());
+      await pasteboard.getSystemPasteboard().setData(data);
+      this.getUIContext().getPromptAction().showToast({ message: '已复制分组结果' });
+    } catch (e) {
+      this.getUIContext().getPromptAction().showToast({ message: '复制失败，请改用导出图片' });
+    }
+  }
+
+  /** 「全班」快捷：等价于 names + 全选（不新增 source 枚举）。 */
   @Builder
-  sourceChip(source: GroupSource) {
-    Text(groupSourceLabel(source))
+  allSourceChip() {
+    Text('全班' + (this.seats.length > 0 ? ' ' + this.seats.length + ' 人' : ''))
       .fontSize(Tokens.F_CAPTION)
-      .fontColor(this.source === source ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+      .fontColor(this.isAllSelected() ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .backgroundColor(this.source === source ? Tokens.MIST_TEAL : Tokens.CONTROL)
+      .backgroundColor(this.isAllSelected() ? Tokens.SLATE_BLUE : Tokens.CONTROL)
       .borderRadius(Tokens.RADIUS_PILL)
       .margin({ right: 8, bottom: 8 })
       .onClick(() => {
-        this.source = source;
-        if (source === GroupSource.NAMES && this.selected.length === 0) {
-          this.selected = this.seats.slice(0);
+        this.source = GroupSource.NAMES;
+        this.selected = this.seats.slice(0);
+        this.errorMsg = '';
+        this.persistConfig();
+      })
+  }
+
+  /** 「最近抽签」来源：无快照时置灰且不响应点击。 */
+  @Builder
+  prevSourceChip() {
+    Text(this.recentLabel())
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(this.lastResult === undefined ? Tokens.TEXT_TERTIARY
+        : (this.source === GroupSource.PREV ? '#FFFFFF' : Tokens.TEXT_SECONDARY))
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.lastResult !== undefined && this.source === GroupSource.PREV
+        ? Tokens.MIST_TEAL : Tokens.CONTROL)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 8, bottom: 8 })
+      .opacity(this.lastResult === undefined ? 0.45 : 1)
+      .onClick(() => {
+        if (this.lastResult === undefined) {
+          return;
         }
+        this.source = GroupSource.PREV;
+        this.errorMsg = '';
+        this.persistConfig();
+      })
+  }
+
+  /** 「手动选择」：展开班级名单座号。 */
+  @Builder
+  manualSourceChip() {
+    Text('手动选择')
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(this.isManualSelected() ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .backgroundColor(this.isManualSelected() ? Tokens.MIST_TEAL : Tokens.CONTROL)
+      .borderRadius(Tokens.RADIUS_PILL)
+      .margin({ right: 8, bottom: 8 })
+      .onClick(() => {
+        this.source = GroupSource.NAMES;
+        this.errorMsg = '';
         this.persistConfig();
       })
   }
@@ -273,19 +390,16 @@ export struct GroupScreen {
             .fontColor(Tokens.TEXT_SECONDARY)
             .width('100%')
             .margin({ bottom: 8 })
-          Row() {
-            this.sourceChip(GroupSource.PREV)
-            this.sourceChip(GroupSource.NAMES)
+          Flex({ wrap: FlexWrap.Wrap }) {
+            this.allSourceChip()
+            this.prevSourceChip()
+            this.manualSourceChip()
           }
           .width('100%')
 
-          Text(this.source === GroupSource.PREV
-            ? (DrawSession.lastResult !== undefined
-              ? '本次抽签 ' + DrawSession.lastResult.entries.length + ' 个序号'
-              : '还没有抽签结果，请先到「抽签」抽一次')
-            : '已选 ' + this.selected.length + ' 人')
+          Text(this.source === GroupSource.PREV ? this.recentHint() : this.namesHint())
             .fontSize(Tokens.F_CAPTION)
-            .fontColor(this.source === GroupSource.PREV && DrawSession.lastResult === undefined
+            .fontColor(this.source === GroupSource.PREV && this.lastResult === undefined
               ? Tokens.DANGER : Tokens.TEXT_TERTIARY)
             .width('100%')
 
@@ -430,9 +544,7 @@ export struct GroupScreen {
     Column() {
       Scroll(this.scroller) {
         Column() {
-          Text(this.groups !== undefined
-            ? '共 ' + this.groups.snapshot.total + ' 人 · ' + this.groups.snapshot.groupCount + ' 组'
-            : '')
+          Text(this.groups !== undefined ? this.groups.summary() : '')
             .fontSize(Tokens.F_HEADING)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.TEXT_PRIMARY)
@@ -477,6 +589,16 @@ export struct GroupScreen {
           .onClick(() => {
             this.regroup();
           })
+        Button('复制')
+          .layoutWeight(1)
+          .height(48)
+          .backgroundColor(Tokens.CONTROL)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE })
+          .fontColor(Tokens.TEXT_PRIMARY)
+          .borderRadius(Tokens.RADIUS_PILL)
+          .onClick(() => {
+            this.copyResult();
+          })
         Button('导出图片')
           .layoutWeight(2)
           .height(48)
@@ -497,7 +619,7 @@ export struct GroupScreen {
     Stack() {
       PageHeader({
       progress: this.headerFade,
-        title: this.step === GroupStep.CONFIG ? '分组 · 配置' : '分组 · 结果',
+        title: this.step === GroupStep.CONFIG ? '分组' : '分组结果',
         actionText: this.step === GroupStep.RESULT ? '调整参数' : '',
         scroller: this.scroller,
         onBack: () => {

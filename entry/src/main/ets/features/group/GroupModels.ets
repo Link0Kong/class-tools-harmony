@@ -1,8 +1,8 @@
-﻿/** 成员来源。 */
+/** 成员来源（wire 值仍是 prev/names，契约 USERDATA_V6 §1.2 不变）。 */
 export enum GroupSource {
-  /** 上一步抽签结果（带序号/可选姓名）。 */
+  /** 最近一次抽签结果（本机持久化，带序号/可选姓名）。 */
   PREV = 'prev',
-  /** 班级名单（按座号选择）。 */
+  /** 班级名单（按座号选择；「全班」= 全选，不新增 source 值）。 */
   NAMES = 'names'
 }
 
@@ -15,7 +15,7 @@ export function groupSourceFromWire(wire: string): GroupSource {
 }
 
 export function groupSourceLabel(source: GroupSource): string {
-  return source === GroupSource.NAMES ? '班级名单' : '上一步抽签序号';
+  return source === GroupSource.NAMES ? '班级名单' : '最近抽签';
 }
 
 /** 分组方式。 */
@@ -128,15 +128,51 @@ export class GroupResult {
     }
     return sum;
   }
+
+  /** 结果摘要（契约 §2.2）：`共 N 人 · M 组 · 每组 x–y 人`。 */
+  summary(): string {
+    const total: number = this.totalMembers();
+    const count: number = this.groups.length;
+    if (count === 0) {
+      return '共 ' + total + ' 人 · 0 组';
+    }
+    let min: number = this.groups[0].members.length;
+    let max: number = min;
+    for (let i = 1; i < count; i++) {
+      const size: number = this.groups[i].members.length;
+      if (size < min) {
+        min = size;
+      }
+      if (size > max) {
+        max = size;
+      }
+    }
+    const range: string = min === max ? '' + min : min + '–' + max;
+    return '共 ' + total + ' 人 · ' + count + ' 组 · 每组 ' + range + ' 人';
+  }
+
+  /** 复制用纯文本（不含学号/手机号等隐私字段，姓名只来自名单或用户自填）。 */
+  copyText(): string {
+    const lines: string[] = ['随机分组结果（' + this.summary() + '）'];
+    for (let i = 0; i < this.groups.length; i++) {
+      const group: MemberGroup = this.groups[i];
+      const labels: string[] = [];
+      for (let j = 0; j < group.members.length; j++) {
+        labels.push(group.members[j].label());
+      }
+      lines.push(group.label() + '（' + group.size() + ' 人）：' + labels.join('、'));
+    }
+    return lines.join('\n');
+  }
 }
 
-/** 分组向导步骤（配置 → 结果）。 */
+/** 分组页视图（配置 ⇄ 结果；同一工具内部的两个视图，不是跨工具步骤）。 */
 export enum GroupStep {
   CONFIG = 1,
   RESULT = 2
 }
 
-/** 向导状态。 */
+/** 分组页状态（参数 + 最近一次结果；不承载抽签步骤）。 */
 export class GroupWorkflowState {
   step: GroupStep = GroupStep.CONFIG;
   config: GroupConfig = new GroupConfig();
