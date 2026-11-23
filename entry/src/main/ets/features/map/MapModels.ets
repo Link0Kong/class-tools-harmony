@@ -1,20 +1,19 @@
 ﻿/**
  * 校园 2.5D 地图：H5 地址与降级逻辑（纯逻辑，可单测）。
  *
- * 数据源与安卓/网页同源：正式域名 H5 `map/campus_final_25d.html`（唯一数据源，不在原生侧重写 canvas）。
- * 顶栏要求：返回 / 刷新 / 浏览器降级；主文档加载失败时给出「重试 + 浏览器打开」。
+ * App 优先打开打包的地图，加载失败时打开线上同一页面。
  *
  * 2026-11-23 备案通过：统一走正式 HTTPS 域名 `https://tool.furina.fun`（原 ECS 明文 IP 仅本机调试）。
  */
 export class MapConfig {
   /** 正式域名（2026-11-23 备案通过，全站 HTTPS；原 ECS 明文 IP 仅本机调试）。 */
   static readonly ECS_BASE: string = 'https://tool.furina.fun';
+  static readonly LOCAL_BASE: string = 'resource://rawfile';
 
   /** H5 相对路径。 */
   static readonly PAGE_PATH: string = '/map/campus_final_25d.html';
 
-  /** 嵌入参数（H5 据此隐藏站内导航，交给 App 顶栏）。 */
-  static readonly EMBED_QUERY: string = 'embed=1';
+  static readonly PAGE_VERSION: string = '20261123-map2';
 }
 
 /** 地图页加载状态。 */
@@ -26,9 +25,18 @@ export enum MapLoadState {
 
 /** 地图页纯逻辑（URL / allowlist / 状态文案），不 import ArkUI。 */
 export class MapLogic {
-  /** 主页面 URL：`.../campus_final_25d.html?embed=1`。 */
-  static pageUrl(): string {
-    return MapConfig.ECS_BASE + MapConfig.PAGE_PATH + '?' + MapConfig.EMBED_QUERY;
+  static pageUrl(room: string = '', embedded: boolean = true, offline: boolean = false): string {
+    const base: string = offline ? MapConfig.LOCAL_BASE : MapConfig.ECS_BASE;
+    let target: string = base + MapConfig.PAGE_PATH + '?v=' + MapConfig.PAGE_VERSION;
+    if (embedded) target += '&embed=1&native=1';
+    if (room.trim().length > 0) target += '&room=' + encodeURIComponent(room.trim());
+    return target;
+  }
+
+  static isLocalPage(url: string): boolean {
+    const value: string = url.split('?')[0].split('#')[0];
+    return (value.startsWith('resource://') || value.startsWith('file://') || value.startsWith('file:/'))
+      && value.endsWith(MapConfig.PAGE_PATH);
   }
 
   /** 主文档 host（用于 Web 内部导航 allowlist）；由 [ECS_BASE] 推导，避免基址与 host 两处漂移。 */
@@ -38,12 +46,8 @@ export class MapLogic {
 
   /** 仅允许正式域名主机下的页面继续在 Web 内加载；其它交给系统浏览器。 */
   static isAllowedNavigation(url: string): boolean {
-    const trimmed: string = url.trim();
-    if (!trimmed.toLowerCase().startsWith('http://') && !trimmed.toLowerCase().startsWith('https://')) {
-      return false;
-    }
-    const host: string = MapLogic.hostOf(trimmed);
-    return host === MapLogic.host();
+    const value: string = url.trim().toLowerCase();
+    return value.startsWith(MapConfig.ECS_BASE + '/');
   }
 
   /** 解析 host（小写）；非法/缺失返回空串。 */

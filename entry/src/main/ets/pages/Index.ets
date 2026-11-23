@@ -55,7 +55,7 @@ struct Index {
       this.applySections(sections);
     });
     AppGlobal.onToolClosed = () => {
-      this.openToolId = '';
+      this.closeTool();
     };
     this.bootstrap();
   }
@@ -225,17 +225,25 @@ struct Index {
     });
   }
 
-  private openTool(id: string): void {
+  @State private mapRoom: string = '';
+
+  private openTool(id: string, room: string = ''): void {
     if (this.wearable) {
       return;
     }
     AppGlobal.openToolId = id;
     this.getUIContext().animateTo({ duration: Tokens.DUR_NORMAL, curve: Curve.FastOutSlowIn }, () => {
+      this.mapRoom = room.trim();
       this.openToolId = id;
     });
   }
 
   private closeTool(): void {
+    if (this.openToolId === 'map' && this.mapRoom.length > 0) {
+      this.mapRoom = '';
+      this.openTool('tt');
+      return;
+    }
     AppGlobal.openToolId = '';
     this.getUIContext().animateTo({ duration: Tokens.DUR_FAST, curve: Curve.FastOutSlowIn }, () => {
       this.openToolId = '';
@@ -320,6 +328,10 @@ struct Index {
       if (this.openToolId.length > 0) {
         ToolScreen({
           toolId: this.openToolId,
+          mapRoom: this.mapRoom,
+          onOpenMap: (room: string) => {
+            this.openTool('map', room);
+          },
           onClose: () => {
             this.closeTool();
           }

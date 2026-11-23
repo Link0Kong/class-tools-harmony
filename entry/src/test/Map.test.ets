@@ -4,10 +4,14 @@ import { MapConfig, MapLoadState, MapLogic } from '../main/ets/features/map/MapM
 export default function mapTest() {
   describe('MapUrl', () => {
     it('page_url_matches_formal_h5', 0, () => {
-      expect(MapLogic.pageUrl()).assertEqual('https://tool.furina.fun/map/campus_final_25d.html?embed=1');
+      expect(MapLogic.pageUrl()).assertEqual('https://tool.furina.fun/map/campus_final_25d.html?v=20261123-map2&embed=1&native=1');
       expect(MapLogic.pageUrl().indexOf('embed=1') > 0).assertTrue();
       expect(MapLogic.host()).assertEqual('tool.furina.fun');
       expect(MapConfig.PAGE_PATH.indexOf('campus_final_25d.html') > 0).assertTrue();
+      expect(MapLogic.pageUrl(' 01104 ', false).endsWith('&room=01104')).assertTrue();
+      expect(MapLogic.pageUrl('01 104', false).indexOf('embed=1')).assertEqual(-1);
+      expect(MapLogic.isLocalPage('resource://RAWFILE/map/campus_final_25d.html')).assertTrue();
+      expect(MapLogic.pageUrl('01104', true, true).startsWith('resource://rawfile/map/campus_final_25d.html?')).assertTrue();
     });
 
     it('host_of_handles_port_userinfo_scheme', 0, () => {

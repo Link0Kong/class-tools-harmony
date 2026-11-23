@@ -32,11 +32,13 @@ import { AppGlobal } from '../../app/AppGlobal';
 @Component
 export struct ToolScreen {
   @Prop toolId: string = '';
+  @Prop mapRoom: string = '';
   @State private topInset: number = 0;
   @State private layoutWidth: number = 0;
   private scroller: Scroller = new Scroller();
   onClose: () => void = () => {
   };
+  onOpenMap: (room: string) => void = () => {};
 
   aboutToAppear(): void {
     this.topInset = px2vp(AppGlobal.statusBarPx);
@@ -95,6 +97,7 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'tt') {
       TimetableScreen({
+        onOpenMap: this.onOpenMap,
         onClose: () => {
           this.onClose();
         }
@@ -149,6 +152,7 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'map') {
       MapScreen({
+        room: this.mapRoom,
         onClose: () => {
           this.onClose();
         }

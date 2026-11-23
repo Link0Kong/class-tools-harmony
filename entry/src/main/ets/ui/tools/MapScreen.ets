@@ -1,4 +1,4 @@
-﻿import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { webview } from '@kit.ArkWeb';
 import { AppGlobal } from '../../app/AppGlobal';
 import { MapLoadState, MapLogic } from '../../features/map/MapModels';
@@ -7,169 +7,182 @@ import { Immersive } from '../theme/Immersive';
 import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
 
-/**
- * 校内地图（ArkUI Web 加载正式域名 H5，与网页/安卓同源方案）。
- *
- * - 数据源：`https://tool.furina.fun/map/campus_final_25d.html?embed=1`（唯一数据源，不在原生侧重写 canvas；
- *   2026-11-23 备案通过后由 ECS 明文 IP 切到正式 HTTPS 域名）；
- * - 顶栏：返回 / 刷新 / 浏览器降级；
- * - 主文档加载失败：错误条提供「重试 / 浏览器打开」；
- * - Web 内部只允许正式域名主机继续加载，其它链接交系统浏览器。
- */
 @Component
 export struct MapScreen {
+  @Prop room: string = '';
   onClose: () => void = () => {
   };
 
   @State private state: MapLoadState = MapLoadState.LOADING;
   @State private progress: number = 0;
-  @State private layoutWidth: number = 0;
-  @State private wide: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
+  private online: boolean = false;
+  private active: boolean = false;
+  private loadId: number = 0;
+  private timeout: number = -1;
 
   aboutToAppear(): void {
-    this.state = MapLoadState.LOADING;
+    this.active = true;
+    this.beginLoad();
   }
 
-  private refresh(): void {
+  aboutToDisappear(): void {
+    this.active = false;
+    clearTimeout(this.timeout);
+  }
+
+  private beginLoad(): void {
+    clearTimeout(this.timeout);
+    this.state = MapLoadState.LOADING;
+    this.progress = 0;
+    this.loadId += 1;
+    const id: number = this.loadId;
+    this.timeout = setTimeout(() => {
+      if (this.checking(id)) this.failLoad();
+    }, 8500);
+  }
+
+  private checking(id: number): boolean {
+    return this.active && id === this.loadId && this.state === MapLoadState.LOADING;
+  }
+
+  private reload(online: boolean): void {
+    this.online = online;
+    this.beginLoad();
     try {
-      this.state = MapLoadState.LOADING;
-      this.progress = 0;
-      this.controller.refresh();
+      this.controller.loadUrl(MapLogic.pageUrl(this.room, true, !online));
     } catch (e) {
-      this.state = MapLoadState.FAILED;
+      this.failLoad();
     }
   }
 
-  private async openBrowser(): Promise<void> {
-    const context = AppGlobal.context;
-    if (context === undefined) {
+  private failLoad(): void {
+    clearTimeout(this.timeout);
+    if (!this.active || this.state !== MapLoadState.LOADING) return;
+    if (!this.online) {
+      this.reload(true);
       return;
     }
+    this.state = MapLoadState.FAILED;
+  }
+
+  private matchesCurrent(url: string): boolean {
+    return this.online ? MapLogic.isAllowedNavigation(url) : MapLogic.isLocalPage(url);
+  }
+
+  private async checkRendered(id: number): Promise<void> {
+    for (let i = 0; i < 24 && this.checking(id); i++) {
+      try {
+        const ready: string = await this.controller.runJavaScript('window.zqMapReady === true');
+        if (!this.checking(id)) return;
+        if (ready === 'true') {
+          clearTimeout(this.timeout);
+          this.state = MapLoadState.READY;
+          this.progress = 100;
+          return;
+        }
+      } catch (e) {
+        // ArkWeb 首次布局或切换文档时可能尚未准备好。
+      }
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 250); });
+    }
+  }
+
+  private async openBrowser(uri: string): Promise<void> {
+    const context = AppGlobal.context;
+    if (context === undefined) return;
     try {
       await context.startAbility({
         action: 'ohos.want.action.viewData',
         entities: ['entity.system.browsable'],
-        uri: MapLogic.pageUrl()
+        uri: uri
       });
     } catch (e) {
       const err: BusinessError = e as BusinessError;
-        this.getUIContext().getPromptAction().showToast({
-          message: '无法打开浏览器（' + err.code + '）',
-          systemMaterial: Immersive.dialogMaterial()
-        });
+      this.getUIContext().getPromptAction().showToast({
+        message: '无法打开浏览器（' + err.code + '）',
+        systemMaterial: Immersive.dialogMaterial()
+      });
     }
   }
-
-
-  @Builder
-  errorBar() {
-    Row() {
-      Text(MapLogic.stateText(MapLoadState.FAILED))
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.WARM_SAND)
-        .layoutWeight(1)
-      Text('重试')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.MIST_TEAL)
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .onClick(() => {
-          this.refresh();
-        })
-      Text('浏览器')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.SLATE_BLUE)
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .onClick(() => {
-          this.openBrowser();
-        })
-    }
-    .width('100%')
-    .padding({ left: 14, right: 8, top: 6, bottom: 6 })
-    .backgroundColor(Tokens.TINT_SAND)
-  }
-
-  @State private headerFade: number = 0;
 
   build() {
     Column() {
       PageHeader({
-      progress: 0.6,
-        title: '地图',
-        actionText: '刷新',
+        progress: 0.6,
+        title: '校内地图',
+        actionText: '重载',
         actionText2: '浏览器',
-        onBack: () => {
-          this.onClose();
-        },
-        onAction: () => {
-          this.refresh();
-        },
-        onAction2: () => {
-          this.openBrowser();
-        }
+        onBack: () => { this.onClose(); },
+        onAction: () => { this.reload(false); },
+        onAction2: () => { this.openBrowser(MapLogic.pageUrl(this.room, false)); }
       }) {
-        Column() {
-          if (this.state === MapLoadState.LOADING) {
-            Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
-              .width('100%')
-              .height(2)
-              .color(Tokens.MIST_TEAL)
-              .backgroundColor(Tokens.DIVIDER)
-          }
-
-          if (MapLogic.showErrorBar(this.state)) {
-            this.errorBar()
-          }
-
-          Web({ src: MapLogic.pageUrl(), controller: this.controller })
-            .javaScriptAccess(true)
-            .domStorageAccess(true)
-            .zoomAccess(true)
-            .fileAccess(false)
-            .imageAccess(true)
-            .layoutWeight(1)
+        Stack() {
+          Web({ src: MapLogic.pageUrl(this.room, true, true), controller: this.controller })
             .width('100%')
+            .height('100%')
+            .javaScriptAccess(true)
+            .zoomAccess(false)
+            .darkMode(WebDarkMode.Auto)
+            .fileAccess(false)
             .backgroundColor(Tokens.BG)
-            .onPageBegin(() => {
-              this.state = MapLoadState.LOADING;
-            })
             .onProgressChange((event: OnProgressChangeEvent) => {
-              this.progress = event.newProgress;
+              if (this.state === MapLoadState.LOADING) this.progress = Math.min(event.newProgress, 95);
             })
-            .onPageEnd(() => {
-              this.state = MapLoadState.READY;
-              this.progress = 100;
+            .onPageEnd((event: OnPageEndEvent) => {
+              if (this.matchesCurrent(event.url) && this.checking(this.loadId)) this.checkRendered(this.loadId);
             })
             .onErrorReceive((event: OnErrorReceiveEvent) => {
-              if (event.request.isMainFrame()) {
-                this.state = MapLoadState.FAILED;
-              }
+              if (event.request.isMainFrame() && this.matchesCurrent(event.request.getRequestUrl())) this.failLoad();
+            })
+            .onHttpErrorReceive((event: OnHttpErrorReceiveEvent) => {
+              if (event.request.isMainFrame() && this.matchesCurrent(event.request.getRequestUrl())) this.failLoad();
+            })
+            .onRenderExited(() => {
+              clearTimeout(this.timeout);
+              this.state = MapLoadState.FAILED;
             })
             .onLoadIntercept((event: OnLoadInterceptEvent) => {
               const url: string = event.data.getRequestUrl();
-              if (MapLogic.isAllowedNavigation(url)) {
-                return false;
+              if (MapLogic.isLocalPage(url) || MapLogic.isAllowedNavigation(url)) return false;
+              if (event.data.isMainFrame() && (url.startsWith('https://') || url.startsWith('http://'))) {
+                this.openBrowser(url);
               }
-              // 非正式域名主机（如站外链接）交给系统浏览器，Web 内不加载。
-              this.openBrowser();
               return true;
             })
+
+          if (this.state === MapLoadState.LOADING) {
+            Column() {
+              Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
+                .width('100%')
+                .height(2)
+                .color(Tokens.MIST_TEAL)
+                .backgroundColor(Tokens.DIVIDER)
+              Blank()
+            }
+            .width('100%')
+            .height('100%')
+            .hitTestBehavior(HitTestMode.Transparent)
+          }
+
+          if (MapLogic.showErrorBar(this.state)) {
+            Column({ space: 12 }) {
+              Text(MapLogic.stateText(this.state)).fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_SECONDARY)
+              Button('重试').height(44).onClick(() => { this.reload(false); })
+            }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(Tokens.BG)
+          }
         }
         .width('100%')
         .height('100%')
-        .padding({ top: 0 })
       }
     }
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
     .padding({ top: Breakpoints.BREATH_TOP })
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      const next: number = Number(newArea.width);
-      if (Math.abs(next - this.layoutWidth) > 1) {
-        this.layoutWidth = next;
-        this.wide = Breakpoints.isWide(next);
-      }
-    })
   }
 }

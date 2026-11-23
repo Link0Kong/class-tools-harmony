@@ -64,6 +64,7 @@ class TtGroupItem {
 export struct TimetableScreen {
   onClose: () => void = () => {
   };
+  onOpenMap: (room: string) => void = () => {};
 
   @State private snapshot: TtSnapshot | undefined = undefined;
   @State private plan: TtPlan = new TtPlan();
@@ -1245,6 +1246,20 @@ export struct TimetableScreen {
         }
         .width('100%')
         .margin({ top: 6 })
+
+        if (this.detailCourse.room.trim().length > 0) {
+          Button('在地图查看教室')
+            .height(44)
+            .width('100%')
+            .backgroundColor(Tokens.MIST_TEAL)
+            .fontColor('#FFFFFF')
+            .margin({ top: 10 })
+            .onClick(() => {
+              const room: string = this.detailCourse?.room ?? '';
+              this.detailOpen = false;
+              this.onOpenMap(room);
+            })
+        }
       }
     }
     .width('100%')
