@@ -10,10 +10,10 @@
  */
 export class CloudSpaceDefaults {
   /**
-   * 开发/调试基址：HTTPS 域名（tool.furina.fun）备案前直连 ECS IP
-   * （`network_config.json` 已对该 IP 放行明文 HTTP）。
+   * 正式基址：2026-11-23 备案通过，正式 HTTPS 域名（同源路由 `/drop`）。
+   * 原 ECS 明文 IP 入口只保留本机调试，不进客户端常量。
    */
-  static readonly BASE_URL: string = 'http://121.196.47.2/drop';
+  static readonly BASE_URL: string = 'https://tool.furina.fun/drop';
 
   /** 与服务端/网页/小程序/安卓一致的固定分片：8 MiB。 */
   static readonly CHUNK_SIZE: number = 8 * 1024 * 1024;

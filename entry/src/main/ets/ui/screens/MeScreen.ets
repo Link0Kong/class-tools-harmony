@@ -88,7 +88,7 @@ export struct MeScreen {
     this.legalOpen = true;
   }
 
-  /** 在线正式文本（当前为 ECS IP 调试入口；域名恢复后改正式域名）。 */
+  /** 在线正式文本（2026-11-23 起为正式 HTTPS 域名 `https://tool.furina.fun/legal/...`）。 */
   private openLegalOnline(): void {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     context.openLink(this.legalInfo.onlineUrl).catch((error: BusinessError) => {

@@ -8,12 +8,13 @@ import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
 
 /**
- * 校内地图（ArkUI Web 加载 ECS H5，与网页/安卓同源方案）。
+ * 校内地图（ArkUI Web 加载正式域名 H5，与网页/安卓同源方案）。
  *
- * - 数据源：`http://121.196.47.2/map/campus_final_25d.html?embed=1`（唯一数据源，不在原生侧重写 canvas）；
+ * - 数据源：`https://tool.furina.fun/map/campus_final_25d.html?embed=1`（唯一数据源，不在原生侧重写 canvas；
+ *   2026-11-23 备案通过后由 ECS 明文 IP 切到正式 HTTPS 域名）；
  * - 顶栏：返回 / 刷新 / 浏览器降级；
  * - 主文档加载失败：错误条提供「重试 / 浏览器打开」；
- * - Web 内部只允许 ECS 主机继续加载，其它链接交系统浏览器。
+ * - Web 内部只允许正式域名主机继续加载，其它链接交系统浏览器。
  */
 @Component
 export struct MapScreen {
@@ -149,7 +150,7 @@ export struct MapScreen {
               if (MapLogic.isAllowedNavigation(url)) {
                 return false;
               }
-              // 非 ECS 主机（如站外链接）交给系统浏览器，Web 内不加载。
+              // 非正式域名主机（如站外链接）交给系统浏览器，Web 内不加载。
               this.openBrowser();
               return true;
             })

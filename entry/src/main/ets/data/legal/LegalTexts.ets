@@ -19,7 +19,7 @@ export class LegalInfo {
   email: string = 'Ko_Link@outlook.com';
   /** rawfile 相对路径（不带前导斜杠）。 */
   rawPath: string = '';
-  /** 当前已部署的在线正式文本（域名恢复前为 ECS IP 调试入口）。 */
+  /** 当前已部署的在线正式文本（2026-11-23 备案通过，正式 HTTPS 域名）。 */
   onlineUrl: string = '';
 
   constructor(kind: string, title: string, scope: string, rawPath: string, onlineUrl: string) {
@@ -76,7 +76,7 @@ export class LegalTexts {
         '用户协议',
         '鸿蒙端（HarmonyOS / HarmonyOS NEXT 原生 App，含手机、平板、2in1 和手表）',
         'legal/terms.txt',
-        'http://121.196.47.2/legal/harmony/terms.html'
+        'https://tool.furina.fun/legal/harmony/terms.html'
       );
     }
     return new LegalInfo(
@@ -84,7 +84,7 @@ export class LegalTexts {
       '隐私政策',
       '鸿蒙端（HarmonyOS / HarmonyOS NEXT 原生 App，含手机、平板、2in1 和手表）',
       'legal/privacy.txt',
-      'http://121.196.47.2/legal/harmony/privacy.html'
+      'https://tool.furina.fun/legal/harmony/privacy.html'
     );
   }
 

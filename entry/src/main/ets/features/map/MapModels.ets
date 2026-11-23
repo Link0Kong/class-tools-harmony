@@ -1,14 +1,14 @@
 ﻿/**
  * 校园 2.5D 地图：H5 地址与降级逻辑（纯逻辑，可单测）。
  *
- * 数据源与安卓/网页同源：ECS H5 `map/campus_final_25d.html`（唯一数据源，不在原生侧重写 canvas）。
+ * 数据源与安卓/网页同源：正式域名 H5 `map/campus_final_25d.html`（唯一数据源，不在原生侧重写 canvas）。
  * 顶栏要求：返回 / 刷新 / 浏览器降级；主文档加载失败时给出「重试 + 浏览器打开」。
  *
- * 备案完成、`tool.furina.fun` 恢复后，只需把 [ECS_BASE] 换成同源 https 地址（单点改动）。
+ * 2026-11-23 备案通过：统一走正式 HTTPS 域名 `https://tool.furina.fun`（原 ECS 明文 IP 仅本机调试）。
  */
 export class MapConfig {
-  /** ECS 调试入口（备案前公网唯一入口）。 */
-  static readonly ECS_BASE: string = 'http://121.196.47.2';
+  /** 正式域名（2026-11-23 备案通过，全站 HTTPS；原 ECS 明文 IP 仅本机调试）。 */
+  static readonly ECS_BASE: string = 'https://tool.furina.fun';
 
   /** H5 相对路径。 */
   static readonly PAGE_PATH: string = '/map/campus_final_25d.html';
@@ -31,12 +31,12 @@ export class MapLogic {
     return MapConfig.ECS_BASE + MapConfig.PAGE_PATH + '?' + MapConfig.EMBED_QUERY;
   }
 
-  /** 主文档 host（用于 Web 内部导航 allowlist）。 */
+  /** 主文档 host（用于 Web 内部导航 allowlist）；由 [ECS_BASE] 推导，避免基址与 host 两处漂移。 */
   static host(): string {
-    return '121.196.47.2';
+    return MapLogic.hostOf(MapConfig.ECS_BASE);
   }
 
-  /** 仅允许 ECS 主机下的 http(s) 页面继续在 Web 内加载；其它交给系统浏览器。 */
+  /** 仅允许正式域名主机下的页面继续在 Web 内加载；其它交给系统浏览器。 */
   static isAllowedNavigation(url: string): boolean {
     const trimmed: string = url.trim();
     if (!trimmed.toLowerCase().startsWith('http://') && !trimmed.toLowerCase().startsWith('https://')) {

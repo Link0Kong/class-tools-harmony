@@ -28,7 +28,7 @@ function fileOf(id: string, name: string, size: number, uploadedAt: number, url:
 export default function cloudSpaceTest() {
   describe('CloudSpaceDefaults', () => {
     it('contract_constants', 0, () => {
-      expect(CloudSpaceDefaults.BASE_URL).assertEqual('http://121.196.47.2/drop');
+      expect(CloudSpaceDefaults.BASE_URL).assertEqual('https://tool.furina.fun/drop');
       expect(CloudSpaceDefaults.CHUNK_SIZE).assertEqual(8 * 1024 * 1024);
       expect(CloudSpaceDefaults.FILE_TTL_MS).assertEqual(72 * 60 * 60 * 1000);
       expect(CloudSpaceDefaults.MAX_FILES).assertEqual(300);
@@ -223,10 +223,10 @@ export default function cloudSpaceTest() {
 
   describe('CloudSpaceApi', () => {
     it('url_and_headers', 0, () => {
-      const api: CloudSpaceApi = new CloudSpaceApi('http://121.196.47.2/drop/');
-      expect(api.baseUrl).assertEqual('http://121.196.47.2/drop');
-      expect(api.url('/mine')).assertEqual('http://121.196.47.2/drop/mine');
-      expect(api.url('state')).assertEqual('http://121.196.47.2/drop/state');
+      const api: CloudSpaceApi = new CloudSpaceApi('https://tool.furina.fun/drop/');
+      expect(api.baseUrl).assertEqual('https://tool.furina.fun/drop');
+      expect(api.url('/mine')).assertEqual('https://tool.furina.fun/drop/mine');
+      expect(api.url('state')).assertEqual('https://tool.furina.fun/drop/state');
       const noToken: Record<string, string> = api.headers('');
       expect(noToken['X-Device-Id'] === undefined).assertTrue();
       const withToken: Record<string, string> = api.headers('token-1', CloudSpaceApi.APPLICATION_JSON);

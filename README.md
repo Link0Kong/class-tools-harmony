@@ -36,6 +36,16 @@
 | 统计 `stats` | 班级使用情况与版本/设备分布（已脱敏） |
 | 诊断 `diag` | 本机自检 + 服务健康 + 上报诊断报告 |
 
+## 服务地址
+
+- **正式站**：`https://tool.furina.fun`（阿里云杭州 ECS + Caddy 自动 HTTPS）。Web 域名已于 2026-11-23 通过 ICP 备案
+  （备案号 闽ICP备2026042939号-2，工信部入口 <https://beian.miit.gov.cn/>）；**应用内不展示「备案信息」行**。
+- **同源路由**：`/v1/rdb/rest/`（正式数据面）、`/v1/rdb/rest-next/`（staging，**仅调试**）、`/drop`（文件传输 / 云空间）、
+  `/pptfiles`（演示文件）、`/legal`（法律文本）、`/map`（校园地图）、`/account`、`/android/latest.json`。
+- **明文（http）仅一处**：教务系统 `210.34.74.77`（学校系统无 HTTPS），在
+  `entry/src/main/resources/base/profile/network_config.json` 里单独放行；其余端点一律 https。
+- 备案期的 ECS 明文 IP `121.196.47.2` 只保留本机调试，**不进客户端常量**；本机联调确需临时放行时只改本地文件、不要提交。
+
 ## 下载
 
 - Release 的 Assets 中提供 **未签名 HAP**（`entry-default-unsigned.hap`）。
