@@ -153,6 +153,9 @@ export class TtCalendar {
   /** 指定日期的全部课程占用（按开始时间排序）。 */
   static sessionsOn(courses: Course[], termStart: Date | undefined, date: Date, nowMillis: number): SessionInfo[] {
     const week: number | undefined = TtCalendar.weekOf(termStart, date);
+    if (week === undefined) {
+      return [];
+    }
     const dayIdx: number = TtCalendar.dayIndex(date);
     const out: SessionInfo[] = [];
     for (let i = 0; i < courses.length; i++) {
@@ -226,8 +229,11 @@ export class TtCalendar {
       plan.todayState = TodayState.NODATA;
       return plan;
     }
-    plan.hasData = true;
     const termStart: Date | undefined = TtCalendar.parseTermStart(snapshot.termStart());
+    if (termStart === undefined) {
+      return plan;
+    }
+    plan.hasData = true;
     const today: Date = new Date(nowMillis);
     plan.week = TtCalendar.weekOf(termStart, today);
     plan.today = TtCalendar.sessionsOn(snapshot.c, termStart, today, nowMillis);

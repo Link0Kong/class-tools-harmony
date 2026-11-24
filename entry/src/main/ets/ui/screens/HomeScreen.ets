@@ -7,7 +7,7 @@ import { NoticeEntry, NoticesResult } from '../../data/notices/NoticesRepository
 import { PowerPrefs } from '../../data/power/PowerPrefs';
 import { PowerRooms, PowerRow } from '../../data/power/PowerModels';
 import { PowerRowResult } from '../../data/power/PowerRepository';
-import { SessionInfo, SessionState, TtPlan } from '../../data/timetable/TimetableModels';
+import { SessionInfo, SessionState, TodayState, TtPlan, TtSnapshot } from '../../data/timetable/TimetableModels';
 import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TtResult } from '../../data/timetable/TimetableRepository';
 import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
@@ -60,6 +60,8 @@ export struct HomeScreen {
   };
 
   @State private loading: boolean = true;
+  private ttSnapshot: TtSnapshot | undefined = undefined;
+  private planMinute: number = -1;
   @State private plan: TtPlan = new TtPlan();
   @State private hwOpen: number = 0;
   @State private hwItems: HomeCardItem[] = [];
@@ -185,6 +187,11 @@ export struct HomeScreen {
 
   private tickClock(): void {
     const now: Date = new Date();
+    const minute: number = Math.floor(now.getTime() / 60000);
+    if (minute !== this.planMinute && this.ttSnapshot !== undefined) {
+      this.plan = TtCalendar.plan(this.ttSnapshot, now.getTime());
+      this.planMinute = minute;
+    }
     this.clockText = HomeDigest.pad2(now.getHours()) + ':' + HomeDigest.pad2(now.getMinutes());
     this.clockDate = HomeDigest.dateText(now);
     const names: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -394,6 +401,7 @@ export struct HomeScreen {
     const snapshot = Services.marks.marks();
     const tt = Services.timetable.local();
     if (tt !== undefined) {
+      this.ttSnapshot = tt;
       this.plan = TtCalendar.plan(tt, Date.now());
     }
     const hidden = HidePrefs.read(Services.userdata.currentSections());
@@ -469,7 +477,8 @@ export struct HomeScreen {
     try {
       const tt: TtResult = await ttPromise;
       if (seq === this.loadSeq) {
-        this.plan = TtCalendar.plan(tt.snapshot, now);
+        this.ttSnapshot = tt.snapshot;
+        this.plan = TtCalendar.plan(tt.snapshot, Date.now());
       }
     } catch (e) {
       // 忽略
@@ -618,7 +627,7 @@ export struct HomeScreen {
     let text: string = this.plan.today.length > 0
       ? '今日 ' + this.plan.today.length + ' 节' : '今天没课';
     if (next !== undefined) {
-      text += ' · 下一节 ' + next.startText + ' ' + next.name;
+      text += ' · ' + (next.state === SessionState.ONGOING ? '上课中 ' : '下一节 ') + next.startText + ' ' + next.name;
     } else if (this.plan.next !== undefined) {
       text += ' · 下次 ' + this.plan.next.dayText + ' ' + this.plan.next.name;
     }
@@ -715,27 +724,6 @@ export struct HomeScreen {
     return used;
   }
 
-  private rowCount(): number {
-    let rows: number = 0;
-    let used: number = 0;
-    for (let i = 0; i < this.cards.length; i++) {
-      const span: number = HomeCards.normalizeSpan(this.cards[i].span);
-      if (used + span > HomeCards.PER_ROW) {
-        rows += 1;
-        used = 0;
-      }
-      used += span;
-      if (used >= HomeCards.PER_ROW) {
-        rows += 1;
-        used = 0;
-      }
-    }
-    if (used > 0) {
-      rows += 1;
-    }
-    return rows;
-  }
-
   private indexOf(id: string): number {
     for (let i = 0; i < this.cards.length; i++) {
       if (this.cards[i].id === id) {
@@ -770,11 +758,20 @@ export struct HomeScreen {
     return this.widthForSpan(HomeCards.HALF) + Tokens.GAP;
   }
 
+  private cardHeight(cfg: HomeCardConfig): number {
+    if (cfg.id === 'tt' && cfg.span === HomeCards.FULL) {
+      return Math.max(HOME_CARD_H, 86 + 46 * this.plan.today.length);
+    }
+    return HOME_CARD_H;
+  }
+
   private slotY(index: number): number {
     if (index < 0 || index >= this.cards.length) {
       return 0;
     }
-    return this.slotRow(index) * (HOME_CARD_H + Tokens.GAP);
+    const ttIndex: number = this.indexOf('tt');
+    const extra: number = ttIndex >= 0 && ttIndex < index ? this.cardHeight(this.cards[ttIndex]) - HOME_CARD_H : 0;
+    return this.slotRow(index) * (HOME_CARD_H + Tokens.GAP) + extra;
   }
 
   private centerX(index: number): number {
@@ -782,12 +779,12 @@ export struct HomeScreen {
   }
 
   private centerY(index: number): number {
-    return this.slotY(index) + HOME_CARD_H / 2;
+    return this.slotY(index) + this.cardHeight(this.cards[index]) / 2;
   }
 
   private boardHeight(): number {
-    const rows: number = this.rowCount();
-    return rows > 0 ? rows * (HOME_CARD_H + Tokens.GAP) - Tokens.GAP : 0;
+    const last: number = this.cards.length - 1;
+    return last >= 0 ? this.slotY(last) + this.cardHeight(this.cards[last]) : 0;
   }
 
   /** 按 id 查槽位（渲染时读取 cards 状态，重排后才能触发其他卡片让位）。 */
@@ -871,7 +868,7 @@ export struct HomeScreen {
       const sx: number = this.slotX(i);
       const sy: number = this.slotY(i);
       const w: number = this.widthForSpan(this.spanAt(i));
-      if (x >= sx && x <= sx + w && y >= sy && y <= sy + HOME_CARD_H) {
+      if (x >= sx && x <= sx + w && y >= sy && y <= sy + this.cardHeight(this.cards[i])) {
         return i;
       }
     }
@@ -1072,26 +1069,35 @@ export struct HomeScreen {
   sessionRow(s: SessionInfo) {
     Row({ space: 8 }) {
       Text(s.startText)
-        .fontSize(10)
-        .fontColor('#6E8CA8')
-        .width(40)
-        .maxLines(1)
-      Text(s.name)
-        .fontSize(12)
+        .fontSize(14)
         .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.TEXT_PRIMARY)
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      if (s.room.length > 0) {
-        Text(s.room)
-          .fontSize(10)
-          .fontColor(Tokens.TEXT_TERTIARY)
+        .fontColor(Tokens.MIST_TEAL)
+        .width(48)
+      Column({ space: 2 }) {
+        Text(s.name)
+          .fontSize(Tokens.F_BODY)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Tokens.TEXT_PRIMARY)
           .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(s.span + (s.room.length > 0 ? ' · ' + s.room : ''))
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(Tokens.TEXT_SECONDARY)
+          .maxLines(1)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      if (s.state === SessionState.ONGOING || (this.plan.next !== undefined && s.startAt === this.plan.next.startAt)) {
+        Text(s.state === SessionState.ONGOING ? '上课中' : '下一节')
+          .fontSize(11)
+          .fontColor(Tokens.MIST_TEAL)
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .backgroundColor(Tokens.tint(Tokens.MIST_TEAL, 0.1))
+          .borderRadius(8)
       }
     }
     .width('100%')
-    .height(24)
+    .height(46)
     .alignItems(VerticalAlign.Center)
   }
 
@@ -1140,52 +1146,56 @@ export struct HomeScreen {
     .alignItems(VerticalAlign.Center)
   }
 
+  private afterClassText(): string {
+    const next = this.plan.next;
+    return '今日课程已结束' + (next !== undefined ? ' · 下次 ' + next.dayText + ' ' + next.startText + ' ' + next.name : '');
+  }
+
+  @Builder
+  compactCourse(s: SessionInfo) {
+    Text((s.state === SessionState.ONGOING ? '上课中' : '下一节') + ' · ' + s.startText)
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(Tokens.MIST_TEAL)
+      .margin({ top: 6 })
+    Text(s.name)
+      .fontSize(Tokens.F_BODY)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(Tokens.TEXT_PRIMARY)
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+    Text(s.span + (s.room.length > 0 ? ' · ' + s.room : ''))
+      .fontSize(Tokens.F_CAPTION)
+      .fontColor(Tokens.TEXT_SECONDARY)
+      .maxLines(1)
+    Blank()
+    this.cardFooter('查看本周课表')
+  }
+
   @Builder
   ttBody(wide: boolean) {
     this.cardTitleRow(AppSymbols.TIMETABLE, '#6E8CA8', '今日课程',
       this.plan.hasData && this.plan.today.length > 0 ? '' + this.plan.today.length + ' 节' : '')
-    if (this.plan.hasData && this.plan.today.length > 0) {
+    if (this.plan.hasData && this.plan.today.length > 0 && (wide || this.nextToday() !== undefined)) {
       if (wide) {
         Column() {
-          ForEach(this.plan.today.slice(0, 3), (s: SessionInfo) => {
+          ForEach(this.plan.today, (s: SessionInfo) => {
             this.sessionRow(s)
-          }, (s: SessionInfo, index: number) => 'ts_' + index + '_' + s.name)
+          }, (s: SessionInfo, index: number) => index + '_' + s.startAt + '_' + s.name + '_' + s.room + '_' + s.span + '_' + s.state)
         }
         .width('100%')
-        .margin({ top: 6 })
         Blank()
-      } else {
-        Text(this.plan.today[0].name)
-          .fontSize(Tokens.F_BODY)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.TEXT_PRIMARY)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 6 })
-        Text(this.plan.today[0].startText + ' · ' + this.plan.today[0].span
-          + (this.plan.today[0].room.length > 0 ? ' · ' + this.plan.today[0].room : ''))
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_SECONDARY)
-          .maxLines(1)
-          .margin({ top: 3 })
-        if (this.plan.today.length > 1) {
-          Text('下一节 ' + this.plan.today[1].startText + ' ' + this.plan.today[1].name)
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_TERTIARY)
-            .maxLines(1)
-            .margin({ top: 3 })
-        }
-        Blank()
-        this.cardFooter('查看本周课表')
+        this.cardFooter(this.plan.todayState === TodayState.DONE ? this.afterClassText() : '查看本周课表')
+      } else if (this.nextToday() !== undefined) {
+        this.compactCourse(this.nextToday()!)
       }
     } else if (this.plan.hasData) {
-      Text(wide ? '今天没课' : '没课')
+      Text(this.plan.todayState === TodayState.DONE ? '今日课程已结束' : '今天没课')
         .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.TEXT_PRIMARY)
         .margin({ top: 10 })
       Text(this.plan.next !== undefined
-        ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.name : '近期暂无课程')
+        ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.startText + ' ' + this.plan.next.name : '近期暂无课程')
         .fontSize(Tokens.F_CAPTION)
         .fontColor(Tokens.TEXT_TERTIARY)
         .maxLines(1)
@@ -1666,7 +1676,7 @@ export struct HomeScreen {
     Column() {
       Stack({ alignContent: Alignment.TopEnd }) {
         HomeCardShell({
-          cardHeightVp: HOME_CARD_H,
+          cardHeightVp: this.cardHeight(cfg),
           accentColor: HomeCards.defOr(cfg.id).accent,
           resizing: this.resizingId === cfg.id,
           onCardTap: () => {
@@ -1701,10 +1711,10 @@ export struct HomeScreen {
         }
       }
       .width('100%')
-      .height(HOME_CARD_H)
+      .height(this.cardHeight(cfg))
     }
     .width(this.cardWidthOf(cfg))
-    .height(HOME_CARD_H)
+    .height(this.cardHeight(cfg))
     .translate({
       x: this.slotXOf(cfg.id) + (this.dragId === cfg.id ? this.dragDx : 0),
       y: this.slotYOf(cfg.id) + (this.dragId === cfg.id ? this.dragDy : 0)
@@ -1728,7 +1738,7 @@ export struct HomeScreen {
               ? event.fingerList[0] : undefined;
             const localX: number = finger !== undefined ? finger.localX : 0;
             const localY: number = finger !== undefined ? finger.localY : 0;
-            if (localX > this.cardWidthOf(cfg) - 56 && localY > HOME_CARD_H - 56) {
+            if (localX > this.cardWidthOf(cfg) - 56 && localY > this.cardHeight(cfg) - 56) {
               return;
             }
             this.beginDrag(cfg.id);
