@@ -87,7 +87,18 @@ export struct TimetableScreen {
   @State private groups: TtGroupItem[] = [];
   private shareSpec: ExportCardSpec = new ExportCardSpec();
 
+  private clockTimer: number = -1;
+  private currentSession(): SessionInfo | undefined {
+    return this.plan.today.find((s: SessionInfo) => s.state === SessionState.ONGOING) ?? this.plan.next;
+  }
+  aboutToDisappear(): void {
+    clearInterval(this.clockTimer);
+  }
   aboutToAppear(): void {
+    this.clockTimer = setInterval(() => {
+      this.now = Date.now();
+      this.plan = TtCalendar.plan(this.snapshot, this.now);
+    }, 30000);
     this.dayIdx = TtCalendar.dayIndex(new Date(Date.now()));
     this.reload(false);
   }
@@ -672,13 +683,13 @@ export struct TimetableScreen {
   courseBlock(course: Course, day: number) {
     Column() {
       Text(course.name)
-        .fontSize(9)
+        .fontSize(Math.max(10, Math.min(15, this.colWidth() / 4.5)))
         .fontWeight(FontWeight.Bold)
         .fontColor(this.courseFg(course.name))
-        .maxLines(4)
+        .maxLines(course.end > course.start ? 4 : 2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
-      if (course.room.length > 0) {
+      if (course.room.length > 0 && course.end > course.start) {
         Text(TtCalendar.roomShort(course.room))
           .fontSize(8)
           .fontColor(this.courseFg(course.name))
@@ -688,7 +699,7 @@ export struct TimetableScreen {
           .width('100%')
           .margin({ top: 2 })
       }
-      if (course.end > course.start) {
+      if (course.end > course.start && this.colWidth() >= 62) {
         Text('第' + course.start + '-' + course.end + '节')
           .fontSize(8)
           .fontColor(this.courseFg(course.name))
@@ -1248,9 +1259,12 @@ export struct TimetableScreen {
         .margin({ top: 6 })
 
         if (this.detailCourse.room.trim().length > 0) {
-          Button('在地图查看教室')
+          Button() {
+            SymbolGlyph($r('sys.symbol.map')).fontSize(21).fontColor(['#FFFFFF'])
+          }
+            .accessibilityText('在地图查看教室')
             .height(44)
-            .width('100%')
+            .width(44)
             .backgroundColor(Tokens.MIST_TEAL)
             .fontColor('#FFFFFF')
             .margin({ top: 10 })
@@ -1336,9 +1350,9 @@ export struct TimetableScreen {
                     this.weekHead()
                     this.actionsRow()
 
-                    if (this.plan.next !== undefined) {
+                    if (this.currentSession() !== undefined) {
                       Column() {
-                        this.nextCard(this.plan.next)
+                        this.nextCard(this.currentSession()!)
                       }
                       .transition(Motion.popIn())
                     }

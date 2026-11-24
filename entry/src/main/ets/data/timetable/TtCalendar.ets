@@ -151,7 +151,7 @@ export class TtCalendar {
   }
 
   /** 指定日期的全部课程占用（按开始时间排序）。 */
-  static sessionsOn(courses: Course[], termStart: Date | undefined, date: Date, nowMillis: number): SessionInfo[] {
+  static sessionsOn(courses: Course[], termStart: Date | undefined, date: Date, nowMillis: number, focusOnBell: boolean = false): SessionInfo[] {
     const week: number | undefined = TtCalendar.weekOf(termStart, date);
     if (week === undefined) {
       return [];
@@ -170,8 +170,17 @@ export class TtCalendar {
         || course.end < 1 || course.end > TtPeriods.PERIODS.length) {
         continue;
       }
-      const startText: string = TtPeriods.startText(course.start);
-      const endText: string = TtPeriods.endText(course.end);
+      let startText: string = TtPeriods.startText(course.start);
+      let endText: string = TtPeriods.endText(course.end);
+      if (focusOnBell && nowMillis >= TtCalendar.at(date, startText) && nowMillis < TtCalendar.at(date, endText)) {
+        for (let p: number = course.start; p <= course.end; p++) {
+          if (nowMillis < TtCalendar.at(date, TtPeriods.endText(p))) {
+            startText = TtPeriods.startText(p);
+            endText = TtPeriods.endText(p);
+            break;
+          }
+        }
+      }
       const startAt: number = TtCalendar.at(date, startText);
       const endAt: number = TtCalendar.at(date, endText);
       if (startAt <= 0 || endAt <= 0) {
@@ -206,7 +215,7 @@ export class TtCalendar {
     const today: Date = new Date(nowMillis);
     for (let offset = 0; offset <= lookAheadDays; offset++) {
       const date: Date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset, 0, 0, 0);
-      const sessions: SessionInfo[] = TtCalendar.sessionsOn(courses, termStart, date, nowMillis);
+      const sessions: SessionInfo[] = TtCalendar.sessionsOn(courses, termStart, date, nowMillis, true);
       for (let i = 0; i < sessions.length; i++) {
         const session: SessionInfo = sessions[i];
         if (session.startAt <= nowMillis) {
@@ -236,7 +245,7 @@ export class TtCalendar {
     plan.hasData = true;
     const today: Date = new Date(nowMillis);
     plan.week = TtCalendar.weekOf(termStart, today);
-    plan.today = TtCalendar.sessionsOn(snapshot.c, termStart, today, nowMillis);
+    plan.today = TtCalendar.sessionsOn(snapshot.c, termStart, today, nowMillis, true);
     plan.next = TtCalendar.nextSession(snapshot.c, termStart, nowMillis, 14);
     if (plan.today.length === 0) {
       plan.todayState = TodayState.NONE;
