@@ -29,7 +29,7 @@ export struct ExportCardView {
         this.wmCtx.save();
         this.wmCtx.translate(x, y);
         this.wmCtx.rotate(-20 * Math.PI / 180);
-        this.wmCtx.fillText('班级工具站', 0, 0);
+        this.wmCtx.fillText('枫丹工具箱', 0, 0);
         this.wmCtx.restore();
       }
     }
@@ -59,7 +59,7 @@ export struct ExportCardView {
       Circle().width(6).height(6).fill(Tokens.MIST_TEAL)
       Circle().width(6).height(6).fill(Tokens.SLATE_BLUE)
       Circle().width(6).height(6).fill(Tokens.WARM_SAND)
-      Text('班级工具站')
+      Text('枫丹工具箱')
         .fontSize(11)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.TEXT_TERTIARY)
@@ -261,7 +261,7 @@ export struct ExportCardView {
               Circle().width(5).height(5).fill(Tokens.MIST_TEAL)
               Circle().width(5).height(5).fill(Tokens.SLATE_BLUE)
               Circle().width(5).height(5).fill(Tokens.WARM_SAND)
-              Text('班级工具站')
+              Text('枫丹工具箱')
                 .fontSize(11.5)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(Tokens.MIST_TEAL)

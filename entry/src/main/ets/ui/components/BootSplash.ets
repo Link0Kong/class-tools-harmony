@@ -140,7 +140,7 @@ export struct BootSplash {
       .translate({ y: this.travelY })
 
       Column({ space: 4 }) {
-        Text('班级工具站')
+        Text('枫丹工具箱')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor('#303A35')

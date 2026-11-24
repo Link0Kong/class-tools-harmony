@@ -1103,7 +1103,7 @@ export struct MeScreen {
 
         Row() {
           BrandMark({ markSize: 16 })
-          Text('班级工具站 · HarmonyOS ' + CloudConfig.APP_VERSION)
+          Text('枫丹工具箱 · HarmonyOS ' + CloudConfig.APP_VERSION)
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.TEXT_TERTIARY)
             .margin({ left: 8 })

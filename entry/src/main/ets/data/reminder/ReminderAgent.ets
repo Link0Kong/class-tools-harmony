@@ -81,7 +81,7 @@ export class ReminderAgent {
           normal: {
             title: plan.title,
             text: plan.content,
-            additionalText: '班级工具站'
+            additionalText: '枫丹工具箱'
           }
         }
       };

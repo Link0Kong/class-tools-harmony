@@ -51,9 +51,9 @@ export class NotifyCenter {
         content: {
           notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
           normal: {
-            title: '班级工具站 · 测试通知',
+            title: '枫丹工具箱 · 测试通知',
             text: '通知已开启，作业、通知、投票与水费提醒会在这里出现。',
-            additionalText: '班级工具站'
+            additionalText: '枫丹工具箱'
           }
         }
       };
@@ -226,7 +226,7 @@ export class NotifyCenter {
           normal: {
             title: event.title,
             text: event.text,
-            additionalText: '班级工具站'
+            additionalText: '枫丹工具箱'
           }
         }
       };

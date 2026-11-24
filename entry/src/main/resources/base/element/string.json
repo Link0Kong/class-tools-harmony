@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "班级工具站主模块"
+      "value": "枫丹工具箱主模块"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "班级工具站"
+      "value": "枫丹工具箱"
     },
     {
       "name": "EntryAbility_label",
-      "value": "班级工具站"
+      "value": "枫丹工具箱"
     }
   ]
 }

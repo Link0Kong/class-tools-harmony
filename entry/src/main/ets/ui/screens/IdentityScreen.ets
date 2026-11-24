@@ -221,7 +221,7 @@ export struct IdentityScreen {
       .borderRadius(24)
       .border({ width: 1, color: Tokens.CARD_EDGE })
 
-      Text('班级工具站')
+      Text('枫丹工具箱')
         .fontSize(28)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.TEXT_PRIMARY)

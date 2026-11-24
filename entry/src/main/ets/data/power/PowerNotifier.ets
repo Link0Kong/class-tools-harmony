@@ -26,7 +26,7 @@ export class PowerNotifier {
           normal: {
             title: '电费不足提醒',
             text: roomLabel + ' 剩余 ' + q.toFixed(2) + ' 度（阈值 ' + low + ' 度）',
-            additionalText: '班级工具站'
+            additionalText: '枫丹工具箱'
           }
         }
       };
