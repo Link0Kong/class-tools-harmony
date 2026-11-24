@@ -1,4 +1,4 @@
-﻿import { pushService } from '@kit.PushKit';
+import { pushService } from '@kit.PushKit';
 import notificationManager from '@ohos.notificationManager';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
@@ -146,7 +146,7 @@ export class AppPush {
       body['provider'] = 'harmony';
       body['token'] = token;
       body['device'] = deviceInfo.productModel;
-      body['app_version'] = '1.0.8';
+      body['app_version'] = '1.0.9';
       await Services.api.post('push_tokens', JSON.stringify(body), 'return=minimal');
     } catch (e) {
       Log.w('AppPush', '写 push_tokens 失败');

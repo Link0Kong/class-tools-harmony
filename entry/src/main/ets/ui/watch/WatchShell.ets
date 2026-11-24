@@ -1,4 +1,4 @@
-﻿import { vibrator } from '@kit.SensorServiceKit';
+import { vibrator } from '@kit.SensorServiceKit';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -1063,7 +1063,7 @@ export struct WatchShell {
         this.askLogout();
       })
       Blank()
-      Text('枫丹工具箱 · 1.0.8')
+      Text('枫丹工具箱 · 1.0.9')
         .fontSize(this.px(8))
         .fontColor('#4E5357')
     }
