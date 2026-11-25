@@ -99,6 +99,8 @@ export class DrawRemoveLog {
 /** 一次抽签的完整结果（含候选池与参数快照，便于结果页/导出/重抽）。 */
 export class DrawResult {
   entries: DrawEntry[] = [];
+  // The server replays the original order, independently of the display sort.
+  original: number[] = [];
   pool: DrawEntry[] = [];
   config: DrawConfig = new DrawConfig();
   log: DrawRemoveLog[] = [];
@@ -106,10 +108,23 @@ export class DrawResult {
   copy(): DrawResult {
     const next: DrawResult = new DrawResult();
     next.entries = this.entries.slice(0);
+    next.original = this.original.slice();
     next.pool = this.pool.slice(0);
     next.config = this.config.copy();
     next.log = this.log.slice(0);
     return next;
+  }
+}
+
+export class DrawReceipt {
+  id: string = '';
+  hash: string = '';
+  at: number = 0;
+  sequence: number = 0;
+  total: number = 0;
+
+  url(): string {
+    return 'https://tool.furina.fun/#verify=' + this.id;
   }
 }
 

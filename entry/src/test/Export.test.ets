@@ -4,6 +4,7 @@ import {
   DrawEntry,
   DrawPoolSource,
   DrawRemoveLog,
+  DrawReceipt,
   DrawResult,
   DrawSortMode
 } from '../main/ets/features/draw/DrawModels';
@@ -89,7 +90,9 @@ export default function exportTest() {
 
     it('params_cover_draw_fields', 0, () => {
       const spec: ExportCardSpec = DrawExportFactory.create(sampleResult(), NOW, 'abc12');
-      expect(spec.params.length).assertEqual(6);
+      expect(spec.params.length).assertEqual(7);
+      expect(spec.verifyUrl).assertEqual('');
+      expect(paramValue(spec, '存证')).assertEqual('未存证，图片无法核验');
       expect(paramValue(spec, '范围')).assertEqual('1 – 50');
       expect(paramValue(spec, '抽取个数')).assertEqual('3');
       expect(paramValue(spec, '允许重复')).assertEqual('否');
@@ -98,11 +101,24 @@ export default function exportTest() {
       expect(paramValue(spec, '可用池')).assertEqual('共 49 个');
     });
 
+    it('exports the confirmed cloud id and matching verification URL', 0, () => {
+      const receipt = new DrawReceipt();
+      receipt.id = 'd0123456789abcdef';
+      receipt.at = NOW;
+      receipt.sequence = 2;
+      receipt.total = 3;
+      receipt.hash = '0123456789abcdef'.repeat(4);
+      const spec = DrawExportFactory.create(sampleResult(), NOW, 'abc12', receipt);
+      expect(spec.recordId).assertEqual(receipt.id);
+      expect(spec.verifyUrl).assertEqual('https://tool.furina.fun/#verify=d0123456789abcdef');
+      expect(paramValue(spec, '记录哈希')).assertEqual('0123456789abcdef');
+    });
+
     it('roster_source_adds_extra_param', 0, () => {
       const result: DrawResult = sampleResult();
       result.config.poolSource = DrawPoolSource.ROSTER;
       const spec: ExportCardSpec = DrawExportFactory.create(result, NOW, 'abc12');
-      expect(spec.params.length).assertEqual(7);
+      expect(spec.params.length).assertEqual(8);
       expect(paramValue(spec, '候选来源')).assertEqual('班级名单');
     });
 

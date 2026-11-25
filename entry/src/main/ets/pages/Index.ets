@@ -1,4 +1,8 @@
 ﻿import { Services } from '../app/Services';
+import { NotifyWork } from '../data/notify/NotifyWork';
+import { DeskForms } from '../forms/DeskForms';
+import { ToolLaunch } from '../app/ToolLaunch';
+import { TaskRepository } from '../data/tasks/TaskRepository';
 import { AppGlobal } from '../app/AppGlobal';
 import { Session } from '../data/session/Session';
 import { Blob, JsonBlob } from '../data/sync/JsonBlob';
@@ -17,6 +21,7 @@ import { Log } from '../common/Log';
 import { AppPush } from '../features/push/AppPush';
 import { NotifyCenter } from '../data/notify/NotifyCenter';
 import { AppUpdate } from '../features/update/AppUpdate';
+
 
 const TAG: string = 'Index';
 
@@ -39,6 +44,11 @@ struct Index {
   @State private wearable: boolean = Device.isWearable();
   @State private quickIds: string[] = [];
   @State private syncState: string = '未同步';
+  @State private notifyRequest: boolean = false;
+  @State private homeRequest: number = 0;
+  @State private contentEpoch: number = 0;
+  @State private launchEpoch: number = 0;
+  @State private launch: ToolLaunch = new ToolLaunch('');
   @State private splashOn: boolean = true;
   @State private splashLeaving: boolean = false;
 
@@ -56,6 +66,12 @@ struct Index {
     });
     AppGlobal.onToolClosed = () => {
       this.closeTool();
+    };
+    AppGlobal.onLaunch = () => this.consumeLaunch();
+    TaskRepository.onChange = () => {
+      this.contentEpoch++;
+      DeskForms.refresh();
+      NotifyCenter.syncTasks();
     };
     this.bootstrap();
   }
@@ -75,6 +91,8 @@ struct Index {
       await this.enterApp(saved);
       return;
     }
+    DeskForms.sessionChanged('');
+    NotifyWork.configure(false);
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.phase = 'auth';
     });
@@ -110,9 +128,13 @@ struct Index {
     // 先恢复本机偏好（离线/未同步时 UI 也看到上次设置），再后台拉云端
     // 两份本机缓存互不依赖，并行读取，缩短冷启动首帧等待
     await Promise.all([Services.userdata.hydrateFromLocal(), Services.notices.hydrate()]);
+    if (this.session !== session) return;
     this.applySections(Services.userdata.currentSections());
+    DeskForms.sessionChanged(session.sid);
+    TaskRepository.load(true).then(() => DeskForms.refresh());
     this.syncNow();
     this.appReady = true;
+    this.consumeLaunch();
     if (this.wearable) {
       this.homeMounted = true;
     }
@@ -122,6 +144,9 @@ struct Index {
       this.maybeLeaveSplash();
     }, 900);
     // 用户偏好恢复后再申请通知权限/续订 token，避免启动早期写入被 hydrate 覆盖
+    NotifyCenter.currentSettings().then((settings) => {
+      if (this.session === session) NotifyWork.configure(settings.master);
+    });
     AppPush.syncOnLaunch();
     NotifyCenter.syncAll();
     Services.visits.reportOnce();
@@ -178,11 +203,36 @@ struct Index {
     this.syncState = '已同步';
   }
 
+  private consumeLaunch(): void {
+    const launch = AppGlobal.pendingLaunch;
+    if (!launch || !this.session || !this.appReady || this.wearable) return;
+    AppGlobal.pendingLaunch = undefined;
+    if (launch.toolId === 'home') {
+      this.openToolId = '';
+      AppGlobal.openToolId = '';
+      this.homeRequest++;
+    } else {
+      this.openTool(launch.toolId, '', launch);
+    }
+  }
+
+  private async clearSurfaces(): Promise<void> {
+    this.notifyRequest = false;
+    this.appReady = false;
+    this.launch = new ToolLaunch('');
+    AppGlobal.pendingLaunch = undefined;
+    await Promise.all([NotifyWork.configure(false), DeskForms.sessionChanged(''), NotifyCenter.endSession(Services.currentSid)]);
+  }
+
   private async handleTokenInvalid(): Promise<void> {
+    if (!this.session) return;
     Log.w(TAG, '身份失效，清除会话并回到身份页');
     this.session = undefined;
+    await this.clearSurfaces();
+    await AppPush.endSession(false);
     // 先按旧 sid 清掉通知缓存，再重置身份，避免下一位登录者看到上一位的通知
     await Services.notices.clearLocal();
+    Services.homework.clearLocal();
     Services.currentSid = '';
     Services.currentName = '';
     Services.currentToken = '';
@@ -200,11 +250,14 @@ struct Index {
   private async logout(): Promise<void> {
     // 退出前尽力把本机改动推上去，再清空本机数据桶（合规：不留班级数据）
     await Services.userdata.flush();
+    await AppPush.endSession(true);
     this.session = undefined;
+    await this.clearSurfaces();
     await Services.notices.clearLocal();
     await Services.userdata.clearLocal();
     await Services.members.clear();
     await Services.league.clear();
+    Services.homework.clearLocal();
     Services.currentSid = '';
     Services.currentName = '';
     Services.currentToken = '';
@@ -227,10 +280,12 @@ struct Index {
 
   @State private mapRoom: string = '';
 
-  private openTool(id: string, room: string = ''): void {
+  private openTool(id: string, room: string = '', launch: ToolLaunch = new ToolLaunch('')): void {
     if (this.wearable) {
       return;
     }
+    this.launch = launch;
+    this.launchEpoch++;
     AppGlobal.openToolId = id;
     this.getUIContext().animateTo({ duration: Tokens.DUR_NORMAL, curve: Curve.FastOutSlowIn }, () => {
       this.mapRoom = room.trim();
@@ -239,6 +294,11 @@ struct Index {
   }
 
   private closeTool(): void {
+    if (this.openToolId === 'hw' || this.openToolId === 'nt' || this.openToolId === 'tt') {
+      this.contentEpoch++;
+      DeskForms.refresh();
+      NotifyCenter.syncAll(true);
+    }
     if (this.openToolId === 'map' && this.mapRoom.length > 0) {
       this.mapRoom = '';
       this.openTool('tt');
@@ -288,6 +348,10 @@ struct Index {
           })
         } else {
           AppShell({
+          notifyRequest: this.notifyRequest,
+          onNotifyHandled: () => { this.notifyRequest = false; },
+          homeRequest: this.homeRequest,
+          contentEpoch: this.contentEpoch,
           userName: this.userName,
           maskedSid: this.maskedSid,
           roleLabel: this.roleLabel,
@@ -325,8 +389,14 @@ struct Index {
           .transition(TransitionEffect.OPACITY.animation({ duration: 180, curve: Motion.ease() }))
       }
 
-      if (this.openToolId.length > 0) {
+      if (this.openToolId.length > 0 && this.phase === 'app') {
+        ForEach([this.launchEpoch], (epoch: number) => {
         ToolScreen({
+          launch: this.launch,
+          onReminderSettings: () => {
+            this.closeTool();
+            this.notifyRequest = true;
+          },
           toolId: this.openToolId,
           mapRoom: this.mapRoom,
           onOpenMap: (room: string) => {
@@ -337,6 +407,7 @@ struct Index {
           }
         })
           .transition(TransitionEffect.asymmetric(Motion.pageEnter(), Motion.pageExit()))
+        }, (epoch: number) => epoch.toString())
       }
     }
     .width('100%')

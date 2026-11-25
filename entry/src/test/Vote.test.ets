@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   PollAudience,
   PollDraft,
@@ -6,6 +6,7 @@ import {
   PollResultVisibility,
   PollSettings,
   PollSummary,
+  PollDetail,
   PollDetailResult,
   PollListResult,
   VoteLimits,
@@ -122,6 +123,15 @@ export default function voteTest() {
   });
 
   describe('VoteLogic', () => {
+    it('anchors_server_deadline_to_elapsed_time_across_wall_clock_changes', 0, () => {
+      const detail = new PollDetail();
+      expect(detail.currentTime(500, 20)).assertEqual(500);
+      detail.serverNow = 400000;
+      detail.receivedElapsed = 5000;
+      expect(detail.currentTime(500, 6200)).assertEqual(401200);
+      expect(detail.currentTime(500000000, 6200)).assertEqual(401200);
+      expect(detail.currentTime(900, 120)).assertEqual(900);
+    });
     it('closed_and_results_visibility', 0, () => {
       const summary: PollSummary = new PollSummary();
       summary.status = 'open';

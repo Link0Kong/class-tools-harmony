@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
 import {
   PptDeck,
   PptDeckDetail,
@@ -36,6 +36,18 @@ const AGENT_JSON: string = '[{"body":{"at":"' + '__RECENT__' + '"},"updated_at":
 
 export default function pptTest() {
   describe('PptRepository', () => {
+    it('polls_only_conversion_fields_and_preserves_unknown_progress', 0, async () => {
+      const api = new FakeApi();
+      api.pptListBody = '[{"id":"deck","status":"queued"}]';
+      api.pptDetailBody = api.pptListBody;
+      const repo = new PptRepository(api);
+      const deck = await repo.conversionStatus('deck');
+      expect(deck?.status).assertEqual('queued');
+      expect(deck?.progressKnown).assertFalse();
+      expect(api.getPaths[0].includes('manifest')).assertFalse();
+      expect(PptRepository.parseList('[{"id":"x","status":"processing","progress":0}]')[0].progressKnown).assertTrue();
+    });
+
     it('parses_list_rows', 0, () => {
       const decks: PptDeck[] = PptRepository.parseList(LIST_JSON);
       expect(decks.length).assertEqual(2);

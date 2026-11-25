@@ -1,4 +1,5 @@
-﻿import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
+import { preferences } from '@kit.ArkData';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Log } from '../../common/Log';
 import { ReminderPrefs } from '../../features/reminder/ReminderModels';
@@ -10,12 +11,15 @@ const STORE_NAME: string = 'class_tools_reminders';
 export class ReminderRecord {
   advance: number = 30;
   ids: Map<string, number> = new Map<string, number>();
+  leads: Map<string, number> = new Map<string, number>();
+  dueTimes: Map<string, number> = new Map<string, number>();
+  triggerTimes: Map<string, number> = new Map<string, number>();
 }
 
 /** 作业提醒本机持久化（preferences：`<sid>_advance` 数字 + `<sid>_ids` 字符串）。 */
 export class ReminderStore {
-  private static async store(): Promise<preferences.Preferences | undefined> {
-    const ctx = AppGlobal.context;
+  private static async store(context?: common.Context): Promise<preferences.Preferences | undefined> {
+    const ctx = context || AppGlobal.context;
     if (ctx === undefined) {
       return undefined;
     }
@@ -31,9 +35,10 @@ export class ReminderStore {
     return 'hw_' + (sid.length > 0 ? sid : 'anon');
   }
 
-  static async load(sid: string): Promise<ReminderRecord> {
+  static async load(sid: string, context?: common.Context): Promise<ReminderRecord> {
     const record: ReminderRecord = new ReminderRecord();
-    const store: preferences.Preferences | undefined = await ReminderStore.store();
+    if (context) await preferences.removePreferencesFromCache(context, STORE_NAME);
+    const store: preferences.Preferences | undefined = await ReminderStore.store(context);
     if (store === undefined) {
       return record;
     }
@@ -42,23 +47,35 @@ export class ReminderStore {
       record.advance = advance;
       const raw: string = await store.get(ReminderStore.prefix(sid) + '_ids', '') as string;
       record.ids = ReminderStore.decodeIds(raw);
+      record.leads = ReminderStore.decodeIds(await store.get(ReminderStore.prefix(sid) + '_leads', '') as string);
+      record.dueTimes = ReminderStore.decodeIds(await store.get(ReminderStore.prefix(sid) + '_due', '') as string);
+      record.triggerTimes = ReminderStore.decodeIds(await store.get(ReminderStore.prefix(sid) + '_trigger', '') as string);
+      // Existing installations stored only a system ID and a default advance.
+      record.ids.forEach((_value: number, id: string) => {
+        if (!record.leads.has(id)) record.leads.set(id, record.advance);
+      });
     } catch (e) {
       Log.e(TAG, '读取提醒偏好失败');
     }
     return record;
   }
 
-  static async save(sid: string, record: ReminderRecord): Promise<void> {
+  static async save(sid: string, record: ReminderRecord): Promise<boolean> {
     const store: preferences.Preferences | undefined = await ReminderStore.store();
     if (store === undefined) {
-      return;
+      return false;
     }
     try {
       await store.put(ReminderStore.prefix(sid) + '_advance', record.advance);
       await store.put(ReminderStore.prefix(sid) + '_ids', ReminderStore.encodeIds(record.ids));
+      await store.put(ReminderStore.prefix(sid) + '_leads', ReminderStore.encodeIds(record.leads));
+      await store.put(ReminderStore.prefix(sid) + '_due', ReminderStore.encodeIds(record.dueTimes));
+      await store.put(ReminderStore.prefix(sid) + '_trigger', ReminderStore.encodeIds(record.triggerTimes));
       await store.flush();
+      return true;
     } catch (e) {
       Log.e(TAG, '保存提醒偏好失败');
+      return false;
     }
   }
 

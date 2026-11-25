@@ -136,10 +136,12 @@ export class HttpClient implements Api {
     if (!CloudConfig.isConfigured()) {
       return ApiResult.failure(new ApiError(ApiErrorKind.Config, 0, 'not_configured', '云端配置缺失'));
     }
+    const headers = this.buildHeaders(spec);
+    const requestToken = headers['X-Class-Token'];
     const request: http.HttpRequest = http.createHttp();
     const options: http.HttpRequestOptions = {
       method: toNetMethod(spec.method),
-      header: this.buildHeaders(spec),
+      header: headers,
       connectTimeout: CloudConfig.CONNECT_TIMEOUT_MS,
       readTimeout: spec.readTimeoutMs > 0 ? spec.readTimeoutMs : CloudConfig.READ_TIMEOUT_MS,
       expectDataType: http.HttpDataType.STRING,
@@ -158,7 +160,11 @@ export class HttpClient implements Api {
       }
       if (status === 401 || status === 403) {
         const err: ApiError = new ApiError(ApiErrorKind.TokenInvalid, status, 'unauthorized', '身份已失效');
-        this.onTokenInvalid();
+        // A missing push entitlement or token binding must not invalidate the user's class session.
+        const pushDenied = spec.path === 'push_tokens' || spec.path.startsWith('push_tokens?');
+        if (!pushDenied && spec.authenticated && requestToken && this.tokenProvider() === requestToken) {
+          this.onTokenInvalid();
+        }
         return ApiResult.failure(err);
       }
       return ApiResult.failure(parseHttpError(status, text));

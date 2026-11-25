@@ -602,7 +602,7 @@ export struct TimetableScreen {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-        Text(session.dayText + ' 第' + session.start + '-' + session.end + '节'
+        Text((session.dayText ? session.dayText + ' ' : '') + '第' + session.span.replace(' ', '')
           + (session.room.length > 0 ? ' · ' + session.room : ''))
           .fontSize(11)
           .fontColor(Tokens.TEXT_SECONDARY)
@@ -610,6 +610,11 @@ export struct TimetableScreen {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
           .margin({ top: 3 })
+        if (session.state === SessionState.ONGOING && this.plan.next && this.plan.next.dayOffset === 0 &&
+          this.plan.next.name === session.name && this.plan.next.start === session.start && this.plan.next.end === session.end) {
+          Text('下一节 ' + this.plan.next.startText + ' 上课')
+            .fontSize(11).fontColor(Tokens.MIST_TEAL).margin({ top: 3 })
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)

@@ -38,6 +38,19 @@ function uniqueCount(numbers: number[]): number {
 
 export default function drawTest() {
   describe('DrawRandom', () => {
+    it('preserves draw-v1 contract vectors before applying display order', 0, () => {
+      const vector = (seed: string, size: number, count: number, dup: boolean): string => {
+        const cfg = config(1, size, count);
+        cfg.allowDuplicates = dup;
+        cfg.sort = DrawSortMode.DESCENDING;
+        const result = DrawEngine.draw(cfg, [], (n: number) => '', new SeededDrawRandom(parseInt(seed.slice(0, 8), 16)));
+        return result.result!.original.join(',');
+      };
+      expect(vector('0123456789abcdef', 10, 3, false)).assertEqual('9,10,4');
+      expect(vector('0123456789abcdef', 5, 7, true)).assertEqual('1,3,1,2,2,2,3');
+      expect(vector('deadbeefcafebabe', 70, 10, false)).assertEqual('28,36,11,34,38,1,14,70,65,46');
+      expect(vector('a1b2c3d4e5f60718', 8, 8, false)).assertEqual('7,3,1,8,4,5,2,6');
+    });
     it('same_seed_same_sequence', 0, () => {
       const a: DrawRandom = new SeededDrawRandom(42);
       const b: DrawRandom = new SeededDrawRandom(42);

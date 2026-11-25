@@ -1,6 +1,7 @@
 ﻿/** 通知模块开关（本机 preferences 存储，按账号分桶）。 */
 export class NotifySettings {
   master: boolean = false;
+  liveActivities: boolean = true;
   homeworkNew: boolean = true;
   homeworkDue: boolean = true;
   classRemind: boolean = true;
@@ -79,6 +80,7 @@ export class NotifySettings {
   copy(): NotifySettings {
     const next: NotifySettings = new NotifySettings();
     next.master = this.master;
+    next.liveActivities = this.liveActivities;
     next.homeworkNew = this.homeworkNew;
     next.homeworkDue = this.homeworkDue;
     next.classRemind = this.classRemind;
@@ -105,6 +107,7 @@ export class NotifySettings {
     try {
       const obj: NotifySettings = JSON.parse(raw) as NotifySettings;
       out.master = obj.master === true;
+      out.liveActivities = obj.liveActivities !== false;
       out.homeworkNew = obj.homeworkNew !== false;
       out.homeworkDue = obj.homeworkDue !== false;
       out.classRemind = obj.classRemind !== false;

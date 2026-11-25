@@ -1,4 +1,7 @@
-﻿import { fileIo as fs } from '@kit.CoreFileKit';
+import { Services } from '../../app/Services';
+import { NotificationDelivery } from '../notify/NotificationDelivery';
+import { LiveActivity } from '../notify/LiveActivity';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { PptUploadPlanner } from '../../features/ppt/PptUploadPlanner';
 import { PptUploadRepository } from './PptUploadRepository';
@@ -20,6 +23,8 @@ export class PptUploader {
 
   /** 返回空串 = 成功；否则为错误文案。进度回调 (done, total)。 */
   async upload(uri: string, name: string, onProgress: (done: number, total: number) => void): Promise<string> {
+    let activityId: number = 0;
+    let queuedForConversion: boolean = false;
     let file: fs.File | undefined = undefined;
     try {
       file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
@@ -28,7 +33,10 @@ export class PptUploader {
       if (invalid.length > 0) {
         return invalid;
       }
+      if (this.ownerSid !== Services.currentSid) return '登录账号已切换，上传已停止';
       const deckId: string = PptUploadPlanner.deckId(Date.now(), size + name.length);
+      activityId = NotificationDelivery.id('ppt:' + this.ownerSid + ':' + deckId);
+      LiveActivity.upload(activityId, this.ownerSid, name, -1, '准备文件');
       const created: boolean = await this.repo.createDeck(deckId,
         PptUploadPlanner.titleOf(name), size, PptUploadPlanner.extOf(name), name,
         this.ownerSid, this.ownerName, Date.now());
@@ -36,9 +44,11 @@ export class PptUploader {
         return '创建上传记录失败（登录或权限问题）';
       }
       const total: number = PptUploadPlanner.chunkCount(size);
+      LiveActivity.upload(activityId, this.ownerSid, name, 0, '上传中');
       onProgress(0, total);
       const helper: util.Base64Helper = new util.Base64Helper();
       for (let i = 0; i < total; i++) {
+        if (this.ownerSid !== Services.currentSid) return '登录账号已切换，上传已停止';
         const range: number[] = PptUploadPlanner.chunkRange(i, size);
         const length: number = range[1];
         if (length <= 0) {
@@ -46,7 +56,7 @@ export class PptUploader {
         }
         const buffer: ArrayBuffer = new ArrayBuffer(length);
         const read: number = fs.readSync(file.fd, buffer, { offset: range[0], length: length });
-        if (read <= 0) {
+        if (read !== length) {
           return '读取文件失败（分片 ' + i + '）';
         }
         const bytes: Uint8Array = new Uint8Array(buffer.slice(0, read));
@@ -56,16 +66,24 @@ export class PptUploader {
           return '分片上传失败（' + i + '/' + total + '）';
         }
         onProgress(i + 1, total);
+        LiveActivity.upload(activityId, this.ownerSid, name, (i + 1) * 100 / total, '上传中');
       }
+      if (this.ownerSid !== Services.currentSid) return '登录账号已切换，上传已停止';
+      LiveActivity.upload(activityId, this.ownerSid, name, -1, '提交转换');
       const queued: boolean = await this.repo.queue(deckId, total, size, Date.now());
       if (!queued) {
         return '上传完成但排队失败，请重试';
       }
+      queuedForConversion = true;
+      LiveActivity.followConversion(this.ownerSid, deckId, name, activityId);
       return '';
     } catch (e) {
       Log.e(TAG, '上传异常：' + JSON.stringify(e));
       return '上传异常，请稍后重试';
     } finally {
+      if (activityId && !queuedForConversion) {
+        await LiveActivity.finishUpload(activityId, this.ownerSid, name, '上传失败');
+      }
       if (file !== undefined) {
         try {
           fs.closeSync(file);

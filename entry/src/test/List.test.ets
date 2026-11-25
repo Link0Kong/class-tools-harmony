@@ -1,5 +1,6 @@
-﻿import sessionTest from './Session.test';
+import sessionTest from './Session.test';
 import homeToolsTest from './HomeTools.test';
+import deskFormsTest from './DeskForms.test';
 import userdataMergeTest from './UserdataMerge.test';
 import waterNormalizerTest from './WaterNormalizer.test';
 import userdataRepositoryTest from './UserdataRepository.test';
@@ -11,6 +12,7 @@ import drawTest from './Draw.test';
 import exportTest from './Export.test';
 import groupTest from './Group.test';
 import fitTest from './Fit.test';
+import personalTaskTest from './PersonalTasks.test';
 import homeworkTest from './Homework.test';
 import noticeTest from './Notice.test';
 import timetableTest from './Timetable.test';
@@ -37,6 +39,7 @@ import legalTest from './Legal.test';
 export default function testsuite() {
   sessionTest();
   homeToolsTest();
+  deskFormsTest();
   userdataMergeTest();
   waterNormalizerTest();
   userdataRepositoryTest();
@@ -49,6 +52,7 @@ export default function testsuite() {
   groupTest();
   fitTest();
   homeworkTest();
+  personalTaskTest();
   noticeTest();
   timetableTest();
   powerTest();

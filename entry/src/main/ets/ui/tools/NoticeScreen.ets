@@ -1,4 +1,5 @@
-﻿import { AppGlobal } from '../../app/AppGlobal';
+﻿import { TaskRepository } from '../../data/tasks/TaskRepository';
+import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksRefreshResult, MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -54,6 +55,9 @@ const NT_GREY_TINT: string = '#F0F2F1';
  */
 @Component
 export struct NoticeScreen {
+  @Prop noticeId: string = '';
+  @State private focused: string = '';
+  private receivedFocus: boolean = false;
   onClose: () => void = () => {
   };
 
@@ -145,6 +149,18 @@ export struct NoticeScreen {
       card.hiddenLocal = hidden.indexOf(entryId) >= 0 || hidden.indexOf(groupId) >= 0;
     }
     this.cards = sorted;
+    if (this.noticeId && !this.receivedFocus) {
+      const target = sorted.find((card: NoticeCard) => card.key === this.noticeId) ||
+        sorted.find((card: NoticeCard) => card.entry?.row.id === this.noticeId);
+      if (target) {
+        this.receivedFocus = true;
+        this.focused = target.key;
+        this.expandedKeys = [target.key];
+        this.loadDetailForCard(target);
+      } else if (ok) {
+        this.notice = '这条通知已移除或当前账号不可见';
+      }
+    }
     this.refreshDigest();
     if (!ok) {
       this.errorMsg = this.errorMsg.length > 0 ? this.errorMsg : '通知暂时无法刷新';
@@ -325,6 +341,12 @@ export struct NoticeScreen {
       }
     }
     return out;
+  }
+
+  private async addTask(card: NoticeCard): Promise<void> {
+    const ok = await TaskRepository.importNotice(card.key, card.title, card.summary, card.whenAt, card.cat);
+    this.notice = ok ? '已加入任务' : '请在任务中查看，或刷新后重试';
+    this.getUIContext().getPromptAction().showToast({ message: this.notice });
   }
 
   private async toggleDone(card: NoticeCard): Promise<void> {
@@ -1312,6 +1334,12 @@ export struct NoticeScreen {
               this.toggleDone(card);
             })
         }
+        if (!card.definition && !card.hiddenLocal) {
+          Text('加入任务')
+            .fontSize(11).fontColor(NT_CY_INK).backgroundColor(NT_CY_TINT).borderRadius(999)
+            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+            .onClick(() => this.addTask(card))
+        }
         if (card.hiddenLocal) {
           Text('恢复')
             .fontSize(11)
@@ -1567,6 +1595,10 @@ export struct NoticeScreen {
           Refresh({ refreshing: $$this.refreshing }) {
           Scroll(this.scroller) {
             Column() {
+              if (this.focused && this.cardByKey(this.focused)) {
+                this.noticeCard(this.cardByKey(this.focused)!)
+                Button('查看全部通知').onClick(() => { this.focused = ''; })
+              } else {
               this.briefCard()
 
               if (this.notice.length > 0) {
@@ -1731,6 +1763,7 @@ export struct NoticeScreen {
                 }
               }
 
+              }
               Blank().height(44)
             }
             .width('100%')

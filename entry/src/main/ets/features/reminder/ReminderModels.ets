@@ -1,4 +1,4 @@
-﻿import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
+import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
 
 /** 提醒偏好（本机 + 可随账号同步；当前本机保存）。 */
 export class ReminderPrefs {
@@ -8,11 +8,24 @@ export class ReminderPrefs {
 }
 
 export class ReminderPlan {
+  notificationId: number = 0;
   homeworkId: string = '';
+  taskId: string = '';
+  noticeId: string = '';
+  toolId: string = 'hw';
   title: string = '';
   content: string = '';
   triggerAt: number = 0;
   dueAt: number = 0;
+
+  calendarLeadMinutes(): number {
+    const lead: number = (this.dueAt - this.triggerAt) / 60000;
+    return Number.isInteger(lead) && lead >= 0 && lead <= 40320 ? lead : 0;
+  }
+
+  calendarStart(): number {
+    return this.calendarLeadMinutes() > 0 ? this.dueAt : this.triggerAt;
+  }
 }
 
 /** 作业截止提醒规划（纯函数）。 */
@@ -35,12 +48,16 @@ export class ReminderPlanner {
       return undefined;
     }
     const advance: number = ReminderPlanner.normalizeAdvance(advanceMinutes);
-    const triggerAt: number = Math.max(nowMillis + 60 * 1000, dueAt - advance * 60 * 1000);
+    const triggerAt: number = Math.min(dueAt, Math.max(nowMillis + 60 * 1000, dueAt - advance * 60 * 1000));
     const plan: ReminderPlan = new ReminderPlan();
     plan.homeworkId = row.id;
     plan.title = ReminderPlanner.titleOf(row);
-    plan.content = '截止 ' + HomeworkDueCalculator.dueText(dueAt)
-      + (advance >= 60 ? '（提前 ' + Math.round(advance / 60) + ' 小时）' : '（提前 ' + advance + ' 分钟）');
+    const firstLine: string = row.content.trim().split('\n')[0].slice(0, 90);
+    const actualMinutes: number = Math.round((dueAt - triggerAt) / 60000);
+    const leadText: string = actualMinutes === 0 ? '截止时' :
+      (actualMinutes % 60 === 0 ? '提前 ' + (actualMinutes / 60) + ' 小时' : '提前 ' + actualMinutes + ' 分钟');
+    plan.content = (firstLine.length > 0 ? firstLine + ' · ' : '') + '截止 ' + HomeworkDueCalculator.dueText(dueAt)
+      + '（' + leadText + '）';
     plan.triggerAt = triggerAt;
     plan.dueAt = dueAt;
     return plan;

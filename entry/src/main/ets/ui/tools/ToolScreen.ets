@@ -1,9 +1,11 @@
-﻿import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
+﻿import { ToolLaunch } from '../../app/ToolLaunch';
+import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
 import { Tokens } from '../theme/Tokens';
 import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
 import { AmbientBackdrop } from '../components/AmbientBackdrop';
 import { RosterScreen } from './RosterScreen';
+import { ScanScreen } from './ScanScreen';
 import { DrawScreen } from './DrawScreen';
 import { GroupScreen } from './GroupScreen';
 import { FitScreen } from './FitScreen';
@@ -30,11 +32,13 @@ import { AppGlobal } from '../../app/AppGlobal';
  */
 @Component
 export struct ToolScreen {
+  @Prop launch: ToolLaunch = new ToolLaunch('');
   @Prop toolId: string = '';
   @Prop mapRoom: string = '';
   @State private topInset: number = 0;
   @State private layoutWidth: number = 0;
   private scroller: Scroller = new Scroller();
+  onReminderSettings: () => void = () => {};
   onClose: () => void = () => {
   };
   onOpenMap: (room: string) => void = () => {};
@@ -64,6 +68,8 @@ export struct ToolScreen {
           this.onClose();
         }
       })
+    } else if (this.toolId === 'scan') {
+      ScanScreen({ onClose: this.onClose })
     } else if (this.toolId === 'draw') {
       DrawScreen({
         onClose: () => {
@@ -85,6 +91,11 @@ export struct ToolScreen {
     } else if (this.toolId === 'hw' || this.toolId === 'nt') {
       ClassWebTool({
         toolId: this.toolId,
+        homeworkId: this.launch.homeworkId,
+        taskId: this.launch.taskId,
+        noticeId: this.launch.noticeId,
+        taskShareUrl: this.launch.taskShareUrl,
+        onReminderSettings: this.onReminderSettings,
         onClose: () => {
           this.onClose();
         }

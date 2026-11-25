@@ -1,4 +1,4 @@
-﻿/** 投票上限（对齐 `web/vote/CONTRACT.md` §1）。 */
+/** 投票上限（对齐 `web/vote/CONTRACT.md` §1）。 */
 export class VoteLimits {
   static readonly MAX_TITLE: number = 80;
   static readonly MAX_DESCRIPTION: number = 500;
@@ -153,6 +153,14 @@ export class PollList {
 export class PollDetail {
   poll: Poll = new Poll();
   serverNow: number = 0;
+  receivedElapsed: number = -1;
+
+  currentTime(wallTime: number, elapsed: number): number {
+    if (this.serverNow <= 0 || !Number.isFinite(this.receivedElapsed) || this.receivedElapsed < 0
+      || !Number.isFinite(elapsed) || elapsed < this.receivedElapsed) return wallTime;
+    return this.serverNow + elapsed - this.receivedElapsed;
+  }
+
   closed: boolean = false;
   total: number = 0;
   counts: Map<string, number> = new Map<string, number>();

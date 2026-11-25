@@ -30,6 +30,10 @@ import {
  */
 @Component
 export struct AppShell {
+  @Prop @Watch('goToNotifications') notifyRequest: boolean = false;
+  onNotifyHandled: () => void = () => {};
+  @Prop @Watch('goHome') homeRequest: number = 0;
+  @Prop contentEpoch: number = 0;
   @Prop userName: string = '';
   @Prop maskedSid: string = '';
   @Prop roleLabel: string = '';
@@ -56,6 +60,14 @@ export struct AppShell {
   @State private tabPulse: number[] = [-1, -1, -1];
   private controller: HdsTabsController = new HdsTabsController();
   private materialLevel: hdsMaterial.MaterialLevel = Immersive.hdsLevel();
+
+  private goToNotifications(): void {
+    if (this.notifyRequest) this.switchTab(2);
+  }
+
+  private goHome(): void {
+    this.switchTab(0);
+  }
 
   private sideNav(): boolean {
     return Breakpoints.useSideNav(this.layoutWidth);
@@ -224,7 +236,7 @@ export struct AppShell {
               maskedSid: this.maskedSid,
               roleLabel: this.roleLabel,
               quickIds: this.quickIds,
-              epoch: this.homeEpoch,
+              epoch: this.homeEpoch + this.contentEpoch,
               onReorderQuick: (ids: string[]) => {
                 this.onSetHomeTools(HomeTools.normalize(ids));
               },
@@ -281,6 +293,8 @@ export struct AppShell {
         TabContent() {
           Stack({ alignContent: Alignment.Bottom }) {
             MeScreen({
+              notifyRequest: this.notifyRequest,
+              onNotifyHandled: this.onNotifyHandled,
               userName: this.userName,
               maskedSid: this.maskedSid,
               roleLabel: this.roleLabel,

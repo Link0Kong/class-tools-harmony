@@ -1,5 +1,6 @@
 ﻿import { preferences } from '@kit.ArkData';
 import { AppGlobal } from '../../app/AppGlobal';
+import { common } from '@kit.AbilityKit';
 import { Log } from '../../common/Log';
 import { Session } from './Session';
 
@@ -14,12 +15,17 @@ const TAG: string = 'SessionStore';
  */
 export class SessionStore {
   private store: preferences.Preferences | undefined = undefined;
+  private context?: common.Context;
+
+  constructor(context?: common.Context) {
+    this.context = context;
+  }
 
   private async ensure(): Promise<preferences.Preferences | undefined> {
     if (this.store !== undefined) {
       return this.store;
     }
-    const ctx = AppGlobal.context;
+    const ctx = this.context ?? AppGlobal.context;
     if (ctx === undefined) {
       Log.e(TAG, 'context 未注入，无法打开 preferences');
       return undefined;

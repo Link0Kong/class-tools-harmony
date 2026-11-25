@@ -18,7 +18,7 @@ export class CloudConfig {
   static readonly GET_RETRY_DELAY_MS: number = 350;
 
   /** 与网页/小程序一致的应用版本号（HarmonyOS 端独立版本线，M0 = 1.0.0）。 */
-  static readonly APP_VERSION: string = '1.0.10';
+  static readonly APP_VERSION: string = '1.0.11';
 
   static isConfigured(): boolean {
     // 只做长度/前缀校验：不要把 key 字面量和自身比较（占位符替换脚本会把比较里的占位符一起替换掉）

@@ -6,11 +6,14 @@ import {
   DrawConfig,
   DrawEntry,
   DrawPoolSource,
+  DrawReceipt,
   DrawResult,
   DrawSortMode,
   drawSortLabel
 } from '../../features/draw/DrawModels';
 import { defaultDrawRandom } from '../../features/draw/DrawRandom';
+import { DrawProofRound, ProofEvent } from '../../data/draw/DrawProofPublisher';
+import { NativeShare } from '../../features/share/NativeShare';
 import { DrawConfigCodec } from '../../features/draw/DrawConfigCodec';
 import { DrawStep, DrawTransition, DrawWorkflow, DrawWorkflowState } from '../../features/draw/DrawWorkflow';
 import { Tokens } from '../theme/Tokens';
@@ -44,6 +47,11 @@ export struct DrawScreen {
   @State private source: DrawPoolSource = DrawPoolSource.RANGE;
   @State private candidates: DrawEntry[] = [];
   @State private result: DrawResult | undefined = undefined;
+  private round?: DrawProofRound;
+  private proofRevision: number = 0;
+  private pendingProof: Promise<DrawReceipt | undefined> | undefined = undefined;
+  @State private receipt: DrawReceipt | undefined = undefined;
+  @State private proofStatus: string = '';
   @State private errorMsg: string = '';
   @State private seatNames: string[] = [];
   @State private seats: number[] = [];
@@ -144,15 +152,35 @@ export struct DrawScreen {
     state.step = DrawStep.PREVIEW;
     state.config = this.currentConfig();
     state.candidates = this.candidates;
-    const transition: DrawTransition = DrawWorkflow.startDraw(state, defaultDrawRandom());
+    const round = new DrawProofRound(Services.currentSid);
+    const transition: DrawTransition = DrawWorkflow.startDraw(state, round.random());
     if (!transition.ok || transition.state === undefined || transition.state.result === undefined) {
       this.errorMsg = transition.error !== undefined ? transition.error.message : '抽签失败';
       return;
     }
     this.errorMsg = '';
     this.result = transition.state.result;
+    this.round = round;
+    round.start(this.result);
+    this.publishProof();
     DrawSession.set(this.result);
     this.step = DrawStep.RESULT;
+  }
+
+  private async publishProof(): Promise<void> {
+    const round = this.round;
+    if (!round) return;
+    const rev = ++this.proofRevision;
+    this.receipt = undefined;
+    this.proofStatus = '正在存证…';
+    const pending = round.publish(Services.api, () => Services.currentSid);
+    this.pendingProof = pending;
+    const receipt = await pending;
+    if (this.round !== round || this.proofRevision !== rev) return;
+    this.pendingProof = undefined;
+    this.receipt = receipt;
+    this.proofStatus = receipt ? '已存证 · 今日第 ' + receipt.sequence + ' 次（全班共 ' + receipt.total + ' 次）'
+      : '未存证 · 点按重试';
   }
 
   private back(): void {
@@ -194,13 +222,17 @@ export struct DrawScreen {
     state.step = DrawStep.RESULT;
     state.config = this.currentConfig();
     state.result = this.result;
-    const transition: DrawTransition = DrawWorkflow.reroll(state, defaultDrawRandom());
+    const round = new DrawProofRound(Services.currentSid);
+    const transition: DrawTransition = DrawWorkflow.reroll(state, round.random());
     if (!transition.ok || transition.state === undefined) {
       this.errorMsg = transition.error !== undefined ? transition.error.message : '重抽失败';
       return;
     }
     this.errorMsg = '';
     this.result = transition.state.result;
+    this.round = round;
+    round.start(this.result!);
+    this.publishProof();
     DrawSession.set(this.result);
   }
 
@@ -219,14 +251,32 @@ export struct DrawScreen {
     }
     this.errorMsg = '';
     this.result = transition.state.result;
+    const log = this.result?.log;
+    if (this.round && log && log.length > 0) {
+      const last = log[log.length - 1];
+      this.round.events.push(new ProofEvent('remove', last.removed.number, last.added?.number ?? null));
+      this.publishProof();
+    }
     DrawSession.set(this.result);
   }
 
-  private openExport(): void {
+  private async openExport(): Promise<void> {
     if (this.result === undefined) {
       return;
     }
-    this.exportSpec = DrawExportFactory.create(this.result, Date.now(), ExportNaming.randomSuffix());
+    if (this.pendingProof) {
+      const revision = this.proofRevision;
+      let timer = -1;
+      try {
+        await Promise.race([this.pendingProof, new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => resolve(undefined), 6000);
+        })]);
+      } finally {
+        if (timer >= 0) clearTimeout(timer);
+      }
+      if (revision !== this.proofRevision || this.step !== DrawStep.RESULT || !this.result) return;
+    }
+    this.exportSpec = DrawExportFactory.create(this.result, Date.now(), ExportNaming.randomSuffix(), this.receipt);
     this.showExport = true;
   }
 
@@ -496,6 +546,16 @@ export struct DrawScreen {
               .width('100%')
               .margin({ top: 4, bottom: 10 })
 
+            Row() {
+              Text(this.proofStatus).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).layoutWeight(1)
+                .onClick(() => { if (this.proofStatus.indexOf('重试') >= 0) this.publishProof(); })
+              if (this.receipt) {
+                Button('分享核验链接').fontSize(Tokens.F_CAPTION).height(34)
+                  .onClick(() => {
+                    if (this.receipt) NativeShare.shareLink(this.receipt.url(), '抽签存证核验', this.proofStatus);
+                  })
+              }
+            }.width('100%').margin({ bottom: 8 })
             ForEach(this.result !== undefined ? this.result.entries : [], (entry: DrawEntry, index: number) => {
               Row() {
                 Text('' + (index + 1))
@@ -597,6 +657,11 @@ export struct DrawScreen {
           this.back();
         },
         onAction: () => {
+          if (this.round) {
+            this.round.events.push(new ProofEvent('reset'));
+            this.round.publish(Services.api, () => Services.currentSid);
+            this.round = undefined;
+          }
           this.step = DrawStep.CONFIG;
           this.candidates = [];
           this.result = undefined;

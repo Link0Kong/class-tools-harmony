@@ -1,0 +1,56 @@
+{
+  "color": [
+    {
+      "name": "desk_jade_fill",
+      "value": "#20352B"
+    },
+    {
+      "name": "desk_jade_accent",
+      "value": "#AED5BF"
+    },
+    {
+      "name": "desk_jade_ink",
+      "value": "#EDF6F0"
+    },
+    {
+      "name": "desk_blue_fill",
+      "value": "#203040"
+    },
+    {
+      "name": "desk_blue_accent",
+      "value": "#B0D0EC"
+    },
+    {
+      "name": "desk_blue_ink",
+      "value": "#EBF4FC"
+    },
+    {
+      "name": "desk_amber_fill",
+      "value": "#3B3022"
+    },
+    {
+      "name": "desk_amber_accent",
+      "value": "#EAC795"
+    },
+    {
+      "name": "desk_amber_ink",
+      "value": "#FBF3E8"
+    },
+    {
+      "name": "desk_lilac_fill",
+      "value": "#362D3E"
+    },
+    {
+      "name": "desk_lilac_accent",
+      "value": "#D6BCE5"
+    },
+    {
+      "name": "desk_lilac_ink",
+      "value": "#F7F0FA"
+    },
+    {
+      "name": "desk_color_chip",
+      "value": "#334F4F4F"
+    }
+  ]
+}

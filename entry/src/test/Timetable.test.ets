@@ -105,6 +105,36 @@ export default function timetableTest() {
   });
 
   describe('TtCalendarSessions', () => {
+    it('retains the current period while exposing the next bell within a double period', 0, () => {
+      const snap = snapshotWith([course('连堂', 4, 1, 2, '', 'all')], TERM_START);
+      const time = (h: number, m: number): number => new Date(2026, 10, 6, h, m).getTime();
+      const plan = TtCalendar.plan(snap, time(8, 45));
+      expect(plan.today[0].span).assertEqual('1 节');
+      expect(plan.today[0].state).assertEqual(SessionState.ONGOING);
+      expect(plan.today[0].endText).assertEqual('08:50');
+      expect(plan.next?.startAt).assertEqual(time(9, 0));
+      expect(plan.next?.endText).assertEqual('09:40');
+      expect(plan.next?.span).assertEqual('2 节');
+      expect(plan.next?.fullRoom).assertEqual('综合楼(教室01105)');
+      const inBreak = TtCalendar.plan(snap, time(8, 50));
+      expect(inBreak.today[0].state).assertEqual(SessionState.NEXT);
+      expect(inBreak.next?.startAt).assertEqual(time(9, 0));
+      const onBell = TtCalendar.plan(snap, time(9, 0));
+      expect(onBell.today[0].state).assertEqual(SessionState.ONGOING);
+      expect(onBell.next?.dayOffset).assertEqual(7);
+    });
+
+    it('expands future bells inside the requested day window and respects active weeks', 0, () => {
+      const snap = snapshotWith([course('周五', 4, 1, 3, '', 'all'),
+        course('周六', 5, 2, 2, '', 'all'), course('过期', 4, 4, 4, '1', 'all')], TERM_START);
+      const start = new Date(2026, 10, 6, 8, 10).getTime();
+      const bells = TtCalendar.upcomingBells(snap, start, 2);
+      expect(bells.map((s: SessionInfo) => s.startText).join(',')).assertEqual('09:00,09:50,09:00');
+      expect(bells[0].dayText).assertEqual('今天');
+      expect(bells[2].dayText).assertEqual('明天');
+      expect(TtCalendar.upcomingBells(snap, start, 1).length).assertEqual(2);
+      expect(TtCalendar.upcomingBells(snap, start, 0).length).assertEqual(0);
+    });
     it('sessions_on_with_states', 0, () => {
       const term: Date | undefined = TtCalendar.parseTermStart(TERM_START);
       const courses: Course[] = [course('高数', 5, 1, 2, '1-16', 'all'), course('英语', 5, 3, 4, '1-16', 'all')];

@@ -1,6 +1,6 @@
 ﻿import { describe, it, expect } from '@ohos/hypium';
 import { HomeworkRow } from '../main/ets/data/homework/HomeworkModels';
-import { ReminderPlanner, ReminderPrefs } from '../main/ets/features/reminder/ReminderModels';
+import { ReminderPlan, ReminderPlanner, ReminderPrefs } from '../main/ets/features/reminder/ReminderModels';
 import { ReminderRecord, ReminderStore } from '../main/ets/data/reminder/ReminderStore';
 
 function row(subject: string, date: string, time: string): HomeworkRow {
@@ -59,6 +59,19 @@ export default function reminderTest() {
       expect(ReminderPlanner.urgency(NOW - 1, NOW)).assertEqual('已过期');
       expect(ReminderPlanner.urgency(NOW + 60 * 60 * 1000, NOW)).assertEqual('今日到期');
       expect(ReminderPlanner.urgency(NOW + 3 * 24 * 60 * 60 * 1000, NOW)).assertEqual('');
+    });
+
+    it('calendar_reminder_uses_due_with_exact_lead_and_trigger_for_other_offsets', 0, () => {
+      const plan = new ReminderPlan();
+      plan.triggerAt = NOW;
+      plan.dueAt = NOW + 30 * 60000;
+      expect(plan.calendarStart()).assertEqual(plan.dueAt);
+      expect(plan.calendarLeadMinutes()).assertEqual(30);
+      plan.dueAt += 15000;
+      expect(plan.calendarStart()).assertEqual(NOW);
+      expect(plan.calendarLeadMinutes()).assertEqual(0);
+      plan.dueAt = 0;
+      expect(plan.calendarStart()).assertEqual(NOW);
     });
 
     it('prefs_default', 0, () => {

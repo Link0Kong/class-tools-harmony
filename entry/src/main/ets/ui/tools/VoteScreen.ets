@@ -1,4 +1,6 @@
-﻿import { RosterPicker } from '../components/RosterPicker';
+import { systemDateTime } from '@kit.BasicServicesKit';
+import { LiveActivity } from '../../data/notify/LiveActivity';
+import { RosterPicker } from '../components/RosterPicker';
 import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
@@ -80,6 +82,10 @@ export struct VoteScreen {
   @State private extendMinutes: number = 30;
   private shareSpec: ExportCardSpec = new ExportCardSpec();
   private timerId: number = -1;
+  private activePoll: string = '';
+  private detailRequest: number = 0;
+  private liveClockOffset: number = 0;
+  private lastLiveMinute: number = -1;
   private tickCount: number = 0;
 
   aboutToAppear(): void {
@@ -87,7 +93,8 @@ export struct VoteScreen {
     this.loadMembers();
     this.timerId = setInterval(() => {
       this.tickCount += 1;
-      this.now = Date.now();
+      this.now = this.clockNow();
+      this.updateVoteActivity();
       if (this.detailOpen && this.tickCount % 15 === 0) {
         this.silentRefreshDetail();
       }
@@ -95,6 +102,8 @@ export struct VoteScreen {
   }
 
   aboutToDisappear(): void {
+    this.activePoll = '';
+    LiveActivity.endVote();
     if (this.timerId >= 0) {
       clearInterval(this.timerId);
       this.timerId = -1;
@@ -109,12 +118,15 @@ export struct VoteScreen {
   }
 
   private async silentRefreshDetail(): Promise<void> {
-    if (this.detail.poll.id.length === 0 || this.busy) {
+    if (!this.activePoll || this.detailLoading || this.detail.poll.id !== this.activePoll || this.busy) {
       return;
     }
-    const result: PollDetailResult = await Services.vote.detail(this.detail.poll.id);
-    if (result.ok) {
+    const id: string = this.detail.poll.id;
+    const request = ++this.detailRequest;
+    const result: PollDetailResult = await Services.vote.detail(id);
+    if (result.ok && id === this.activePoll && request === this.detailRequest) {
       this.detail = result.detail;
+      this.syncVoteClock();
     }
   }
 
@@ -122,7 +134,7 @@ export struct VoteScreen {
     this.loading = this.polls.length === 0;
     this.errorMsg = '';
     const result: PollListResult = await Services.vote.list();
-    this.now = Date.now();
+    this.now = this.clockNow();
     if (!result.ok) {
       this.errorMsg = result.message;
     }
@@ -141,6 +153,8 @@ export struct VoteScreen {
   }
 
   private closeDetail(): void {
+    this.activePoll = '';
+    LiveActivity.endVote();
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.detailOpen = false;
     });
@@ -155,6 +169,8 @@ export struct VoteScreen {
   }
 
   private openDetail(pollId: string): void {
+    this.activePoll = pollId;
+    this.lastLiveMinute = -1;
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.detailOpen = true;
     });
@@ -165,18 +181,52 @@ export struct VoteScreen {
   }
 
   private async loadDetail(pollId: string): Promise<void> {
+    const request = ++this.detailRequest;
     const result: PollDetailResult = await Services.vote.detail(pollId);
+    if (this.activePoll !== pollId || request !== this.detailRequest) {
+      return;
+    }
     this.detailLoading = false;
     if (!result.ok) {
       this.detailError = result.message;
       return;
     }
     this.detail = result.detail;
-    this.now = Date.now();
+    this.syncVoteClock();
     if (result.detail.hasVoted) {
       this.chosen = result.detail.myChoices.slice(0);
     } else {
       this.chosen = [];
+    }
+  }
+
+  private clockNow(): number {
+    if (!this.activePoll || this.detail.poll.id !== this.activePoll) return Date.now();
+    return this.detail.currentTime(Date.now(), systemDateTime.getUptime(systemDateTime.TimeType.STARTUP));
+  }
+
+  private syncVoteClock(): void {
+    this.now = this.clockNow();
+    this.lastLiveMinute = -1;
+    this.updateVoteActivity();
+  }
+
+  private updateVoteActivity(): void {
+    const poll = this.detail.poll;
+    if (!this.activePoll || poll.id !== this.activePoll) {
+      return;
+    }
+    const remaining: number = this.detail.closed || this.detailClosed() ? 0 : Math.max(0, poll.deadline - this.now);
+    const minute: number = Math.ceil(remaining / 60000);
+    const offset = Date.now() - this.now;
+    if (minute !== this.lastLiveMinute || Math.abs(offset - this.liveClockOffset) > 1000) {
+      this.liveClockOffset = offset;
+      this.lastLiveMinute = minute;
+      if (minute > 0) {
+        LiveActivity.vote(Services.currentSid, poll.title, poll.deadline, this.now);
+      } else {
+        LiveActivity.endVote();
+      }
     }
   }
 
@@ -374,7 +424,7 @@ export struct VoteScreen {
       return;
     }
     this.busy = true;
-    const deadline: number = Date.now() + this.extendMinutes * 60 * 1000;
+    const deadline: number = this.clockNow() + this.extendMinutes * 60 * 1000;
     const result: VoteResult = await Services.vote.manage(this.detail.poll.id, 'extend', deadline, undefined);
     this.busy = false;
     if (!result.ok) {
@@ -1248,7 +1298,7 @@ export struct VoteScreen {
             }
             .width('100%')
             .margin({ top: 10 })
-            Text('新截止：' + VoteLogic.formatAt(Date.now() + this.extendMinutes * 60 * 1000))
+            Text('新截止：' + VoteLogic.formatAt(this.now + this.extendMinutes * 60 * 1000))
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.TEXT_TERTIARY)
               .width('100%')

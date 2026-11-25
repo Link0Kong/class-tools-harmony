@@ -1,3 +1,6 @@
+import { preferences } from '@kit.ArkData';
+import { AsyncLock } from '../../common/AsyncLock';
+import { CloudConfig } from '../../config/CloudConfig';
 import { pushService } from '@kit.PushKit';
 import notificationManager from '@ohos.notificationManager';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -15,6 +18,9 @@ import { deviceInfo } from '@kit.BasicServicesKit';
  */
 export class AppPush {
   private static listening: boolean = false;
+  private static sequence: number = 0;
+  private static queue = new AsyncLock();
+  private static detached: boolean = false;
 
   /** 用户是否希望接收推送（新安装默认开启；关闭后持久化 want=false）。 */
   static want(): boolean {
@@ -71,6 +77,7 @@ export class AppPush {
 
   /** 启动时：只续订已授权用户的 token，不在启动阶段弹系统权限（权限由用户操作触发）。 */
   static async syncOnLaunch(): Promise<void> {
+    AppPush.detached = false;
     const allowed: boolean = await AppPush.systemEnabled();
     if (!allowed) {
       Log.i('AppPush', '系统通知未授权，等待用户主动开启');
@@ -84,81 +91,94 @@ export class AppPush {
 
   /** 申请 token 并保存；返回是否注册成功。 */
   static async register(): Promise<boolean> {
-    const context = AppGlobal.context;
-    if (context === undefined) {
-      return false;
-    }
-    const allowed: boolean = await AppPush.ensurePermission();
-    if (!allowed) {
-      await AppPush.save('', false, true);
-      return false;
-    }
-    const ability = AppGlobal.ability;
-    try {
-      const token: string = await pushService.getToken();
-      if (token.length === 0) {
-        await AppPush.save('', false, true);
+    const sid = Services.currentSid;
+    const seq = AppPush.sequence;
+    if (!sid || !AppPush.want() || !await AppPush.systemEnabled()) return false;
+    return AppPush.queue.run<boolean>(async () => {
+      if (!AppPush.current(sid, seq)) return false;
+      try {
+        const token = await pushService.getToken();
+        const ok = await AppPush.install(token, sid, seq);
+        const ability = AppGlobal.ability;
+        if (!AppPush.listening && ability) {
+          pushService.on('tokenUpdate', ability, (updated: string) => {
+            const owner = Services.currentSid;
+            const generation = AppPush.sequence;
+            AppPush.queue.run<boolean>(() => AppPush.install(updated, owner, generation));
+          });
+          AppPush.listening = true;
+        }
+        return ok;
+      } catch (_) {
+        if (AppPush.current(sid, seq)) await AppPush.save('', false, true);
         return false;
       }
-      await AppPush.save(token, true, true);
-      await AppPush.syncTable(token);
-      if (!AppPush.listening && ability !== undefined) {
-        pushService.on('tokenUpdate', ability, (newToken: string) => {
-          AppPush.save(newToken, true, true);
-        });
-        AppPush.listening = true;
-      }
-      return true;
-    } catch (e) {
-      Log.w('AppPush', 'getToken 失败');
-      await AppPush.save('', false, true);
-      return false;
-    }
+    });
   }
 
-  /** 用户主动开启（先记录意愿，再注册）。 */
+  private static current(sid: string, seq: number): boolean {
+    return !!sid && Services.currentSid === sid && !AppPush.detached && AppPush.sequence === seq && AppPush.want();
+  }
+
+  private static async install(token: string, sid: string, seq: number): Promise<boolean> {
+    const ctx = AppGlobal.context;
+    if (!ctx || !token || !AppPush.current(sid, seq)) return false;
+    const store = preferences.getPreferencesSync(ctx, { name: 'push_device_registration' });
+    const old = store.getSync(sid, '') as string;
+    const body: Blob = { 'sid': sid, 'provider': 'harmony', 'token': token, 'device': deviceInfo.productModel,
+      'app_version': CloudConfig.APP_VERSION, 'updated_at': new Date().toISOString() };
+    const result = await Services.api.post('push_tokens?on_conflict=provider,token', JSON.stringify(body),
+      'resolution=merge-duplicates,return=minimal');
+    if (result.ok) {
+      store.putSync(sid, token);
+      await store.flush();
+      if (old && old !== token && Services.currentSid === sid) await AppPush.removeRegistration(sid, old);
+    }
+    if (!AppPush.current(sid, seq)) return false;
+    await AppPush.save(result.ok ? token : '', result.ok, true);
+    return result.ok;
+  }
+
   static async enable(): Promise<boolean> {
-    const allowed: boolean = await AppPush.ensurePermission();
-    if (!allowed) {
-      await AppPush.save(AppPush.token(), false, false);
-      return false;
-    }
-    await AppPush.save(AppPush.token(), false, true);
-    return await AppPush.register();
+    const sid = Services.currentSid;
+    if (!sid || !await AppPush.ensurePermission() || Services.currentSid !== sid) return false;
+    AppPush.detached = false;
+    await AppPush.save('', false, true);
+    return AppPush.register();
   }
 
-  /** 关闭推送：删除 token 并记录 want=false。 */
+  private static async removeRegistration(sid: string, token: string): Promise<boolean> {
+    if (!token || !sid) return true;
+    const result = await Services.api.delete('push_tokens?provider=eq.harmony&sid=eq.' + encodeURIComponent(sid)
+      + '&token=eq.' + encodeURIComponent(token));
+    return result.ok;
+  }
+
+  static async endSession(clearRemote: boolean): Promise<void> {
+    AppPush.sequence++;
+    AppPush.detached = true;
+    const sid = Services.currentSid;
+    const ctx = AppGlobal.context;
+    if (!sid || !ctx) return;
+    await AppPush.queue.run<void>(async () => {
+      try {
+        const store = preferences.getPreferencesSync(ctx, { name: 'push_device_registration' });
+        const token = store.getSync(sid, '') as string;
+        if (clearRemote && Services.currentSid === sid && await AppPush.removeRegistration(sid, token)) {
+          store.deleteSync(sid);
+          await store.flush();
+        }
+        await pushService.deleteToken();
+      } catch (_) {
+        Log.w('AppPush', '设备推送注销未完成');
+      }
+    });
+  }
+
   static async disable(): Promise<void> {
-    try {
-      await pushService.deleteToken();
-    } catch (e) {
-      // 未开通/无 token 时也允许关闭
-    }
-    await AppPush.save('', false, false);
-    await AppPush.clearTable();
-  }
-
-  /** 同步到班级共享表 push_tokens（provider=harmony），供发送端读取。 */
-  private static async syncTable(token: string): Promise<void> {
-    try {
-      await Services.api.delete('push_tokens?provider=eq.harmony');
-      const body: Blob = {};
-      body['provider'] = 'harmony';
-      body['token'] = token;
-      body['device'] = deviceInfo.productModel;
-      body['app_version'] = '1.0.10';
-      await Services.api.post('push_tokens', JSON.stringify(body), 'return=minimal');
-    } catch (e) {
-      Log.w('AppPush', '写 push_tokens 失败');
-    }
-  }
-
-  private static async clearTable(): Promise<void> {
-    try {
-      await Services.api.delete('push_tokens?provider=eq.harmony');
-    } catch (e) {
-      // 忽略
-    }
+    const sid = Services.currentSid;
+    await AppPush.endSession(true);
+    if (sid && Services.currentSid === sid) await AppPush.save('', false, false);
   }
 
   private static async save(token: string, enabled: boolean, want: boolean): Promise<void> {

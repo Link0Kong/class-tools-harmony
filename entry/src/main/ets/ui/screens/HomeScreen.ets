@@ -1,6 +1,12 @@
 ﻿import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
-import { HomeworkRow } from '../../data/homework/HomeworkModels';
+import { TaskRepository } from '../../data/tasks/TaskRepository';
+import { HomeworkBrief, PersonalTask } from '../../data/tasks/TaskModels';
+import { AppGlobal } from '../../app/AppGlobal';
+import { ToolLaunch } from '../../app/ToolLaunch';
+import { DeskForms } from '../../forms/DeskForms';
+import { NotifyCenter } from '../../data/notify/NotifyCenter';
+import { HomeworkDueCalculator, HomeworkItem, HomeworkRow } from '../../data/homework/HomeworkModels';
 import { HomeworkResult } from '../../data/homework/HomeworkRepository';
 import { NoticeCards, NoticeCard } from '../../features/notices/NoticeCards';
 import { NoticeEntry, NoticesResult } from '../../data/notices/NoticesRepository';
@@ -63,6 +69,8 @@ export struct HomeScreen {
   private ttSnapshot: TtSnapshot | undefined = undefined;
   private planMinute: number = -1;
   @State private plan: TtPlan = new TtPlan();
+  private tasks: PersonalTask[] = [];
+  private completing = new Set<string>();
   @State private hwOpen: number = 0;
   @State private hwItems: HomeCardItem[] = [];
   @State private ntPending: number = 0;
@@ -124,6 +132,8 @@ export struct HomeScreen {
   onEpochChanged(): void {
     // 切回工作台：2 分钟内只复用内存缓存，避免每次切 tab 都重复请求
     if (Date.now() - this.lastLoadAt < 2 * 60 * 1000) {
+      this.readLocalTasks();
+      this.applyLocal();
       return;
     }
     this.load(false);
@@ -137,6 +147,7 @@ export struct HomeScreen {
 
   aboutToAppear(): void {
     this.syncQuickOrder();
+    this.readLocalTasks();
     this.startedAt = Date.now();
     this.applyLocal();
     this.refreshDigests();
@@ -397,20 +408,78 @@ export struct HomeScreen {
   }
 
   /** 首帧直接用本机缓存渲染（marks / 课表 / 作业 / 通知），不等网络。 */
+  private async readLocalTasks(): Promise<void> {
+    const sid = Services.currentSid;
+    const tasks = await TaskRepository.load(false);
+    if (sid && sid === Services.currentSid) {
+      this.tasks = tasks;
+      this.applyAssignments(Services.homework.local());
+    }
+  }
+
+  private applyAssignments(rows: HomeworkRow[]): void {
+    const hidden = HidePrefs.read(Services.userdata.currentSections()).hwHide;
+    const excluded = new Set<string>(hidden);
+    const marks = Services.marks.marks();
+    rows.forEach((row: HomeworkRow) => {
+      if (marks.isDone(MarkKind.HW, row.id)) excluded.add(row.id);
+    });
+    const brief = HomeworkBrief.build(rows, excluded, this.tasks, Date.now());
+    const items = HomeDigest.hwItems(brief.pending.map((hw: HomeworkItem) => hw.row), 5);
+    const personal = this.tasks.filter((task: PersonalTask) => !task.done);
+    for (const task of personal) {
+      const item = new HomeCardItem();
+      item.kind = 'task';
+      item.id = task.id;
+      item.title = HomeDigest.shortTitle(task.title);
+      item.sub = task.dueLabel() || '个人任务';
+      item.dueAt = HomeworkDueCalculator.parseDue(task.due, task.dueTime || '23:59') ?? Number.MAX_SAFE_INTEGER;
+      items.push(item);
+    }
+    this.hwOpen = personal.length + brief.pending.length;
+    this.hwItems = items.sort((a: HomeCardItem, b: HomeCardItem) => a.dueAt - b.dueAt).slice(0, 5);
+    this.hwIdx = this.hwIdx < this.hwItems.length ? this.hwIdx : 0;
+  }
+
+  private openItem(item: HomeCardItem): void {
+    if (this.editing || this.suppressTap) return;
+    const launch = new ToolLaunch(item.kind === 'nt' ? 'nt' : 'hw');
+    if (item.kind === 'task') launch.taskId = item.id;
+    else if (item.kind === 'hw') launch.homeworkId = item.id;
+    else launch.noticeId = item.id;
+    AppGlobal.requestTool(launch);
+  }
+
+  private async completeItem(item: HomeCardItem): Promise<void> {
+    const key = item.kind + ':' + item.id;
+    if (this.editing || this.suppressTap || this.completing.has(key)) return;
+    this.completing.add(key);
+    const sid = Services.currentSid;
+    try {
+      if (item.kind === 'task') {
+        const saved = await TaskRepository.toggle(item.id, true);
+        if (!saved) return;
+        await this.readLocalTasks();
+      } else {
+        const mark = item.kind === 'nt' ? MarkKind.NT_DONE : MarkKind.HW;
+        await Services.marks.setMark(mark, item.id, true);
+      }
+      if (sid !== Services.currentSid) return;
+      this.applyLocal();
+      DeskForms.refresh();
+      NotifyCenter.syncAll(true);
+    } finally {
+      this.completing.delete(key);
+    }
+  }
+
   private applyLocal(): void {
-    const snapshot = Services.marks.marks();
     const tt = Services.timetable.local();
     if (tt !== undefined) {
       this.ttSnapshot = tt;
       this.plan = TtCalendar.plan(tt, Date.now());
     }
-    const hidden = HidePrefs.read(Services.userdata.currentSections());
-    const hw = Services.homework.local();
-    const open: HomeworkRow[] = HomeDigest.hwOpen(hw,
-      (id: string) => snapshot.isDone(MarkKind.HW, id),
-      (id: string) => hidden.hwHide.has(id));
-    this.hwOpen = open.length;
-    this.hwItems = HomeDigest.hwItems(open);
+    this.applyAssignments(Services.homework.local());
     const entries: NoticeEntry[] = Services.notices.local();
     if (entries.length > 0) {
       this.applyNotices(entries, true);
@@ -433,6 +502,7 @@ export struct HomeScreen {
       cards.push(card);
     }
     this.ntPending = HomeDigest.ntPending(cards, (key: string) => snapshot.isDone(MarkKind.NT_DONE, key));
+    this.ntIdx = 0;
     this.ntItems = HomeDigest.ntItems(cards, (key: string) => snapshot.isDone(MarkKind.NT_DONE, key));
     this.ntState = ok ? 'ok' : (Services.currentSid.length === 0 ? 'off' : 'error');
   }
@@ -473,7 +543,6 @@ export struct HomeScreen {
     } catch (e) {
       // 单项失败不影响其余模块
     }
-    const snapshot = Services.marks.marks();
     try {
       const tt: TtResult = await ttPromise;
       if (seq === this.loadSeq) {
@@ -485,14 +554,7 @@ export struct HomeScreen {
     }
     try {
       const hw: HomeworkResult = await hwPromise;
-      const hidden = HidePrefs.read(Services.userdata.currentSections());
-      const open: HomeworkRow[] = HomeDigest.hwOpen(hw.rows,
-        (id: string) => snapshot.isDone(MarkKind.HW, id),
-        (id: string) => hidden.hwHide.has(id));
-      if (seq === this.loadSeq) {
-        this.hwOpen = open.length;
-        this.hwItems = HomeDigest.hwItems(open);
-      }
+      if (seq === this.loadSeq) this.applyAssignments(hw.rows);
     } catch (e) {
       // 忽略
     }
@@ -1104,29 +1166,30 @@ export struct HomeScreen {
 
   /** 整行列表卡的一行：标题 + 右侧辅助信息。 */
   @Builder
-  listRow(title: string, sub: string, accent: string) {
+  listRow(item: HomeCardItem, accent: string) {
     Row({ space: 6 }) {
       Row()
         .width(4)
         .height(4)
         .borderRadius(2)
         .backgroundColor(accent)
-      Text(title)
+      Text(item.title)
         .fontSize(12)
         .fontColor(Tokens.TEXT_PRIMARY)
         .layoutWeight(1)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-      if (sub.length > 0) {
-        Text(sub)
+      if (item.sub.length > 0) {
+        Text(item.sub)
           .fontSize(10)
           .fontColor(Tokens.TEXT_TERTIARY)
           .maxLines(1)
       }
     }
     .width('100%')
-    .height(24)
+    .height(26)
     .alignItems(VerticalAlign.Center)
+    .onClick(() => this.openItem(item))
   }
 
   /** 卡片底部提示行：填入半宽卡片的剩余空间，避免大片空白。 */
@@ -1220,21 +1283,34 @@ export struct HomeScreen {
   }
 
   @Builder
+  doneAction(item: HomeCardItem) {
+    Button(item.kind === 'nt' ? '已处理' : '完成')
+      .fontSize(11).height(24).margin({ left: 8 })
+      .backgroundColor(Tokens.TINT_TEAL).fontColor(Tokens.MIST_TEAL)
+      .accessibilityText((item.kind === 'nt' ? '标记已处理 ' : '完成 ') + item.title)
+      .onClick(() => this.completeItem(item))
+  }
+
+  @Builder
   hwBody(wide: boolean) {
-    this.cardTitleRow(AppSymbols.HOMEWORK, Tokens.WARM_SAND, '作业待交',
+    this.cardTitleRow(AppSymbols.HOMEWORK, Tokens.WARM_SAND, '任务待办',
       this.hwOpen > 0 ? '' + this.hwOpen : '')
     if (this.hwItems.length > 0) {
       if (wide) {
         Column() {
           ForEach(this.hwItems.slice(0, 3), (item: HomeCardItem, index: number) => {
-            this.listRow(item.title, item.sub, Tokens.WARM_SAND)
-          }, (item: HomeCardItem, index: number) => 'hw_' + index)
+            Row() {
+              Column() { this.listRow(item, Tokens.WARM_SAND) }.layoutWeight(1)
+              this.doneAction(item)
+            }
+          }, (item: HomeCardItem, index: number) => 'hw_' + item.kind + item.id + item.title + item.sub)
         }
         .width('100%')
         .margin({ top: 6 })
         Blank()
       } else {
         Text(this.hwTitle())
+          .onClick(() => { if (this.hwIdx < this.hwItems.length) this.openItem(this.hwItems[this.hwIdx]); })
           .fontSize(Tokens.F_LABEL)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.TEXT_PRIMARY)
@@ -1250,21 +1326,13 @@ export struct HomeScreen {
           .margin({ top: 4 })
           .opacity(this.hwFade ? 0 : 1)
           .translate({ y: this.hwFade ? -6 : 0 })
-        if (this.hwItems.length > 1) {
-          Text('· ' + this.hwItems[1].title)
-            .fontSize(11)
-            .fontColor(Tokens.TEXT_TERTIARY)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 6 })
-        }
         Blank()
-        if (this.hwOpen > 0) {
-          this.cardFooter('共 ' + this.hwOpen + ' 项待交')
+        if (this.hwIdx < this.hwItems.length) {
+          this.doneAction(this.hwItems[this.hwIdx])
         }
       }
     } else {
-      Text('作业都完成了')
+      Text('暂无待办任务')
         .fontSize(Tokens.F_LABEL)
         .fontColor(Tokens.TEXT_SECONDARY)
         .margin({ top: 10 })
@@ -1281,14 +1349,18 @@ export struct HomeScreen {
         if (wide) {
           Column() {
             ForEach(this.ntItems.slice(0, 3), (item: HomeCardItem, index: number) => {
-              this.listRow(item.title, item.sub, '#B06A55')
-            }, (item: HomeCardItem, index: number) => 'nt_' + index)
+              Row() {
+                Column() { this.listRow(item, '#B06A55') }.layoutWeight(1)
+                this.doneAction(item)
+              }
+            }, (item: HomeCardItem, index: number) => 'nt_' + item.id + item.title + item.sub)
           }
           .width('100%')
           .margin({ top: 6 })
           Blank()
         } else {
           Text(this.ntTitle())
+            .onClick(() => { if (this.ntIdx < this.ntItems.length) this.openItem(this.ntItems[this.ntIdx]); })
             .fontSize(Tokens.F_LABEL)
             .fontWeight(FontWeight.Medium)
             .fontColor(Tokens.TEXT_PRIMARY)
@@ -1304,16 +1376,10 @@ export struct HomeScreen {
             .margin({ top: 4 })
             .opacity(this.ntFade ? 0 : 1)
             .translate({ y: this.ntFade ? -6 : 0 })
-          if (this.ntNew) {
-            Text('新通知')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.SLATE_BLUE)
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-              .backgroundColor(Tokens.tint(Tokens.SLATE_BLUE, 0.14))
-              .borderRadius(6)
-              .margin({ top: 6 })
-          }
           Blank()
+          if (this.ntIdx < this.ntItems.length) {
+            this.doneAction(this.ntItems[this.ntIdx])
+          }
         }
       } else {
         Text('暂无待处理通知')

@@ -1,5 +1,6 @@
 ﻿import { DrawEntry, DrawResult, DrawPoolSource, drawSortLabel } from '../draw/DrawModels';
 import { FitCalc, FitInput, FitRow, fitGradeLabel, fitSexLabel } from '../fit/FitModels';
+import { DrawReceipt } from '../draw/DrawModels';
 import { GroupResult, MemberGroup } from '../group/GroupModels';
 
 /** 导出卡「参数配置」一行。 */
@@ -35,6 +36,7 @@ export class ExportCardSpec {
   subtitle: string = '';
   /** 唯一编号（recId）。 */
   recordId: string = '';
+  verifyUrl: string = '';
   /** 文件名（含扩展名）。 */
   fileName: string = '';
   params: ExportParam[] = [];
@@ -96,7 +98,7 @@ export class ExportNaming {
 
 /** 抽签导出数据工厂（纯函数）。 */
 export class DrawExportFactory {
-  static create(result: DrawResult, now: number, suffix: string): ExportCardSpec {
+  static create(result: DrawResult, now: number, suffix: string, receipt?: DrawReceipt): ExportCardSpec {
     const config = result.config;
     const stamp: string = ExportNaming.stamp(now);
     const spec: ExportCardSpec = new ExportCardSpec();
@@ -109,6 +111,15 @@ export class DrawExportFactory {
       + '_' + (config.allowDuplicates ? '允许重复' : '不重复')
       + '_' + drawSortLabel(config.sort) + '.png');
     spec.params = DrawExportFactory.configFields(result);
+    if (receipt) {
+      spec.recordId = receipt.id;
+      spec.verifyUrl = receipt.url();
+      spec.params.push(new ExportParam('存证编号', receipt.id), new ExportParam('存证时间', ExportNaming.timeText(receipt.at)),
+        new ExportParam('今日抽签', '第 ' + receipt.sequence + ' 次 · 共 ' + receipt.total + ' 次'),
+        new ExportParam('记录哈希', receipt.hash.slice(0, 16)));
+    } else {
+      spec.params.push(new ExportParam('存证', '未存证，图片无法核验'));
+    }
     spec.chipLabel = '抽签结果';
     spec.chips = DrawExportFactory.chips(result.entries);
     spec.noteLines = DrawExportFactory.removeLines(result);

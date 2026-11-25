@@ -144,6 +144,7 @@ export class NoticesRepository {
   private ttlMs: number;
   private sidProvider: () => string;
   private adminProvider: () => boolean;
+  private persist: boolean;
 
   private signature: string = '';
   private cache: NoticeEntry[] = [];
@@ -155,12 +156,13 @@ export class NoticesRepository {
   private inflight: Promise<NoticesResult> | undefined = undefined;
 
   constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS,
-    sidProvider: () => string = () => '', adminProvider: () => boolean = () => false) {
+    sidProvider: () => string = () => '', adminProvider: () => boolean = () => false, persist: boolean = true) {
     this.api = api;
     this.clock = clock;
     this.ttlMs = ttlMs;
     this.sidProvider = sidProvider;
     this.adminProvider = adminProvider;
+    this.persist = persist;
   }
 
   /** 最近一次签名（未加载过为空串），用于工作台「新通知」角标。 */
@@ -184,7 +186,7 @@ export class NoticesRepository {
     this.signature = '';
     this.cachedAt = 0;
     this.loaded = false;
-    const blob: NoticeCacheBlob | undefined = await NoticeCacheStore.load(sid);
+    const blob: NoticeCacheBlob | undefined = this.persist ? await NoticeCacheStore.load(sid) : undefined;
     if (sid !== this.sidProvider() || blob === undefined) {
       return;
     }
@@ -323,7 +325,7 @@ export class NoticesRepository {
     blob.signature = signature;
     blob.savedAt = now;
     blob.rowsJson = rawJson;
-    await NoticeCacheStore.save(sid, blob);
+    if (this.persist) await NoticeCacheStore.save(sid, blob);
     if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     return new NoticesResult(true, entries, false, '');
   }

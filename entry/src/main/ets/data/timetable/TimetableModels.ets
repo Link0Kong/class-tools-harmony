@@ -71,6 +71,7 @@ export enum TodayState {
 export class SessionInfo {
   name: string = '';
   room: string = '';
+  fullRoom: string = '';
   start: number = 1;
   end: number = 1;
   startText: string = '';

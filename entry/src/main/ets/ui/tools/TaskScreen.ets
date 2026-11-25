@@ -1,0 +1,479 @@
+import { Services } from '../../app/Services';
+import { MarkKind } from '../../data/marks/Marks';
+import { HidePrefs } from '../../data/home/HidePrefs';
+import { HomeworkDueCalculator, HomeworkItem, HomeworkRow } from '../../data/homework/HomeworkModels';
+import { ReminderAgent } from '../../data/reminder/ReminderAgent';
+import { ReminderPlan, ReminderPlanner } from '../../features/reminder/ReminderModels';
+import { HomeworkReminders } from '../../data/reminder/HomeworkReminders';
+import { ReminderStore } from '../../data/reminder/ReminderStore';
+import { NotifyCenter } from '../../data/notify/NotifyCenter';
+import { TaskRepository } from '../../data/tasks/TaskRepository';
+import { HomeworkBrief, PersonalTask, TaskShare, TaskView, taskDay } from '../../data/tasks/TaskModels';
+import { NativeShare } from '../../features/share/NativeShare';
+import { Tokens } from '../theme/Tokens';
+import { PageHeader } from '../components/PageHeader';
+
+@Component
+export struct TaskScreen {
+  @Prop taskId: string = '';
+  @Prop taskShareUrl: string = '';
+  onClose: () => void = () => {};
+  onHomework: (id: string) => void = () => {};
+  onAdvanced: () => void = () => {};
+  onReminderSettings: () => void = () => {};
+  @State private personal: PersonalTask[] = [];
+  @State private brief: HomeworkBrief = new HomeworkBrief();
+  @State private selected: PersonalTask | undefined = undefined;
+  @State private shared: TaskShare | undefined = undefined;
+  @State private linkInput: boolean = false;
+  @State private link: string = '';
+  @State private title: string = '';
+  @State private views: TaskView[] = TaskView.categories({});
+  @State private activeView: string = 'all';
+  @State private searching: boolean = false;
+  @State private query: string = '';
+  @State private quickDue: string = '';
+  @State private quickStar: boolean = false;
+  @State private editing: PersonalTask | undefined = undefined;
+  @State private editTitle: string = '';
+  @State private editNotes: string = '';
+  @State private editDue: string = '';
+  @State private editTime: string = '';
+  @State private editStar: boolean = false;
+  @State private refreshing: boolean = false;
+  @State private syncLabel: string = '';
+  @State private hwStatus: string = '加载中';
+  @State private reminderIds: string[] = [];
+  @State private calendarFor: string = '';
+  private rows: HomeworkRow[] = [];
+  private excluded: Set<string> = new Set<string>();
+  private active: boolean = false;
+  private tick: number = -1;
+  private initialId: string = '';
+  private owner: string = '';
+
+  aboutToAppear(): void {
+    this.active = true;
+    this.owner = Services.currentSid;
+    this.initialId = this.taskId;
+    if (this.taskShareUrl) this.preview(this.taskShareUrl);
+    this.refresh(false);
+    this.tick = setInterval(() => {
+      this.updateBrief();
+      if (!this.refreshing) this.refreshPersonal(true);
+    }, 60000);
+  }
+
+  aboutToDisappear(): void {
+    this.active = false;
+    clearInterval(this.tick);
+  }
+
+  private valid(): boolean { return this.active && this.owner === Services.currentSid; }
+
+  private message(message: string): void {
+    if (this.valid()) this.getUIContext().getPromptAction().showToast({ message: message });
+  }
+
+  private updateBrief(): void {
+    this.brief = HomeworkBrief.build(this.rows, this.excluded, this.personal, Date.now());
+  }
+
+  private async refreshPersonal(cloud: boolean): Promise<void> {
+    const tasks = await TaskRepository.load(cloud);
+    if (!this.valid()) return;
+    this.personal = tasks;
+    const views = TaskRepository.categories();
+    if (views.length !== this.views.length || views.some((v: TaskView, i: number) =>
+      this.views[i].key !== v.key || this.views[i].label !== v.label)) {
+      this.activeView = views[TaskView.index(views, this.activeView)].key;
+      this.views = views;
+    }
+    this.syncLabel = TaskRepository.status();
+    this.updateBrief();
+    if (this.initialId) {
+      const found = tasks.find((t: PersonalTask) => t.id === this.initialId);
+      if (found || cloud) {
+        this.initialId = '';
+        if (!found) this.message('未找到这项任务，请刷新或检查当前账号');
+        this.selected = found;
+      }
+    } else if (this.selected) {
+      const id = this.selected.id;
+      this.selected = tasks.find((t: PersonalTask) => t.id === id);
+    }
+  }
+
+  private async refreshWork(force: boolean): Promise<void> {
+    const assignments = Services.homework.load(force);
+    const marks = await Services.marks.refresh(force);
+    const result = await assignments;
+    if (!this.valid()) return;
+    const hidden = HidePrefs.read(Services.userdata.currentSections()).hwHide;
+    this.excluded = new Set<string>(Array.from(hidden));
+    const marked = Services.marks.marks();
+    for (const row of result.rows) {
+      if (marked.isDone(MarkKind.HW, row.id)) this.excluded.add(row.id);
+    }
+    this.rows = result.rows;
+    this.hwStatus = !result.ok ? result.message : result.message || marks.error ? '上次同步' : '';
+    this.updateBrief();
+    const record = await ReminderStore.load(this.owner);
+    if (this.valid()) this.reminderIds = Array.from(record.ids.keys());
+  }
+
+  private async refresh(force: boolean): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      await this.refreshPersonal(false);
+      await Promise.all([this.refreshPersonal(true), this.refreshWork(force)]);
+    } finally {
+      if (this.valid()) this.refreshing = false;
+    }
+  }
+
+  private async afterEdit(): Promise<void> {
+    await this.refreshPersonal(false);
+    if (this.valid()) await this.refreshPersonal(true);
+  }
+
+  private async importRows(rows: HomeworkRow[]): Promise<void> {
+    const count = await TaskRepository.importHomework(rows);
+    if (!this.valid()) return;
+    this.message(count ? '已加入 ' + count + ' 项个人任务' : '没有可加入的作业');
+    await this.afterEdit();
+  }
+
+  private async remindHomework(item: HomeworkItem): Promise<void> {
+    const prefs = await ReminderStore.load(this.owner);
+    if (!this.valid()) return;
+    const result = await HomeworkReminders.schedule(item.row, prefs.advance);
+    if (!this.valid()) return;
+    this.message(result.ok ? '已设置截止提醒' : result.message);
+    this.calendarFor = result.code === 1700002 ? item.row.id : '';
+    this.reminderIds = Array.from((await ReminderStore.load(this.owner)).ids.keys());
+  }
+
+  private async calendarForHomework(item: HomeworkItem): Promise<void> {
+    const settings = await ReminderStore.load(this.owner);
+    if (!this.valid()) return;
+    const plan = ReminderPlanner.plan(item.row, Date.now(), settings.advance);
+    if (!plan) { this.message('截止时间已过'); return; }
+    this.message(await ReminderAgent.calendar(plan));
+  }
+
+  private async calendarForTask(task: PersonalTask): Promise<void> {
+    const plan = new ReminderPlan();
+    plan.taskId = task.id;
+    plan.title = task.title;
+    plan.content = task.notes;
+    plan.triggerAt = task.snoozeUntil > Date.now() ? task.snoozeUntil : task.remindAt;
+    const deadline = new Date(task.due + 'T' + (task.dueTime || '23:59') + ':00').getTime();
+    plan.dueAt = Number.isFinite(deadline) && deadline >= plan.triggerAt ? deadline : plan.triggerAt;
+    if (plan.triggerAt <= Date.now()) { this.message('请选择将来的提醒时间'); return; }
+    this.message(await ReminderAgent.calendar(plan));
+  }
+
+  private async addQuickTask(): Promise<void> {
+    if (!(await TaskRepository.add(this.title, undefined, this.quickDue, this.quickStar, this.activeView))) { this.message('请输入任务标题，最多可保存 2000 项'); return; }
+    this.title = '';
+    this.quickDue = '';
+    this.quickStar = false;
+    this.query = '';
+    if (this.activeView === 'done') this.activeView = 'all';
+    await this.afterEdit();
+  }
+
+  private quickDate(days: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return taskDay(date);
+  }
+
+  private startEdit(task: PersonalTask): void {
+    this.editTitle = task.title;
+    this.editNotes = task.notes;
+    this.editDue = task.due;
+    this.editTime = task.dueTime;
+    this.editStar = task.starred;
+    this.editing = task;
+  }
+
+  private async saveEdit(): Promise<void> {
+    const task = this.editing;
+    if (!task) return;
+    if (!this.editTitle.trim()) { this.message('请输入任务标题'); return; }
+    if (!PersonalTask.validDue(this.editDue, this.editTime)) {
+      this.message('请填写有效的截止日期和时间，全天任务可留空时间');
+      return;
+    }
+    if (!(await TaskRepository.updateDetails(task, this.editTitle, this.editNotes, this.editDue,
+      this.editTime, this.editStar))) { this.message('未能保存这项任务'); return; }
+    this.editing = undefined;
+    await this.afterEdit();
+  }
+
+  private async toggle(task: PersonalTask): Promise<void> {
+    if (!(await TaskRepository.toggle(task.id, !task.done))) this.message('任务状态已变化，请刷新');
+    await this.afterEdit();
+  }
+
+  private async remind(task: PersonalTask, stamp: number): Promise<void> {
+    if (stamp > 0 && !(await NotifyCenter.currentSettings()).master) {
+      this.message('请先在提醒设置中开启系统通知');
+      this.onReminderSettings();
+      return;
+    }
+    if (stamp > 0 && !(await NotifyCenter.ensurePermission())) { this.message('请在系统设置中允许通知'); return; }
+    if (!this.valid()) return;
+    const saved = await TaskRepository.remind(task.id, stamp);
+    this.message(saved ? (stamp ? '已保存提醒时间' : '已清除提醒') : '未能保存提醒');
+    await this.afterEdit();
+  }
+
+  private preview(link: string): void {
+    const data = TaskShare.parse(link);
+    if (!data) { this.message('请输入有效的枫丹工具箱任务链接'); return; }
+    this.shared = data;
+    this.linkInput = false;
+    this.link = '';
+  }
+
+  private async acceptShare(): Promise<void> {
+    const incoming = this.shared;
+    if (!incoming) return;
+    this.shared = undefined;
+    if (!(await TaskRepository.add(incoming.title, incoming))) {
+      this.shared = incoming;
+      this.message('未能保存任务');
+      return;
+    }
+    this.query = '';
+    this.activeView = 'all';
+    this.message('已保存为我的任务');
+    await this.afterEdit();
+  }
+
+  @Builder
+  action(label: string, run: () => void) {
+    Button(label).fontSize(13).fontColor($r('app.color.task_text')).backgroundColor($r('app.color.task_control'))
+      .height(34).onClick(run)
+  }
+
+  @Builder
+  homeworkCard() {
+    Column({ space: 8 }) {
+      Row() {
+        Text('班级作业').fontSize(18).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text')).layoutWeight(1)
+        this.action('全部作业', () => this.onHomework(''))
+      }.width('100%')
+      Text((this.hwStatus && !this.brief.pending.length) ? this.hwStatus : (this.brief.pending.length + ' 项可加入' +
+        (this.brief.overdue ? ' · ' + this.brief.overdue + ' 项逾期' : '') +
+        (this.brief.soon ? ' · ' + this.brief.soon + ' 项 24 小时内截止' : '') + (this.hwStatus ? ' · ' + this.hwStatus : '')))
+        .fontSize(14).fontColor(this.brief.overdue || this.brief.soon ? $r('app.color.task_urgent') : $r('app.color.task_muted'))
+      ForEach(this.brief.highlights, (item: HomeworkItem) => {
+        Divider().color($r('app.color.task_line'))
+        Column({ space: 5 }) {
+          Text(item.row.content.trim().split('\n')[0] || item.row.subject || '班级作业').fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.task_text')).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text([item.row.subject, item.due ? HomeworkDueCalculator.dueText(item.due.atMillis) + ' · ' + item.due.label :
+            item.row.due || '无截止日期'].filter((s: string) => !!s).join(' · ')).fontSize(13).fontColor($r('app.color.task_muted'))
+        }.alignItems(HorizontalAlign.Start).width('100%').onClick(() => this.onHomework(item.row.id))
+        Row({ space: 8 }) {
+          this.action('加入任务', () => { this.importRows([item.row]); })
+          if (item.due && !item.due.expired) {
+            this.action(this.reminderIds.includes(item.row.id) ? '调整提醒' : '提醒我', () => {
+              if (this.reminderIds.includes(item.row.id)) this.onHomework(item.row.id);
+              else this.remindHomework(item);
+            })
+          }
+        }
+        if (this.calendarFor === item.row.id) {
+          this.action('添加到系统日历', () => { this.calendarForHomework(item); })
+        }
+      }, (item: HomeworkItem) => item.row.id + '_' + item.row.ts + '_' + (item.due?.label || '') + '_' + this.reminderIds.includes(item.row.id) + '_' + this.calendarFor)
+      Row({ space: 8 }) {
+        if (this.brief.pending.length > 1) {
+          this.action('全部加入任务', () => { this.importRows(this.brief.pending.map((i: HomeworkItem) => i.row)); })
+        }
+        this.action('提醒设置', this.onReminderSettings)
+      }
+    }.alignItems(HorizontalAlign.Start).width('100%').padding(16).backgroundColor($r('app.color.task_card')).borderRadius(16)
+  }
+
+  @Builder
+  taskCard(task: PersonalTask) {
+    Row({ space: 8 }) {
+      Column({ space: 5 }) {
+        Text(task.title).fontSize(16).fontWeight(FontWeight.Medium).fontColor($r('app.color.task_text'))
+          .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (task.notes && !task.title.includes(task.notes)) {
+          Text(task.notes).fontSize(13).fontColor($r('app.color.task_muted')).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        if (task.due || task.group || task.sourceHwId || task.sourceNoticeId || task.remindAt) {
+          Text([task.sourceHwId ? '班级作业' : task.sourceNoticeId ? '班级通知' : task.group,
+            task.dueLabel(), task.remindAt > Date.now() ? '已设提醒' : ''].filter((s: string) => !!s).join(' · '))
+            .fontSize(12).fontColor($r('app.color.task_muted'))
+        }
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1).onClick(() => { this.selected = task; })
+      this.action(task.done ? '撤销完成' : '完成', () => { this.toggle(task); })
+    }.width('100%').padding(12).backgroundColor($r('app.color.task_card')).borderRadius(12)
+  }
+
+  @Builder
+  detail(task: PersonalTask) {
+    PageHeader({ taskColors: true, title: '任务详情', onBack: () => { this.selected = undefined; } }) {
+      Scroll() {
+        Column({ space: 14 }) {
+          Text(task.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
+          if (task.group || task.due) { Text([task.group, task.dueLabel()].filter((s: string) => !!s).join(' · ')).fontColor($r('app.color.task_muted')) }
+          if (task.notes) { Text(task.notes).fontSize(16).fontColor($r('app.color.task_text')) }
+          ForEach(task.steps, (step: string, index: number) => {
+            Text((task.stepsDone[index] ? '☑  ' : '☐  ') + step).fontColor($r('app.color.task_text')).padding(5)
+              .onClick(async () => { await TaskRepository.toggleStep(task.id, index); await this.afterEdit(); })
+          }, (step: string, index: number) => index + step + task.stepsDone[index])
+          if (task.remindAt > 0) { Text('提醒时间 ' + new Date(task.remindAt).toLocaleString()).fontColor($r('app.color.task_muted')) }
+          if (!task.done) {
+            Row({ space: 8 }) {
+              this.action('30 分钟后提醒', () => { this.remind(task, Date.now() + 1800000); })
+              if (task.remindAt > 0) { this.action('取消提醒', () => { this.remind(task, 0); }) }
+            }
+            if (Math.max(task.remindAt, task.snoozeUntil) > Date.now()) {
+              this.action('添加到系统日历', () => { this.calendarForTask(task); })
+            }
+          }
+          Row({ space: 8 }) {
+            this.action('编辑任务', () => { this.startEdit(task); })
+            this.action(task.done ? '撤销完成' : '标记完成', () => { this.toggle(task); })
+            this.action('分享链接', async () => {
+              const result = await NativeShare.shareLink(TaskShare.link(task), task.title);
+              if (!result.ok) this.message(result.message);
+            })
+          }
+          if (task.sourceHwId) { this.action('查看原作业', () => this.onHomework(task.sourceHwId)) }
+          this.action('完整任务管理', this.onAdvanced)
+        }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+      }.width('100%').height('100%').align(Alignment.Top)
+    }
+  }
+
+  @Builder
+  quickEntry() {
+    Column({ space: 6 }) {
+      Row({ space: 6 }) {
+        TextInput({ placeholder: '添加个人任务', text: this.title }).maxLength(200).layoutWeight(1).height(38)
+          .onChange((value: string) => { this.title = value; }).onSubmit(() => { this.addQuickTask(); })
+        this.action('添加', () => { this.addQuickTask(); })
+      }
+      if (this.title.trim().length) {
+        Row({ space: 5 }) {
+          this.action((this.quickDue === this.quickDate(0) ? '✓ ' : '') + '今天截止', () => {
+            this.quickDue = this.quickDue === this.quickDate(0) ? '' : this.quickDate(0);
+          })
+          this.action((this.quickDue === this.quickDate(1) ? '✓ ' : '') + '明天截止', () => {
+            this.quickDue = this.quickDue === this.quickDate(1) ? '' : this.quickDate(1);
+          })
+          this.action(this.quickStar ? '★ 重要' : '☆ 重要', () => { this.quickStar = !this.quickStar; })
+        }
+      }
+      if (this.linkInput) {
+        TextInput({ placeholder: '粘贴任务分享链接', text: this.link }).maxLength(8192).onChange((s: string) => { this.link = s; })
+        this.action('预览任务', () => this.preview(this.link))
+      }
+    }.alignItems(HorizontalAlign.Start).width('100%').padding({ left: 14, right: 14, top: 6, bottom: 6 })
+  }
+
+  @Builder
+  categoryPage(view: TaskView, tasks: PersonalTask[]) {
+    Refresh({ refreshing: this.refreshing }) {
+      List({ space: 10 }) {
+        if (view.key === 'all' && !this.searching) {
+          ListItem() { this.homeworkCard() }
+        }
+        ListItem() {
+          Row({ space: 8 }) {
+            Text(view.label + ' · ' + tasks.length).fontSize(18).fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.task_text')).layoutWeight(1)
+            Text(this.syncLabel).fontSize(12).fontColor($r('app.color.task_muted'))
+          }.width('100%').padding({ top: 10, bottom: 6 })
+        }
+        if (!tasks.length) {
+          ListItem() { Text(this.query.trim() ? '没有符合搜索的任务' : '暂无' + view.label + '任务')
+            .fontColor($r('app.color.task_muted')).padding(12) }
+        }
+        ForEach(tasks, (task: PersonalTask) => { ListItem() { this.taskCard(task) } },
+          (task: PersonalTask) => task.id + JSON.stringify(task))
+        ListItem() { this.action('完整任务管理', this.onAdvanced) }
+      }.width('100%').height('100%').padding({ left: 14, right: 14, bottom: 12 }).scrollBar(BarState.Auto)
+    }.onRefreshing(() => { this.refresh(true); })
+  }
+
+  build() {
+    if (this.shared) {
+      PageHeader({ taskColors: true, title: '分享的任务', onBack: () => { this.shared = undefined; } }) {
+        Scroll() {
+          Column({ space: 14 }) {
+            Text(this.shared.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
+            Text([this.shared.group, this.shared.due].filter((s: string) => !!s).join(' · ')).fontColor($r('app.color.task_muted'))
+            if (this.shared.notes) { Text(this.shared.notes).fontColor($r('app.color.task_text')) }
+            ForEach(this.shared.steps, (step: string) => { Text('• ' + step).fontColor($r('app.color.task_text')) },
+              (step: string, index: number) => index + step)
+            this.action('保存为我的任务', () => { this.acceptShare(); })
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+        }.height('100%').align(Alignment.Top)
+      }
+    } else if (this.editing) {
+      PageHeader({ taskColors: true, title: '编辑任务', onBack: () => { this.editing = undefined; } }) {
+        Scroll() {
+          Column({ space: 12 }) {
+            Text('任务名称').fontColor($r('app.color.task_text'))
+            TextInput({ text: this.editTitle }).maxLength(200).onChange((s: string) => { this.editTitle = s; })
+            Text('备注').fontColor($r('app.color.task_text'))
+            TextArea({ text: this.editNotes, placeholder: '添加备注' }).height(100).maxLength(5000)
+              .onChange((s: string) => { this.editNotes = s; })
+            Text('截止日期与时间').fontColor($r('app.color.task_text'))
+            Row({ space: 6 }) {
+              TextInput({ text: this.editDue, placeholder: 'YYYY-MM-DD' }).layoutWeight(3).maxLength(10)
+                .onChange((s: string) => { this.editDue = s; if (!s) this.editTime = ''; })
+              TextInput({ text: this.editTime, placeholder: 'HH:MM' }).layoutWeight(2).maxLength(5)
+                .onChange((s: string) => { this.editTime = s; })
+            }
+            this.action(this.editStar ? '★ 重要' : '☆ 标为重要', () => { this.editStar = !this.editStar; })
+            this.action('保存任务', () => { this.saveEdit(); })
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+        }.width('100%').height('100%').align(Alignment.Top)
+      }
+    } else if (this.selected) {
+      this.detail(this.selected)
+    } else {
+      PageHeader({ taskColors: true, title: '任务', actionText: '完整任务管理', onAction: this.onAdvanced,
+        actionText2: '从链接添加任务', onAction2: () => { this.linkInput = true; },
+        actionText3: this.searching ? '结束搜索' : '搜索任务', onAction3: () => {
+          this.searching = !this.searching;
+          if (!this.searching) this.query = '';
+        }, onBack: this.onClose }) {
+        Column() {
+          if (this.searching) {
+            TextInput({ placeholder: '搜索标题、备注、来源或标签', text: this.query })
+              .margin({ left: 14, right: 14 }).height(38).onChange((s: string) => { this.query = s; })
+          }
+          Tabs({ barPosition: BarPosition.Start, index: TaskView.index(this.views, this.activeView) }) {
+            ForEach(this.views, (view: TaskView) => {
+              TabContent() {
+                this.categoryPage(view, TaskView.filter(this.personal, view.key, taskDay(new Date()), this.query))
+              }.tabBar(view.label)
+            }, (view: TaskView) => view.key + ':' + view.label)
+          }.width('100%').layoutWeight(1).barMode(BarMode.Scrollable).barHeight(44).scrollable(true).edgeEffect(EdgeEffect.None)
+          .onChange((index: number) => {
+            if (index >= 0 && index < this.views.length) this.activeView = this.views[index].key;
+          })
+          if (this.activeView !== 'all' || this.searching) {
+            this.action('查看班级作业', () => this.onHomework(''))
+          }
+          this.quickEntry()
+        }.width('100%').height('100%')
+      }
+    }
+  }
+}

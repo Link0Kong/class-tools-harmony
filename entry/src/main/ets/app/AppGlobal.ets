@@ -1,4 +1,5 @@
-﻿import { common, UIAbility } from '@kit.AbilityKit';
+﻿import { ToolLaunch } from './ToolLaunch';
+import { common, UIAbility } from '@kit.AbilityKit';
 
 /**
  * 进程级全局对象。
@@ -7,6 +8,15 @@
  * `openToolId` 记录当前打开的工具页（根页面维护），供 Ability 级返回键处理使用。
  */
 export class AppGlobal {
+  static pendingLaunch: ToolLaunch | undefined = undefined;
+  static onLaunch: (() => void) | undefined = undefined;
+
+  static requestTool(launch: ToolLaunch | undefined): void {
+    if (!launch) return;
+    AppGlobal.pendingLaunch = launch;
+    AppGlobal.onLaunch?.();
+  }
+
   static context: common.UIAbilityContext | undefined = undefined;
 
   /** 当前 UIAbility（Push Kit 的 tokenUpdate 需要 Ability 实例）。 */

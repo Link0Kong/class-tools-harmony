@@ -1,4 +1,4 @@
-﻿import { AppGlobal } from '../../app/AppGlobal';
+import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { MarksRefreshResult, MarksUpdateResult } from '../../data/marks/MarksRepository';
@@ -14,7 +14,11 @@ import {
   HomeworkRow
 } from '../../data/homework/HomeworkModels';
 import { HomeworkResult } from '../../data/homework/HomeworkRepository';
-import { ReminderAgent, ReminderPublishResult } from '../../data/reminder/ReminderAgent';
+import { ReminderAgent } from '../../data/reminder/ReminderAgent';
+import { HomeworkReminders } from '../../data/reminder/HomeworkReminders';
+import { TaskRepository } from '../../data/tasks/TaskRepository';
+import { PersonalTask } from '../../data/tasks/TaskModels';
+import { NotifyCenter } from '../../data/notify/NotifyCenter';
 import { ReminderRecord, ReminderStore } from '../../data/reminder/ReminderStore';
 import { ReminderPlanner } from '../../features/reminder/ReminderModels';
 import { HidePrefs } from '../../data/home/HidePrefs';
@@ -37,6 +41,9 @@ import { PageHeader } from '../components/PageHeader';
  */
 @Component
 export struct HomeworkScreen {
+  @Prop homeworkId: string = '';
+  private target: string = '';
+  @State private imported: string[] = [];
   onClose: () => void = () => {
   };
 
@@ -56,6 +63,8 @@ export struct HomeworkScreen {
   @State private detailOpen: boolean = false;
   @State private detail: HomeworkItem | undefined = undefined;
   @State private advance: number = 30;
+  @State private desiredIds: string[] = [];
+  @State private calendarFor: string = '';
   @State private reminderIds: Map<string, number> = new Map<string, number>();
   @State private previewOpen: boolean = false;
   @State private previewSrc: string = '';
@@ -63,7 +72,9 @@ export struct HomeworkScreen {
   private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   aboutToAppear(): void {
+    this.target = this.homeworkId;
     this.reload(false);
+    this.loadImported();
     this.loadReminders();
   }
 
@@ -71,13 +82,21 @@ export struct HomeworkScreen {
     const record: ReminderRecord = await ReminderStore.load(Services.currentSid);
     this.advance = ReminderPlanner.normalizeAdvance(record.advance);
     this.reminderIds = record.ids;
+    this.desiredIds = Array.from(record.leads.keys());
+  }
+
+  private async loadImported(): Promise<void> {
+    this.imported = (await TaskRepository.load(false)).map((task: PersonalTask) => task.sourceHwId);
+  }
+
+  private async importTask(item: HomeworkItem): Promise<void> {
+    const count = await TaskRepository.importHomework([item.row]);
+    this.notice = count ? '已加入个人任务' : '未加入，请检查任务列表';
+    await this.loadImported();
   }
 
   private async persistReminders(): Promise<void> {
-    const record: ReminderRecord = new ReminderRecord();
-    record.advance = this.advance;
-    record.ids = this.reminderIds;
-    await ReminderStore.save(Services.currentSid, record);
+    await HomeworkReminders.setAdvance(Services.currentSid, this.advance);
   }
 
   /** 每次 onRefreshing 都独立安排收起，避免上一次未结束时第二次下拉永远停住。 */
@@ -151,6 +170,13 @@ export struct HomeworkScreen {
       this.errorMsg = '完成状态同步失败：' + marksResult.error.displayMessage();
     }
     this.loading = false;
+    if (this.target) {
+      const id = this.target;
+      this.target = '';
+      const item = this.items().find((i: HomeworkItem) => i.row.id === id);
+      if (item) this.openDetail(item);
+      else this.getUIContext().getPromptAction().showToast({ message: '这项班级作业已不可见' });
+    }
   }
 
   private items(): HomeworkItem[] {
@@ -247,8 +273,12 @@ export struct HomeworkScreen {
     const keys: Set<string> = new Set<string>();
     keys.add('hide');
     await Services.userdata.push(false, keys);
+    const cancelled = await HomeworkReminders.cancel(id);
+    this.loadReminders();
+    NotifyCenter.syncAll(true);
+    TaskRepository.onChange();
     this.closeDetail();
-    this.notice = '已隐藏（仅你不可见）';
+    this.notice = cancelled ? '已隐藏（仅你不可见）' : '已隐藏，系统未能取消原提醒';
     await this.reload(true);
   }
 
@@ -271,6 +301,10 @@ export struct HomeworkScreen {
     if (!result.ok) {
       this.notice = '网络不佳：已在本机标记，稍后自动补发';
     }
+    if (next && !(await HomeworkReminders.cancel(id))) this.notice = '已完成，系统未能取消原提醒';
+    this.loadReminders();
+    NotifyCenter.syncAll(true);
+    TaskRepository.onChange();
     if (this.detail !== undefined && this.detail.row.id === id) {
       const refreshed: HomeworkItem = new HomeworkItem();
       refreshed.row = item.row;
@@ -287,31 +321,21 @@ export struct HomeworkScreen {
   }
 
   private async setReminder(item: HomeworkItem): Promise<void> {
+    const result = await HomeworkReminders.schedule(item.row, this.advance);
+    this.calendarFor = result.code === 1700002 ? item.row.id : '';
+    this.notice = result.ok ? '已设置提醒：截止前 ' + this.advance + ' 分钟' : result.message;
+    await this.loadReminders();
+  }
+
+  private async addCalendar(item: HomeworkItem): Promise<void> {
     const plan = ReminderPlanner.plan(item.row, Date.now(), this.advance);
-    if (plan === undefined) {
-      this.notice = '该作业没有可用的截止时间';
-      return;
-    }
-    const result: ReminderPublishResult = await ReminderAgent.publish(plan);
-    if (result.ok) {
-      this.reminderIds.set(item.row.id, result.reminderId);
-      this.reminderIds = new Map<string, number>(this.reminderIds);
-      await this.persistReminders();
-      this.notice = '已设置提醒：截止前 ' + this.advance + ' 分钟';
-    } else {
-      this.notice = result.message.length > 0 ? result.message : '提醒设置失败';
-    }
+    this.notice = plan ? await ReminderAgent.calendar(plan) : '截止时间已过';
   }
 
   private async cancelReminder(item: HomeworkItem): Promise<void> {
-    const value: number | undefined = this.reminderIds.get(item.row.id);
-    if (value !== undefined) {
-      await ReminderAgent.cancel(value);
-      this.reminderIds.delete(item.row.id);
-      this.reminderIds = new Map<string, number>(this.reminderIds);
-      await this.persistReminders();
-    }
-    this.notice = '已取消提醒';
+    const cancelled = await HomeworkReminders.cancel(item.row.id);
+    this.notice = cancelled ? '已取消提醒' : '系统未能取消提醒，请重试';
+    await this.loadReminders();
   }
 
   private openPreview(src: string): void {
@@ -346,17 +370,17 @@ export struct HomeworkScreen {
     }
   }
 
-  private dueColor(tone: HomeworkDueTone): string {
+  private dueColor(tone: HomeworkDueTone): ResourceColor {
     if (tone === HomeworkDueTone.OVERDUE) {
-      return Tokens.DANGER;
+      return $r('app.color.task_urgent');
     }
     if (tone === HomeworkDueTone.URGENT || tone === HomeworkDueTone.WARN) {
-      return Tokens.WARM_SAND;
+      return $r('app.color.task_soon');
     }
     if (tone === HomeworkDueTone.SAFE) {
-      return Tokens.MIST_TEAL;
+      return $r('app.color.task_accent');
     }
-    return Tokens.TEXT_TERTIARY;
+    return $r('app.color.task_muted');
   }
 
   @Builder
@@ -364,13 +388,13 @@ export struct HomeworkScreen {
     Row({ space: 6 }) {
       Text(filter)
         .fontSize(Tokens.F_CAPTION)
-        .fontColor(this.filter === filter ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+        .fontColor(this.filter === filter ? '#FFFFFF' : $r('app.color.task_muted'))
       Text('' + this.countOf(filter))
         .fontSize(Tokens.F_CAPTION)
-        .fontColor(this.filter === filter ? '#E8F2EF' : Tokens.TEXT_TERTIARY)
+        .fontColor(this.filter === filter ? '#E8F2EF' : $r('app.color.task_muted'))
     }
     .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .backgroundColor(this.filter === filter ? Tokens.MIST_TEAL : Tokens.CONTROL)
+    .backgroundColor(this.filter === filter ? Tokens.MIST_TEAL : $r('app.color.task_control'))
     .borderRadius(Tokens.RADIUS_PILL)
     .onClick(() => {
       this.filter = filter;
@@ -381,9 +405,9 @@ export struct HomeworkScreen {
   advanceChip(value: number) {
     Text('提前 ' + (value >= 60 ? (value / 60) + ' 小时' : value + ' 分钟'))
       .fontSize(Tokens.F_CAPTION)
-      .fontColor(this.advance === value ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+      .fontColor(this.advance === value ? '#FFFFFF' : $r('app.color.task_muted'))
       .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-      .backgroundColor(this.advance === value ? Tokens.SLATE_BLUE : Tokens.CONTROL)
+      .backgroundColor(this.advance === value ? Tokens.SLATE_BLUE : $r('app.color.task_control'))
       .borderRadius(8)
       .margin({ right: 6, bottom: 6 })
       .onClick(() => {
@@ -409,7 +433,7 @@ export struct HomeworkScreen {
           Text(item.title())
             .fontSize(Tokens.F_BODY)
             .fontWeight(FontWeight.Medium)
-            .fontColor(item.done ? Tokens.TEXT_TERTIARY : Tokens.TEXT_PRIMARY)
+            .fontColor(item.done ? $r('app.color.task_muted') : $r('app.color.task_text'))
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -425,7 +449,7 @@ export struct HomeworkScreen {
         if (item.bodyPreview().length > 0) {
           Text(item.bodyPreview())
             .fontSize(Tokens.F_CAPTION)
-            .fontColor(Tokens.TEXT_SECONDARY)
+            .fontColor($r('app.color.task_muted'))
             .width('100%')
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -436,7 +460,7 @@ export struct HomeworkScreen {
           if (item.due !== undefined) {
             Text('截止 ' + HomeworkDueCalculator.dueText(item.due.atMillis))
               .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_TERTIARY)
+              .fontColor($r('app.color.task_muted'))
           }
           if (item.attachments.length > 0) {
             Text('附件 ' + item.attachments.length)
@@ -446,7 +470,7 @@ export struct HomeworkScreen {
           if (this.hasReminder(item.row.id)) {
             Text('已设提醒')
               .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.MIST_TEAL)
+              .fontColor($r('app.color.task_accent'))
           }
         }
         .width('100%')
@@ -463,8 +487,8 @@ export struct HomeworkScreen {
       }
       .width(28)
       .height(28)
-      .backgroundColor(item.done ? Tokens.MIST_TEAL : Tokens.CONTROL)
-      .border({ width: 1, color: item.done ? Tokens.MIST_TEAL : Tokens.DIVIDER })
+      .backgroundColor(item.done ? Tokens.MIST_TEAL : $r('app.color.task_control'))
+      .border({ width: 1, color: item.done ? Tokens.MIST_TEAL : $r('app.color.task_line') })
       .borderRadius(14)
       .margin({ left: 12 })
         .onClick(() => {
@@ -473,7 +497,7 @@ export struct HomeworkScreen {
     }
     .width('100%')
     .padding(14)
-    .backgroundColor(Tokens.CARD)
+    .backgroundColor($r('app.color.task_card'))
     .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius(Tokens.RADIUS_CARD)
     .stateStyles({
@@ -498,7 +522,7 @@ export struct HomeworkScreen {
           .height(150)
           .borderRadius(10)
           .objectFit(ImageFit.Cover)
-          .backgroundColor(Tokens.CARD)
+          .backgroundColor($r('app.color.task_card'))
           .border({ width: 0.5, color: Tokens.CARD_EDGE })
           .onClick(() => {
             this.openPreview(HomeworkAttachments.dataOf((this.detail as HomeworkItem).row.attachments, meta.index));
@@ -507,12 +531,12 @@ export struct HomeworkScreen {
       Row() {
         Text(meta.name)
           .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_PRIMARY)
+          .fontColor($r('app.color.task_text'))
           .layoutWeight(1)
           .maxLines(2)
         Text(meta.sizeText())
           .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.TEXT_TERTIARY)
+          .fontColor($r('app.color.task_muted'))
           .margin({ left: 8 })
       }
       .width('100%')
@@ -552,7 +576,7 @@ export struct HomeworkScreen {
         Text('作业详情')
           .fontSize(Tokens.F_LABEL)
           .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.TEXT_PRIMARY)
+          .fontColor($r('app.color.task_text'))
         Blank()
         Text('分享')
           .fontSize(Tokens.F_CAPTION)
@@ -576,7 +600,7 @@ export struct HomeworkScreen {
             Text(this.detail.title())
               .fontSize(Tokens.F_TITLE)
               .fontWeight(FontWeight.Bold)
-              .fontColor(Tokens.TEXT_PRIMARY)
+              .fontColor($r('app.color.task_text'))
               .width('100%')
             Row({ space: 10 }) {
               if (this.detail.due !== undefined) {
@@ -587,7 +611,7 @@ export struct HomeworkScreen {
               if (this.detail.row.author.length > 0) {
                 Text(this.detail.row.author)
                   .fontSize(Tokens.F_CAPTION)
-                  .fontColor(Tokens.TEXT_TERTIARY)
+                  .fontColor($r('app.color.task_muted'))
               }
               Blank()
             }
@@ -596,7 +620,7 @@ export struct HomeworkScreen {
 
             Text(this.detail.row.content.length > 0 ? this.detail.row.content : '（无正文）')
               .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_SECONDARY)
+              .fontColor($r('app.color.task_muted'))
               .width('100%')
               .margin({ top: 10 })
 
@@ -604,7 +628,7 @@ export struct HomeworkScreen {
               Text('附件')
                 .fontSize(Tokens.F_LABEL)
                 .fontWeight(FontWeight.Medium)
-                .fontColor(Tokens.TEXT_PRIMARY)
+                .fontColor($r('app.color.task_text'))
                 .width('100%')
                 .margin({ top: 14 })
               Column() {
@@ -615,14 +639,18 @@ export struct HomeworkScreen {
               .width('100%')
               .padding({ left: 14, right: 14 })
               .margin({ top: 6 })
-              .backgroundColor(Tokens.CONTROL)
+              .backgroundColor($r('app.color.task_control'))
               .borderRadius(Tokens.RADIUS_CARD)
             }
+
+            Button(this.imported.includes(this.detail.row.id) ? '已加入个人任务' : '加入个人任务')
+              .enabled(!this.imported.includes(this.detail.row.id)).margin({ top: 12 })
+              .onClick(() => { this.importTask(this.detail as HomeworkItem); })
 
             Text('截止提醒')
               .fontSize(Tokens.F_LABEL)
               .fontWeight(FontWeight.Medium)
-              .fontColor(Tokens.TEXT_PRIMARY)
+              .fontColor($r('app.color.task_text'))
               .width('100%')
               .margin({ top: 14 })
             Row() {
@@ -636,6 +664,7 @@ export struct HomeworkScreen {
 
             Row({ space: 10 }) {
               Button(this.hasReminder(this.detail.row.id) ? '更新提醒' : '设置提醒')
+                .enabled(!this.detail.done && this.detail.due !== undefined && !this.detail.due.expired)
                 .layoutWeight(1)
                 .height(42)
                 .backgroundColor(Tokens.MIST_TEAL)
@@ -644,12 +673,12 @@ export struct HomeworkScreen {
                 .onClick(() => {
                   this.setReminder(this.detail as HomeworkItem);
                 })
-              if (this.hasReminder(this.detail.row.id)) {
+              if (this.desiredIds.includes(this.detail.row.id)) {
                 Button('取消提醒')
                   .layoutWeight(1)
                   .height(42)
-                  .backgroundColor(Tokens.CONTROL)
-                  .fontColor(Tokens.DANGER)
+                  .backgroundColor($r('app.color.task_control'))
+                  .fontColor($r('app.color.task_urgent'))
                   .borderRadius(Tokens.RADIUS_PILL)
                   .onClick(() => {
                     this.cancelReminder(this.detail as HomeworkItem);
@@ -659,10 +688,13 @@ export struct HomeworkScreen {
             .width('100%')
             .margin({ top: 8 })
 
+            if (this.calendarFor === this.detail.row.id) {
+              Button('添加到系统日历').margin({ top: 8 }).onClick(() => { this.addCalendar(this.detail as HomeworkItem); })
+            }
             if (this.notice.length > 0) {
               Text(this.notice)
                 .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.WARM_SAND)
+                .fontColor($r('app.color.task_soon'))
                 .width('100%')
                 .margin({ top: 8 })
             }
@@ -671,8 +703,8 @@ export struct HomeworkScreen {
               Button(this.detail.done ? '标记为未完成' : '标记为已完成')
                 .layoutWeight(2)
                 .height(44)
-                .backgroundColor(this.detail.done ? Tokens.CONTROL : Tokens.MIST_TEAL)
-                .fontColor(this.detail.done ? Tokens.TEXT_SECONDARY : '#FFFFFF')
+                .backgroundColor(this.detail.done ? $r('app.color.task_control') : Tokens.MIST_TEAL)
+                .fontColor(this.detail.done ? $r('app.color.task_muted') : '#FFFFFF')
                 .borderRadius(Tokens.RADIUS_PILL)
                 .onClick(() => {
                   this.toggle(this.detail as HomeworkItem);
@@ -680,9 +712,9 @@ export struct HomeworkScreen {
               Button('更多')
                 .layoutWeight(1)
                 .height(44)
-                .backgroundColor(Tokens.CONTROL)
+                .backgroundColor($r('app.color.task_control'))
                 .border({ width: 0.5, color: Tokens.CARD_EDGE })
-                .fontColor(Tokens.TEXT_TERTIARY)
+                .fontColor($r('app.color.task_muted'))
                 .borderRadius(Tokens.RADIUS_PILL)
                 .bindMenu([
                   {
@@ -713,7 +745,7 @@ export struct HomeworkScreen {
     .width('100%')
     .height('80%')
     .padding(16)
-    .backgroundColor(Tokens.SHEET)
+    .backgroundColor($r('app.color.task_card'))
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
     .border({ width: 0.5, color: Tokens.CARD_EDGE })
     .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
@@ -724,9 +756,9 @@ export struct HomeworkScreen {
 
   build() {
     Stack() {
-      PageHeader({
+      PageHeader({ taskColors: true,
       progress: this.headerFade,
-        title: '作业',
+        title: '班级作业',
         scroller: this.scroller,
         onBack: () => {
           this.onClose();
@@ -736,7 +768,7 @@ export struct HomeworkScreen {
           if (this.loading) {
           Column({ space: 10 }) {
             LoadingProgress().width(32).height(32).color(Tokens.MIST_TEAL)
-            Text('加载作业…').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_TERTIARY)
+            Text('加载作业…').fontSize(Tokens.F_CAPTION).fontColor($r('app.color.task_muted'))
           }
           .width('100%')
           .layoutWeight(1)
@@ -745,7 +777,7 @@ export struct HomeworkScreen {
           Column({ space: 12 }) {
             Text(this.errorMsg)
               .fontSize(Tokens.F_BODY)
-              .fontColor(Tokens.TEXT_SECONDARY)
+              .fontColor($r('app.color.task_muted'))
               .textAlign(TextAlign.Center)
             Button('重试')
               .backgroundColor(Tokens.MIST_TEAL)
@@ -773,7 +805,7 @@ export struct HomeworkScreen {
             Row() {
               Text('已隐藏 ' + this.hiddenCount + ' 条（仅自己不可见）')
                 .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
+                .fontColor($r('app.color.task_muted'))
                 .layoutWeight(1)
               Text('恢复')
                 .fontSize(Tokens.F_CAPTION)
@@ -788,7 +820,7 @@ export struct HomeworkScreen {
           if (this.errorMsg.length > 0) {
             Text(this.errorMsg)
               .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.DANGER)
+              .fontColor($r('app.color.task_urgent'))
               .width('100%')
               .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 8 })
           }
@@ -797,7 +829,7 @@ export struct HomeworkScreen {
             Column() {
               Text('暂无作业')
                 .fontSize(Tokens.F_LABEL)
-                .fontColor(Tokens.TEXT_TERTIARY)
+                .fontColor($r('app.color.task_muted'))
             }
             .width('100%')
             .layoutWeight(1)

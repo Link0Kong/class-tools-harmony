@@ -1,4 +1,4 @@
-﻿import { DrawConfig, DrawEntry, DrawError, DrawErrorCode, DrawRemoveLog, DrawResult, DrawSortMode } from './DrawModels';
+import { DrawConfig, DrawEntry, DrawError, DrawErrorCode, DrawRemoveLog, DrawResult, DrawSortMode } from './DrawModels';
 import { DrawRandom, shuffled, shuffledInts } from './DrawRandom';
 import { DrawValidation, DrawValidator } from './DrawValidator';
 
@@ -74,6 +74,7 @@ export class DrawEngine {
     const ordered: DrawEntry[] = DrawEngine.sortEntries(picked, config.sort, random);
     const result: DrawResult = new DrawResult();
     result.entries = ordered;
+    result.original = picked.map((entry: DrawEntry) => entry.number);
     result.pool = candidates.slice(0);
     result.config = config.copy();
     result.log = [];
@@ -149,7 +150,7 @@ export class DrawEngine {
     return entries;
   }
 
-  private static pick(config: DrawConfig, candidates: DrawEntry[], random: DrawRandom): DrawEntry[] {
+  static pick(config: DrawConfig, candidates: DrawEntry[], random: DrawRandom): DrawEntry[] {
     const out: DrawEntry[] = [];
     if (config.allowDuplicates) {
       for (let i = 0; i < config.count; i++) {

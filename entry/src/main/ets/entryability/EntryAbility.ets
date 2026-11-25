@@ -3,7 +3,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { AppGlobal } from '../app/AppGlobal';
 import { Services } from '../app/Services';
+import { LiveActivity } from '../data/notify/LiveActivity';
 import { NotifyCenter } from '../data/notify/NotifyCenter';
+import { ToolLaunch } from '../app/ToolLaunch';
+import { DeskForms } from '../forms/DeskForms';
+import { TaskRepository } from '../data/tasks/TaskRepository';
 
 const DOMAIN: number = 0x1001;
 const TAG: string = 'EntryAbility';
@@ -13,10 +17,18 @@ export default class EntryAbility extends UIAbility {
     // 数据层（preferences 等）依赖 UIAbilityContext，进程内只注入一次。
     AppGlobal.context = this.context;
     AppGlobal.ability = this;
+    AppGlobal.requestTool(ToolLaunch.parse(want.parameters, want.uri));
     hilog.info(DOMAIN, TAG, '%{public}s', 'onCreate');
   }
 
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    AppGlobal.requestTool(ToolLaunch.parse(want.parameters, want.uri));
+  }
+
   onDestroy(): void {
+    LiveActivity.releasePage();
+    AppGlobal.onLaunch = undefined;
+    AppGlobal.onToolClosed = undefined;
     hilog.info(DOMAIN, TAG, '%{public}s', 'onDestroy');
   }
 
@@ -57,12 +69,17 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    NotifyCenter.setForeground(true);
+    if (Services.currentSid.length > 0) {
+      TaskRepository.load(true).then(() => DeskForms.refresh());
+    }
     hilog.info(DOMAIN, TAG, '%{public}s', 'onForeground');
     // 回到前台补一次扫描（内部 3 分钟节流），把错过的截止/新通知补成系统提醒
     NotifyCenter.syncAll();
   }
 
   onBackground(): void {
+    NotifyCenter.setForeground(false);
     hilog.info(DOMAIN, TAG, '%{public}s', 'onBackground');
     // 页面隐藏：立即冲刷待推送的 userdata（失败由 pending 兜底）
     Services.userdata.flush();

@@ -5,6 +5,9 @@ import { PowerStats } from '../../data/power/PowerModels';
 
 /** 工作台卡片里的一条轮换项（作业 / 通知）。 */
 export class HomeCardItem {
+  id: string = '';
+  kind: string = '';
+  dueAt: number = Number.MAX_SAFE_INTEGER;
   title: string = '';
   sub: string = '';
 }
@@ -71,9 +74,12 @@ export class HomeDigest {
     for (let i = 0; i < rows.length && i < max; i++) {
       const row: HomeworkRow = rows[i];
       const item: HomeCardItem = new HomeCardItem();
-      item.title = HomeDigest.shortTitle(row.subject.length > 0 ? row.subject : row.content);
+      item.id = row.id;
+      item.kind = 'hw';
+      item.title = HomeDigest.shortTitle(row.content.trim().replace(/\s+/g, ' ') || row.subject || '班级作业');
       const due: number | undefined = HomeworkDueCalculator.parseDue(row.date, row.time);
-      item.sub = due !== undefined ? '截止 ' + HomeworkDueCalculator.dueText(due) : '';
+      item.dueAt = due ?? Number.MAX_SAFE_INTEGER;
+      item.sub = due !== undefined ? '截止 ' + HomeworkDueCalculator.dueText(due) : row.subject;
       out.push(item);
     }
     return out;
@@ -115,6 +121,8 @@ export class HomeDigest {
     for (let i = 0; i < open.length && i < max; i++) {
       const card: NoticeCard = open[i];
       const item: HomeCardItem = new HomeCardItem();
+      item.id = card.key;
+      item.kind = 'nt';
       item.title = HomeDigest.shortTitle(card.title.length > 0 ? card.title : '班级通知');
       item.sub = card.occurrence ? card.label : (card.dueText.length > 0 ? card.dueText : card.timeText);
       out.push(item);

@@ -1,4 +1,5 @@
-﻿import { describe, it, expect } from '@ohos/hypium';
+﻿import { ToolLaunch } from '../main/ets/app/ToolLaunch';
+import { describe, it, expect } from '@ohos/hypium';
 import { HomeTools, HomeToolsToggleResult } from '../main/ets/data/home/HomeTools';
 import { NickLogic } from '../main/ets/features/home/NickLogic';
 import { HomeDigest, HomeCardItem } from '../main/ets/features/home/HomeDigest';
@@ -60,6 +61,19 @@ export default function homeToolsTest() {
       expect(HomeDigest.rotate(0, 0)).assertEqual(0);
     });
 
+    it('tool_launch_limits_references_to_the_named_tool_and_official_links', 0, () => {
+      const params: Record<string, Object> = { 'toolId': 'nt', 'noticeId': 'group@occ:12', 'taskId': 'other' };
+      const wrapper: Record<string, Object> = { 'params': JSON.stringify(params) };
+      expect(ToolLaunch.parse(wrapper)?.noticeId).assertEqual('group@occ:12');
+      const invalid: Record<string, Object> = { 'params': 'broken' };
+      expect(ToolLaunch.parse(invalid) === undefined).assertTrue();
+      const route = ToolLaunch.parse(params);
+      expect(route?.noticeId).assertEqual('group@occ:12');
+      expect(route?.taskId).assertEqual('');
+      expect(ToolLaunch.parse(undefined, 'https://example.com/#task-share=1') === undefined).assertTrue();
+      expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/#task-share=1')?.toolId).assertEqual('hw');
+    });
+
     it('homework_open_and_items', 0, () => {
       const a: HomeworkRow = new HomeworkRow();
       a.id = 'a';
@@ -68,7 +82,8 @@ export default function homeToolsTest() {
       a.time = '18:00';
       const b: HomeworkRow = new HomeworkRow();
       b.id = 'b';
-      b.subject = '早交的作业';
+      b.subject = '高等数学';
+      b.content = '完成第三章习题';
       b.date = '2026-11-16';
       b.time = '18:00';
       const c: HomeworkRow = new HomeworkRow();
@@ -79,7 +94,8 @@ export default function homeToolsTest() {
       expect(open[0].id).assertEqual('b');
       const items: HomeCardItem[] = HomeDigest.hwItems(open);
       expect(items.length).assertEqual(2);
-      expect(items[0].title).assertEqual('早交的作业');
+      expect(items[0].title).assertEqual('完成第三章习题');
+      expect(items[0].id).assertEqual('b');
       expect(items[0].sub.indexOf('截止') === 0).assertTrue();
     });
   });

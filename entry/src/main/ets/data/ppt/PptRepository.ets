@@ -1,4 +1,4 @@
-﻿import { Api } from '../net/Api';
+import { Api } from '../net/Api';
 import { ApiResult } from '../net/ApiResult';
 import { Blob, JsonBlob } from '../sync/JsonBlob';
 import {
@@ -53,6 +53,12 @@ export class PptRepository {
     const agentResult: ApiResult = await this.api.get(AGENT_PATH, true);
     const agentOnline: boolean = agentResult.ok && PptRepository.agentOnline(agentResult.value);
     return new PptListResult(true, '', decks, agentOnline);
+  }
+
+  async conversionStatus(deckId: string): Promise<PptDeck | undefined> {
+    const path = 'ppt_decks?select=id,title,status,progress,error&deleted=eq.false&id=eq.' + encodeURIComponent(deckId);
+    const result = await this.api.get(path, true);
+    return result.ok ? PptRepository.parseList(result.value)[0] : undefined;
   }
 
   async detail(deckId: string): Promise<PptDetailResult> {
@@ -262,7 +268,9 @@ function parseDeck(row: Blob): PptDeck | undefined {
   deck.ownerName = JsonBlob.asString(JsonBlob.get(row, 'owner_name'), '');
   deck.ownerSid = JsonBlob.asString(JsonBlob.get(row, 'owner_sid'), '');
   deck.status = JsonBlob.asString(JsonBlob.get(row, 'status'), 'uploading');
-  deck.progress = Math.round(JsonBlob.asNumber(JsonBlob.get(row, 'progress'), 0));
+  const progress = JsonBlob.asNumber(JsonBlob.get(row, 'progress'), -1);
+  deck.progressKnown = progress >= 0 && progress <= 100;
+  deck.progress = deck.progressKnown ? Math.round(progress) : 0;
   deck.error = JsonBlob.asString(JsonBlob.get(row, 'error'), '');
   deck.slideCount = Math.round(JsonBlob.asNumber(JsonBlob.get(row, 'slide_count'), 0));
   deck.stepCount = Math.round(JsonBlob.asNumber(JsonBlob.get(row, 'step_count'), 0));

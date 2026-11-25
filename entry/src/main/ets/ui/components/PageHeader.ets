@@ -12,6 +12,7 @@ import { Tokens } from '../theme/Tokens';
  */
 @Component
 export struct PageHeader {
+  @Prop taskColors: boolean = false;
   @Prop title: string = '';
   @Prop actionText: string = '';
   @Prop actionText2: string = '';
@@ -74,7 +75,7 @@ export struct PageHeader {
         Text('‹')
           .fontSize(30)
           .fontWeight(FontWeight.Lighter)
-          .fontColor(Tokens.TEXT_PRIMARY)
+          .fontColor(this.taskColors ? $r('app.color.task_text') : Tokens.TEXT_PRIMARY)
           .width(38)
           .height(38)
           .textAlign(TextAlign.Center)
@@ -85,7 +86,7 @@ export struct PageHeader {
         Text(this.title)
           .fontSize(Tokens.F_HEADING)
           .fontWeight(FontWeight.Bold)
-          .fontColor(Tokens.TEXT_PRIMARY)
+          .fontColor(this.taskColors ? $r('app.color.task_text') : Tokens.TEXT_PRIMARY)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
@@ -95,7 +96,7 @@ export struct PageHeader {
           Text('⋯')
             .fontSize(22)
             .fontWeight(FontWeight.Bold)
-            .fontColor(Tokens.TEXT_PRIMARY)
+            .fontColor(this.taskColors ? $r('app.color.task_text') : Tokens.TEXT_PRIMARY)
             .width(38)
             .height(38)
             .textAlign(TextAlign.Center)
@@ -116,7 +117,7 @@ export struct PageHeader {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor(Tokens.GLASS)
+          .backgroundColor(this.taskColors ? $r('app.color.task_card') : Tokens.GLASS)
           .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
           .border({ width: { bottom: 0.5 }, color: Tokens.GLASS_STROKE })
           .opacity(this.progress)
@@ -134,6 +135,6 @@ export struct PageHeader {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
+    .backgroundColor(this.taskColors ? $r('app.color.task_page') : Color.Transparent)
   }
 }

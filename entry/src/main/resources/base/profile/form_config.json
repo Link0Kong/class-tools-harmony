@@ -1,0 +1,132 @@
+{
+  "forms": [
+    {
+      "name": "home",
+      "displayName": "$string:desk_home",
+      "description": "$string:desk_home_desc",
+      "src": "./ets/widget/pages/DeskCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": true,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": [
+        "2*2",
+        "2*4",
+        "4*4"
+      ],
+      "previewImages": [
+        "$media:desk_home_2x2",
+        "$media:desk_home_2x4",
+        "$media:desk_home_4x4"
+      ],
+      "supportDeviceTypes": [
+        "phone",
+        "tablet",
+        "2in1"
+      ]
+    },
+    {
+      "name": "tt",
+      "displayName": "$string:desk_tt",
+      "description": "$string:desk_tt_desc",
+      "src": "./ets/widget/pages/DeskCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": [
+        "2*2",
+        "2*4",
+        "4*4"
+      ],
+      "previewImages": [
+        "$media:desk_tt_2x2",
+        "$media:desk_tt_2x4",
+        "$media:desk_tt_4x4"
+      ],
+      "supportDeviceTypes": [
+        "phone",
+        "tablet",
+        "2in1"
+      ]
+    },
+    {
+      "name": "hw",
+      "displayName": "$string:desk_hw",
+      "description": "$string:desk_hw_desc",
+      "src": "./ets/widget/pages/DeskCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": [
+        "2*2",
+        "2*4",
+        "4*4"
+      ],
+      "previewImages": [
+        "$media:desk_hw_2x2",
+        "$media:desk_hw_2x4",
+        "$media:desk_hw_4x4"
+      ],
+      "supportDeviceTypes": [
+        "phone",
+        "tablet",
+        "2in1"
+      ]
+    },
+    {
+      "name": "nt",
+      "displayName": "$string:desk_nt",
+      "description": "$string:desk_nt_desc",
+      "src": "./ets/widget/pages/DeskCard.ets",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDynamic": true,
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": [
+        "2*2",
+        "2*4",
+        "4*4"
+      ],
+      "previewImages": [
+        "$media:desk_nt_2x2",
+        "$media:desk_nt_2x4",
+        "$media:desk_nt_4x4"
+      ],
+      "supportDeviceTypes": [
+        "phone",
+        "tablet",
+        "2in1"
+      ]
+    }
+  ]
+}

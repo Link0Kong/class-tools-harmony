@@ -1,0 +1,40 @@
+{
+  "string": [
+    {
+      "name": "desktop_forms_desc",
+      "value": "枫丹工具箱桌面服务卡片"
+    },
+    {
+      "name": "desk_home",
+      "value": "工作台"
+    },
+    {
+      "name": "desk_home_desc",
+      "value": "待办、通知和下一门课"
+    },
+    {
+      "name": "desk_tt",
+      "value": "班级课表"
+    },
+    {
+      "name": "desk_tt_desc",
+      "value": "正在上的课、下一节和上课地点"
+    },
+    {
+      "name": "desk_hw",
+      "value": "待办任务"
+    },
+    {
+      "name": "desk_hw_desc",
+      "value": "个人待办和未导入的班级作业"
+    },
+    {
+      "name": "desk_nt",
+      "value": "班级通知"
+    },
+    {
+      "name": "desk_nt_desc",
+      "value": "最新班级通知和待处理数量"
+    }
+  ]
+}

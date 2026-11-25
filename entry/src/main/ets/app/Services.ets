@@ -1,4 +1,5 @@
-﻿import { AuthRepository } from '../data/auth/AuthRepository';
+﻿import { AppGlobal } from './AppGlobal';
+import { AuthRepository } from '../data/auth/AuthRepository';
 import { HttpClient } from '../data/net/HttpClient';
 import { SessionStore } from '../data/session/SessionStore';
 import { UserdataRepository } from '../data/sync/UserdataRepository';
@@ -43,10 +44,17 @@ export class Services {
     new FileUserdataLocalStore(() => Services.currentSid),
     () => Services.currentSid);
 
-  static readonly marks: MarksRepository = new MarksRepository(
-    Services.api,
-    () => Services.currentSid,
-    new FileMarksLocalStore(() => Services.currentSid));
+  private static marksSid: string = '';
+  private static marksRepo: MarksRepository | undefined = undefined;
+  static get marks(): MarksRepository {
+    const sid = Services.currentSid;
+    if (!Services.marksRepo || Services.marksSid !== sid) {
+      Services.marksSid = sid;
+      Services.marksRepo = new MarksRepository(Services.api, () => Services.currentSid === sid ? sid : '',
+        new FileMarksLocalStore(() => sid));
+    }
+    return Services.marksRepo;
+  }
 
   static readonly members: ClassMembersRepository = new ClassMembersRepository(
     Services.api,
@@ -61,7 +69,18 @@ export class Services {
     Services.api,
     () => Services.currentSid);
 
-  static readonly homework: HomeworkRepository = new HomeworkRepository(Services.api);
+  private static homeworkSid: string = '';
+  private static homeworkRepo: HomeworkRepository | undefined = undefined;
+  static get homework(): HomeworkRepository {
+    const sid = Services.currentSid;
+    if (!Services.homeworkRepo || Services.homeworkSid !== sid) {
+      Services.homeworkSid = sid;
+      const dir = AppGlobal.context?.filesDir;
+      const path = dir && sid ? dir + '/homework_' + encodeURIComponent(sid) + '.json' : '';
+      Services.homeworkRepo = new HomeworkRepository(Services.api, () => Date.now(), undefined, path);
+    }
+    return Services.homeworkRepo;
+  }
 
   static readonly notices: NoticesRepository = new NoticesRepository(
     Services.api,

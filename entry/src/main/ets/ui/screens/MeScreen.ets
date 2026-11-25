@@ -1,4 +1,7 @@
-﻿import { CloudConfig } from '../../config/CloudConfig';
+import { LiveActivity } from '../../data/notify/LiveActivity';
+import notificationManager from '@ohos.notificationManager';
+import { formProvider } from '@kit.FormKit';
+import { CloudConfig } from '../../config/CloudConfig';
 import { Tokens } from '../theme/Tokens';
 import { Breakpoints } from '../theme/Breakpoints';
 import { common } from '@kit.AbilityKit';
@@ -20,6 +23,8 @@ import { LegalDoc, LegalInfo, LegalSection, LegalTexts } from '../../data/legal/
 @Component
 export struct MeScreen {
   @Prop userName: string = '';
+  @Prop @Watch('openNotificationSettings') notifyRequest: boolean = false;
+  onNotifyHandled: () => void = () => {};
   @Prop maskedSid: string = '';
   @Prop roleLabel: string = '';
   @Prop isAdmin: boolean = false;
@@ -42,6 +47,7 @@ export struct MeScreen {
   @State private notifyOpen: boolean = false;
   @State private notifySettings: NotifySettings = new NotifySettings();
   @State private testBusy: boolean = false;
+  @State private liveEnabled: boolean = false;
   @State private testNotice: string = '';
   private settingsTouched: boolean = false;
   @State private hwItems: BindItem[] = [];
@@ -96,17 +102,25 @@ export struct MeScreen {
     });
   }
 
+  private openNotificationSettings(): void {
+    if (this.notifyRequest) {
+      this.notifyOpen = true;
+      this.onNotifyHandled();
+    }
+  }
+
   aboutToAppear(): void {
+    this.openNotificationSettings();
     const sections: Blob = Services.userdata.currentSections();
     const value = sections['nick'];
     this.nick = value === undefined ? '' : String(value);
-    this.pushOn = AppPush.want();
     this.refreshPushPermission();
     this.loadNotifySettings();
     this.loadBindings();
   }
 
   private async loadNotifySettings(): Promise<void> {
+    this.liveEnabled = await LiveActivity.available();
     const loaded: NotifySettings = await NotifyCenter.currentSettings();
     if (this.settingsTouched) {
       return;
@@ -182,7 +196,7 @@ export struct MeScreen {
   }
 
   private async togglePush(next: boolean): Promise<void> {
-    if (this.pushBusy) {
+    if (this.pushBusy || this.notifySettings.master === next) {
       return;
     }
     this.settingsTouched = true;
@@ -219,6 +233,9 @@ export struct MeScreen {
   }
 
   private notifyValue(key: string): boolean {
+    if (key === 'liveActivities') {
+      return this.notifySettings.liveActivities;
+    }
     if (key === 'homeworkNew') {
       return this.notifySettings.homeworkNew;
     }
@@ -247,9 +264,12 @@ export struct MeScreen {
   }
 
   private async setNotifyField(key: string, value: boolean): Promise<void> {
+    if (this.notifyValue(key) === value) return;
     this.settingsTouched = true;
     const settings: NotifySettings = this.notifySettings.copy();
-    if (key === 'homeworkNew') {
+    if (key === 'liveActivities') {
+      settings.liveActivities = value;
+    } else if (key === 'homeworkNew') {
       settings.homeworkNew = value;
     } else if (key === 'homeworkDue') {
       settings.homeworkDue = value;
@@ -279,6 +299,7 @@ export struct MeScreen {
     settings.leadMinutes = NotifySettings.normalizeLead(minutes);
     this.notifySettings = settings;
     await NotifyCenter.saveSettings(settings);
+    await NotifyCenter.syncAll(true);
   }
 
   private async setClassLead(minutes: number): Promise<void> {
@@ -290,6 +311,7 @@ export struct MeScreen {
     settings.classLeadMinutes = NotifySettings.normalizeClassLead(minutes);
     this.notifySettings = settings;
     await NotifyCenter.saveSettings(settings);
+    await NotifyCenter.syncAll(true);
   }
 
   private async sendTestNotice(): Promise<void> {
@@ -636,8 +658,29 @@ export struct MeScreen {
           .borderRadius(16)
           .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
 
+          this.notifySection('实时活动')
+          Column() {
+            this.notifySwitch('liveActivities', '实时活动', this.liveEnabled ?
+              '课前倒计时与演示上传可显示实况窗，限时投票显示在通知中心' :
+              '系统实况窗未开启或设备不支持，提醒显示在通知中心')
+          }
+          .width('100%').backgroundColor('#F7F8F8').borderRadius(16)
+          .margin({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
+
           this.notifySection('确认提醒效果')
           Column() {
+            Button('系统通知设置').type(ButtonType.Normal).backgroundColor(Color.Transparent)
+              .fontColor(Tokens.SLATE_BLUE).onClick(async () => {
+                try {
+                  const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+                  await notificationManager.openNotificationSettingsWithResult(ctx);
+                  await this.refreshPushPermission();
+                  this.liveEnabled = await LiveActivity.available();
+                  await NotifyCenter.syncAll(true);
+                } catch (e) {
+                  this.testNotice = '请在系统设置的通知管理中打开枫丹工具箱';
+                }
+              })
             Button(this.testBusy ? '正在发送…' : '发送测试通知')
               .type(ButtonType.Capsule)
               .width('100%')
@@ -649,6 +692,13 @@ export struct MeScreen {
               .enabled(!this.testBusy)
               .onClick(() => {
                 this.sendTestNotice();
+              })
+            Button('测试 20 秒定时提醒').type(ButtonType.Normal).backgroundColor(Color.Transparent)
+              .fontColor(Tokens.SLATE_BLUE).enabled(!this.testBusy)
+              .onClick(async () => {
+                this.testBusy = true;
+                this.testNotice = await NotifyCenter.testScheduled();
+                this.testBusy = false;
               })
             if (this.testNotice.length > 0) {
               Text(this.testNotice)
@@ -973,6 +1023,18 @@ export struct MeScreen {
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.notifySettingsRow()
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow('桌面服务卡片', '预览与添加', () => {
+            try {
+              formProvider.openFormManager({
+                bundleName: 'com.furina.classtools', abilityName: 'DeskFormAbility',
+                parameters: { 'ohos.extra.param.key.form_dimension': 2, 'ohos.extra.param.key.form_name': 'home',
+                  'ohos.extra.param.key.module_name': 'entry' }
+              });
+            } catch (_) {
+              this.getUIContext().getPromptAction().showToast({ message: '请在桌面长按应用图标，选择服务卡片' });
+            }
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           Row() {
             Column() {
               Row({ space: 6 }) {
@@ -1055,6 +1117,10 @@ export struct MeScreen {
             })
             Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           }
+          this.linkRow('扫一扫', '网页扫码登录 · 抽签核验 · 任务分享', () => {
+            this.onOpenTool('scan');
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.linkRow('诊断', '服务健康 · 设备自检', () => {
             this.onOpenTool('diag');
           })

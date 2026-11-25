@@ -5,6 +5,8 @@ import { AppGlobal } from '../../app/AppGlobal';
 import { Session } from '../../data/session/Session';
 import { PageHeader } from '../components/PageHeader';
 import { Tokens } from '../theme/Tokens';
+import { TaskScreen } from './TaskScreen';
+import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { HomeworkScreen } from './HomeworkScreen';
 import { NoticeScreen } from './NoticeScreen';
 
@@ -13,7 +15,19 @@ const SITE = 'https://tool.furina.fun';
 @Component
 export struct ClassWebTool {
   @Prop toolId: string = 'hw';
+  @Prop homeworkId: string = '';
+  @Prop taskId: string = '';
+  @Prop taskShareUrl: string = '';
+  @Prop noticeId: string = '';
   onClose: () => void = () => {};
+  onReminderSettings: () => void = () => {};
+  @State private advanced: boolean = false;
+  @State private currentHomework: string = '';
+  @State private currentTask: string = '';
+  @State private incomingShare: string = '';
+  private watchTimer: number = -1;
+  private observedTaskStamp: string = '';
+  private polling: boolean = false;
   @State private nativeView: boolean = false;
   @State private scripts: ScriptItem[] = [];
   @State private error: string = '';
@@ -24,11 +38,50 @@ export struct ClassWebTool {
 
   aboutToAppear(): void {
     this.active = true;
+    this.currentHomework = this.homeworkId;
+    this.currentTask = this.taskId;
+    this.incomingShare = this.taskShareUrl;
+    this.nativeView = !!this.homeworkId || !!this.noticeId;
     this.prepareSession();
   }
 
   aboutToDisappear(): void {
     this.active = false;
+    clearInterval(this.watchTimer);
+  }
+
+  // The full editor syncs via the website. Keep native reminders and Forms current after a confirmed web write.
+  private async pollEditor(): Promise<void> {
+    if (this.polling || !this.active || !this.advanced) return;
+    this.polling = true;
+    try {
+      const state: string = await this.controller.runJavaScript(
+        '(()=>{if(location.origin!==' + JSON.stringify(SITE) + ' || !window.TASKSYNC)return "";' +
+        'const s=window.TASKSYNC.state();if(!s.sid || s.status!=="已同步")return "";' +
+        'const base=JSON.parse(localStorage.getItem("zq_task_cloud_"+s.sid)||"null");return String(base?.ts||0);})()');
+      if (this.active && this.advanced && state && state !== '""' && state !== this.observedTaskStamp) {
+        this.observedTaskStamp = state;
+        await TaskRepository.load(true);
+      }
+    } catch (_) {} finally { this.polling = false; }
+  }
+
+  private openEditor(): void {
+    this.nativeView = false;
+    this.advanced = true;
+    this.error = '';
+    this.progress = 0;
+    this.observedTaskStamp = '';
+    clearInterval(this.watchTimer);
+    this.watchTimer = setInterval(() => { this.pollEditor(); }, 2500);
+  }
+
+  private editorBack(): void {
+    if (this.toolId === 'nt') { this.onClose(); return; }
+    clearInterval(this.watchTimer);
+    this.advanced = false;
+    this.incomingShare = '';
+    this.currentTask = '';
   }
 
   private pageUrl(): string {
@@ -117,16 +170,22 @@ export struct ClassWebTool {
   build() {
     if (this.nativeView) {
       if (this.toolId === 'nt') {
-        NoticeScreen({ onClose: () => { this.nativeView = false; } })
+        NoticeScreen({ noticeId: this.noticeId, onClose: () => { if (this.noticeId) this.onClose(); else this.nativeView = false; } })
       } else {
-        HomeworkScreen({ onClose: () => { this.nativeView = false; } })
+        HomeworkScreen({ homeworkId: this.currentHomework, onClose: () => {
+          this.nativeView = false; this.currentHomework = ''; this.incomingShare = ''; this.currentTask = '';
+        } })
       }
+    } else if (this.toolId === 'hw' && !this.advanced) {
+      TaskScreen({ taskId: this.currentTask, taskShareUrl: this.incomingShare, onClose: this.onClose,
+        onAdvanced: () => { this.openEditor(); }, onReminderSettings: this.onReminderSettings,
+        onHomework: (id: string) => { this.currentHomework = id; this.nativeView = true; } })
     } else {
       PageHeader({
         title: this.toolId === 'nt' ? '通知' : '任务',
-        actionText: this.toolId === 'nt' ? '本机通知' : '本机班级作业',
-        onAction: () => { this.nativeView = true; this.error = ''; },
-        onBack: this.onClose
+        actionText: this.toolId === 'nt' ? '本机通知' : '任务概览',
+        onAction: () => { if (this.toolId === 'hw') this.editorBack(); else this.nativeView = true; this.error = ''; },
+        onBack: () => { this.editorBack(); }
       }) {
         Stack() {
           if (this.scripts.length > 0) {

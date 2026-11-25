@@ -35,6 +35,24 @@
         ]
       }
     ],
+    "extensionAbilities": [
+      {
+        "name": "NotifyWorkAbility",
+        "type": "workScheduler",
+        "srcEntry": "./ets/work/NotifyWorkAbility.ets",
+        "exported": false
+      },
+      {
+        "name": "DeskFormAbility",
+        "type": "form",
+        "srcEntry": "./ets/forms/DeskFormAbility.ets",
+        "label": "$string:EntryAbility_label",
+        "description": "$string:desktop_forms_desc",
+        "metadata": [
+          { "name": "ohos.extension.form", "resource": "$profile:form_config" }
+        ]
+      }
+    ],
     "metadata": [
       {
         "name": "client_id",

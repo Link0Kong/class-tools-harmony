@@ -1,3 +1,4 @@
+import { systemDateTime } from '@kit.BasicServicesKit';
 ﻿import { Api } from '../net/Api';
 import { ApiResult } from '../net/ApiResult';
 import { Blob, JsonBlob } from '../sync/JsonBlob';
@@ -51,7 +52,9 @@ export class VoteRepository {
     if (!JsonBlob.asBoolean(JsonBlob.get(body, 'ok'), false)) {
       return new PollDetailResult(false, errorOf(body), VoteRpc.parseDetail(result.value));
     }
-    return new PollDetailResult(true, '', VoteRpc.parseDetail(result.value));
+    const detail = VoteRpc.parseDetail(result.value);
+    detail.receivedElapsed = systemDateTime.getUptime(systemDateTime.TimeType.STARTUP);
+    return new PollDetailResult(true, '', detail);
   }
 
   async submit(pollId: string, choices: string[]): Promise<VoteResult> {

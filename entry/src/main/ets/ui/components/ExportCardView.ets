@@ -167,6 +167,19 @@ export struct ExportCardView {
             .margin({ top: 8 })
           }
 
+          if (this.spec.verifyUrl) {
+            this.blockTitle('抽签存证核验', 18)
+            Row({ space: 14 }) {
+              QRCode(this.spec.verifyUrl).width(112).height(112).color('#14241E').backgroundColor('#FFFFFF')
+                .margin(12)
+              Column({ space: 6 }) {
+                Text('扫码核验本次抽签记录').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#172C25')
+                Text('登录班级身份后可核对原始结果和剔除重抽记录').fontSize(13).fontColor('#465A50')
+                Text(this.spec.verifyUrl).fontSize(12).fontColor('#35664D')
+              }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+            }.width('100%').backgroundColor('#FFFFFF')
+          }
+
           if (this.spec.groups.length > 0) {
             this.blockTitle(this.spec.groupLabel, 18)
 

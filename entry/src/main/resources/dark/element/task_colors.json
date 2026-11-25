@@ -1,0 +1,40 @@
+{
+  "color": [
+    {
+      "name": "task_page",
+      "value": "#151D1C"
+    },
+    {
+      "name": "task_card",
+      "value": "#212B29"
+    },
+    {
+      "name": "task_text",
+      "value": "#EFF5F1"
+    },
+    {
+      "name": "task_muted",
+      "value": "#C1CDC7"
+    },
+    {
+      "name": "task_control",
+      "value": "#30453C"
+    },
+    {
+      "name": "task_line",
+      "value": "#40564D"
+    },
+    {
+      "name": "task_urgent",
+      "value": "#FFA78F"
+    },
+    {
+      "name": "task_accent",
+      "value": "#A0D7BE"
+    },
+    {
+      "name": "task_soon",
+      "value": "#E8C793"
+    }
+  ]
+}

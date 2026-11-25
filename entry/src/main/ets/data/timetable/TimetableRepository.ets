@@ -102,7 +102,7 @@ export class TimetableRepository {
   }
 
   local(): TtSnapshot | undefined {
-    return this.cache;
+    return this.personalSnapshot() ?? this.cache;
   }
 
   /** `site_assets` 响应（数组，取第一行 body）。 */

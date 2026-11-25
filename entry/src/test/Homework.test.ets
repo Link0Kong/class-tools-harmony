@@ -159,6 +159,19 @@ export default function homeworkTest() {
       expect(api.getPaths[0].indexOf('order=ts.asc') > 0).assertTrue();
     });
 
+    it('malformed_success_keeps_assignments_until_a_valid_empty_result', 0, async () => {
+      const api = new FakeApi();
+      const repo = new HomeworkRepository(api);
+      api.homeworkBody = '[' + rowJson('hw_1', '数学', '2026-11-20', '18:00') + ']';
+      await repo.load(true);
+      api.homeworkBody = '[bad gateway]';
+      const fallback = await repo.load(true);
+      expect(fallback.fromCache).assertTrue();
+      expect(fallback.rows[0].id).assertEqual('hw_1');
+      api.homeworkBody = '[]';
+      expect((await repo.load(true)).rows.length).assertEqual(0);
+    });
+
     it('failure_falls_back_to_cache', 0, async () => {
       const api: FakeApi = new FakeApi();
       api.homeworkBody = '[' + rowJson('hw_1', '数学', '2026-11-20', '18:00') + ']';

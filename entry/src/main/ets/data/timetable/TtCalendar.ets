@@ -1,4 +1,4 @@
-import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
+﻿import { Course, SessionInfo, SessionState, TodayState, TtPeriods, TtPlan, TtSnapshot } from './TimetableModels';
 
 const DAY_MS: number = 24 * 60 * 60 * 1000;
 
@@ -150,80 +150,84 @@ export class TtCalendar {
     return out;
   }
 
-  /** 指定日期的全部课程占用（按开始时间排序）。 */
-  static sessionsOn(courses: Course[], termStart: Date | undefined, date: Date, nowMillis: number, focusOnBell: boolean = false): SessionInfo[] {
-    const week: number | undefined = TtCalendar.weekOf(termStart, date);
-    if (week === undefined) {
-      return [];
-    }
-    const dayIdx: number = TtCalendar.dayIndex(date);
-    const out: SessionInfo[] = [];
-    for (let i = 0; i < courses.length; i++) {
-      const course: Course = courses[i];
-      if (course.day !== dayIdx) {
-        continue;
-      }
-      if (!TtCalendar.isActive(course, week)) {
-        continue;
-      }
-      if (course.start < 1 || course.start > TtPeriods.PERIODS.length
-        || course.end < 1 || course.end > TtPeriods.PERIODS.length) {
-        continue;
-      }
-      let startText: string = TtPeriods.startText(course.start);
-      let endText: string = TtPeriods.endText(course.end);
-      if (focusOnBell && nowMillis >= TtCalendar.at(date, startText) && nowMillis < TtCalendar.at(date, endText)) {
-        for (let p: number = course.start; p <= course.end; p++) {
-          if (nowMillis < TtCalendar.at(date, TtPeriods.endText(p))) {
-            startText = TtPeriods.startText(p);
-            endText = TtPeriods.endText(p);
+  private static session(course: Course, date: Date, start: number, end: number, now: number): SessionInfo {
+    const session = new SessionInfo();
+    session.name = course.name.trim() || '课程';
+    session.fullRoom = course.room.trim();
+    session.room = TtCalendar.roomShort(session.fullRoom);
+    session.start = course.start;
+    session.end = course.end;
+    session.startText = TtPeriods.startText(start);
+    session.endText = TtPeriods.endText(end);
+    session.startAt = TtCalendar.at(date, session.startText);
+    session.endAt = TtCalendar.at(date, session.endText);
+    session.state = now >= session.endAt ? SessionState.DONE : now >= session.startAt ? SessionState.ONGOING : SessionState.NEXT;
+    session.span = TtCalendar.spanText(start, end);
+    return session;
+  }
+
+  /** 课程表保留整次课；动态摘要可按当前节的下课铃或下一节的上课铃定位。 */
+  static sessionsOn(courses: Course[], termStart: Date | undefined, date: Date, nowMillis: number,
+    focusOnBell: boolean = false, upcomingBell: boolean = false): SessionInfo[] {
+    if (TtCalendar.weekOf(termStart, date) === undefined) return [];
+    const day = TtCalendar.coursesOn(courses, termStart, date);
+    const sessions: SessionInfo[] = [];
+    for (const course of day) {
+      let session = TtCalendar.session(course, date, course.start, course.end, nowMillis);
+      if (focusOnBell && session.state === SessionState.ONGOING) {
+        for (let p = course.start; p <= course.end; p++) {
+          const boundary = upcomingBell ? TtPeriods.startText(p) : TtPeriods.endText(p);
+          if (nowMillis < TtCalendar.at(date, boundary)) {
+            session = TtCalendar.session(course, date, p, p, nowMillis);
             break;
           }
         }
       }
-      const startAt: number = TtCalendar.at(date, startText);
-      const endAt: number = TtCalendar.at(date, endText);
-      if (startAt <= 0 || endAt <= 0) {
-        continue;
-      }
-      const session: SessionInfo = new SessionInfo();
-      session.name = course.name.trim().length > 0 ? course.name : '课程';
-      session.room = TtCalendar.roomShort(course.room);
-      session.start = course.start;
-      session.end = course.end;
-      session.startText = startText;
-      session.endText = endText;
-      session.span = TtCalendar.spanText(course.start, course.end);
-      session.startAt = startAt;
-      session.endAt = endAt;
-      if (nowMillis >= endAt) {
-        session.state = SessionState.DONE;
-      } else if (nowMillis >= startAt) {
-        session.state = SessionState.ONGOING;
-      } else {
-        session.state = SessionState.NEXT;
-      }
-      out.push(session);
+      sessions.push(session);
     }
-    out.sort((a: SessionInfo, b: SessionInfo) => a.startAt - b.startAt);
-    return out;
+    return sessions.sort((a: SessionInfo, b: SessionInfo) => a.startAt - b.startAt);
   }
 
-  /** 今天起 lookAheadDays 天内最近一节未结束的课。 */
+  private static describeDay(session: SessionInfo, date: Date, offset: number): void {
+    session.dayOffset = offset;
+    session.dayText = offset === 0 ? '今天' : offset === 1 ? '明天' : TtPeriods.DAY_LABELS[TtCalendar.dayIndex(date)];
+    session.dateText = (date.getMonth() + 1) + '-' + date.getDate();
+  }
+
+  /** 今天起 days 个自然日内的所有未来上课铃。合并显示的一门连堂课在这里按实际上课节次展开。 */
+  static upcomingBells(snapshot: TtSnapshot, now: number, days: number): SessionInfo[] {
+    const term = TtCalendar.parseTermStart(snapshot.termStart());
+    if (!term || !Number.isFinite(days) || days <= 0) return [];
+    const today = new Date(now);
+    const bells: SessionInfo[] = [];
+    for (let offset = 0; offset < Math.floor(days); offset++) {
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+      if (TtCalendar.weekOf(term, date) === undefined) continue;
+      for (const course of TtCalendar.coursesOn(snapshot.c, term, date)) {
+        for (let period = course.start; period <= course.end; period++) {
+          const bell = TtCalendar.session(course, date, period, period, now);
+          if (bell.startAt <= now) continue;
+          TtCalendar.describeDay(bell, date, offset);
+          bells.push(bell);
+        }
+      }
+    }
+    return bells.sort((a: SessionInfo, b: SessionInfo) => a.startAt - b.startAt);
+  }
+
+  /** 下一次严格晚于当前时刻的上课铃，包含连堂课内尚未开始的节次。 */
   static nextSession(courses: Course[], termStart: Date | undefined, nowMillis: number,
     lookAheadDays: number): SessionInfo | undefined {
     const today: Date = new Date(nowMillis);
     for (let offset = 0; offset <= lookAheadDays; offset++) {
       const date: Date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset, 0, 0, 0);
-      const sessions: SessionInfo[] = TtCalendar.sessionsOn(courses, termStart, date, nowMillis, true);
+      const sessions: SessionInfo[] = TtCalendar.sessionsOn(courses, termStart, date, nowMillis, true, true);
       for (let i = 0; i < sessions.length; i++) {
         const session: SessionInfo = sessions[i];
         if (session.startAt <= nowMillis) {
           continue;
         }
-        session.dayOffset = offset;
-        session.dayText = offset === 0 ? '今天' : (offset === 1 ? '明天' : TtPeriods.DAY_LABELS[TtCalendar.dayIndex(date)]);
-        session.dateText = (date.getMonth() + 1) + '-' + date.getDate();
+        TtCalendar.describeDay(session, date, offset);
         return session;
       }
     }
