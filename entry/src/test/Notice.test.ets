@@ -234,6 +234,22 @@ export default function noticeTest() {
       expect(api.postPaths.length).assertEqual(1);
     });
 
+    it('account_switch_does_not_join_previous_notice_load', 0, async () => {
+      const api: FakeApi = new FakeApi();
+      api.noticesMetaBody = '[' + rowJson('visible', '通知', 100, false, false, META_LAZY_BODY) + ']';
+      let sid: string = '3260799999';
+      const repo: NoticesRepository = new NoticesRepository(api, () => 1000, 1000, () => sid);
+      const previous: Promise<NoticesResult> = repo.load(false);
+      sid = '9999000001';
+      const current: Promise<NoticesResult> = repo.load(false);
+      const stale: NoticesResult = await previous;
+      const fresh: NoticesResult = await current;
+      expect(stale.ok).assertFalse();
+      expect(stale.entries.length).assertEqual(0);
+      expect(fresh.ok).assertTrue();
+      expect(fresh.entries.length).assertEqual(1);
+    });
+
     it('failure_falls_back_to_cache', 0, async () => {
       const api: FakeApi = new FakeApi();
       api.noticesMetaBody = '[' + rowJson('n1', '标题', 100, false, false, META_LAZY_BODY) + ']';

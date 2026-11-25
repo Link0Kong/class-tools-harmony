@@ -31,7 +31,7 @@ export class NoticeCacheStore {
   }
 
   private static key(sid: string): string {
-    return 'c_' + (sid.length > 0 ? sid : 'anon');
+    return 'visible_v2_' + (sid.length > 0 ? sid : 'anon');
   }
 
   static async load(sid: string): Promise<NoticeCacheBlob | undefined> {
@@ -40,6 +40,12 @@ export class NoticeCacheStore {
       return undefined;
     }
     try {
+      // Older metadata snapshots predate server-side audience filtering.
+      const previous: string = 'c_' + (sid.length > 0 ? sid : 'anon');
+      if (await p.has(previous)) {
+        await p.delete(previous);
+        await p.flush();
+      }
       const raw: string = await p.get(NoticeCacheStore.key(sid), '') as string;
       if (raw.length === 0) {
         return undefined;
@@ -74,6 +80,7 @@ export class NoticeCacheStore {
     }
     try {
       await p.delete(NoticeCacheStore.key(sid));
+      await p.delete('c_' + (sid.length > 0 ? sid : 'anon'));
       await p.flush();
     } catch (e) {
       // 忽略

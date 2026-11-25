@@ -151,6 +151,7 @@ export class NoticesRepository {
   private loaded: boolean = false;
   private hydratedKey: string = '';
   /** 并发合并：工作台与通知扫描同时冷启动时只发一轮签名/整表请求。 */
+  private inflightSid: string = '';
   private inflight: Promise<NoticesResult> | undefined = undefined;
 
   constructor(api: Api, clock: () => number = () => Date.now(), ttlMs: number = DEFAULT_TTL_MS,
@@ -184,7 +185,7 @@ export class NoticesRepository {
     this.cachedAt = 0;
     this.loaded = false;
     const blob: NoticeCacheBlob | undefined = await NoticeCacheStore.load(sid);
-    if (blob === undefined) {
+    if (sid !== this.sidProvider() || blob === undefined) {
       return;
     }
     if (this.clock() - blob.savedAt > MAX_DISK_AGE_MS) {
@@ -245,10 +246,12 @@ export class NoticesRepository {
   }
 
   async load(force: boolean): Promise<NoticesResult> {
-    if (this.inflight !== undefined) {
+    const sid: string = this.sidProvider();
+    if (this.inflight !== undefined && this.inflightSid === sid) {
       return await this.inflight;
     }
-    const pending: Promise<NoticesResult> = this.loadOnce(force);
+    const pending: Promise<NoticesResult> = this.loadOnce(force, sid);
+    this.inflightSid = sid;
     this.inflight = pending;
     try {
       return await pending;
@@ -259,14 +262,16 @@ export class NoticesRepository {
     }
   }
 
-  private async loadOnce(force: boolean): Promise<NoticesResult> {
+  private async loadOnce(force: boolean, sid: string): Promise<NoticesResult> {
     await this.hydrate();
+    if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     const now: number = this.clock();
     if (!force && this.loaded && now - this.cachedAt < this.ttlMs) {
       return new NoticesResult(true, this.cache, true, '');
     }
     // 列表优先轻量 RPC（约 0.3MB）；只有 404/405（旧云端没有该函数）才回退旧整表。
     const metaResult: ApiResult = await this.api.post(META_PATH, '{}', '', true, META_TIMEOUT_MS);
+    if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     if (metaResult.ok) {
       if (!NoticeBodyParser.isRowsPayload(metaResult.value)) {
         return this.cacheOrFailure('通知列表格式异常');
@@ -276,15 +281,16 @@ export class NoticesRepository {
     }
     const status: number = metaResult.error !== undefined ? metaResult.error.status : 0;
     if (status === 404 || status === 405) {
-      return await this.loadLegacy(now, force);
+      return await this.loadLegacy(now, force, sid);
     }
     return this.cacheOrFailure(metaResult.error !== undefined
       ? metaResult.error.displayMessage() : '通知加载失败');
   }
 
   /** 旧云端回退：轻量签名 → 整表（仅 meta 接口不存在时走这里）。 */
-  private async loadLegacy(now: number, force: boolean): Promise<NoticesResult> {
+  private async loadLegacy(now: number, force: boolean, sid: string): Promise<NoticesResult> {
     const sigResult: ApiResult = await this.api.get(SIG_PATH, true, SIG_TIMEOUT_MS);
+    if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     if (!sigResult.ok) {
       return this.cacheOrFailure(sigResult.error !== undefined
         ? sigResult.error.displayMessage() : '通知签名加载失败');
@@ -296,6 +302,7 @@ export class NoticesRepository {
       return new NoticesResult(true, this.cache, true, '');
     }
     const fullResult: ApiResult = await this.api.get(FULL_PATH, true, FULL_TIMEOUT_MS, false);
+    if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     if (!fullResult.ok) {
       return this.cacheOrFailure(fullResult.error !== undefined
         ? fullResult.error.displayMessage() : '通知加载失败');
@@ -311,11 +318,13 @@ export class NoticesRepository {
     this.signature = signature;
     this.cachedAt = now;
     this.loaded = true;
+    const sid: string = this.sidProvider();
     const blob: NoticeCacheBlob = new NoticeCacheBlob();
     blob.signature = signature;
     blob.savedAt = now;
     blob.rowsJson = rawJson;
-    await NoticeCacheStore.save(this.sidProvider(), blob);
+    await NoticeCacheStore.save(sid, blob);
+    if (sid !== this.sidProvider()) return new NoticesResult(false, [], false, '账号已切换');
     return new NoticesResult(true, entries, false, '');
   }
 
@@ -332,8 +341,10 @@ export class NoticesRepository {
     if (id.length === 0) {
       return NoticeDetailResult.failure('通知不存在');
     }
+    const sid: string = this.sidProvider();
     const result: ApiResult = await this.api.get(DETAIL_PATH + encodeURIComponent(id), true,
       DETAIL_TIMEOUT_MS, false);
+    if (sid !== this.sidProvider()) return NoticeDetailResult.failure('账号已切换');
     if (!result.ok) {
       return NoticeDetailResult.failure(result.error !== undefined
         ? result.error.displayMessage() : '通知详情加载失败');

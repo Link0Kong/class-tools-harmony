@@ -1063,7 +1063,7 @@ export struct WatchShell {
         this.askLogout();
       })
       Blank()
-      Text('枫丹工具箱 · 1.0.9')
+      Text('枫丹工具箱 · 1.0.10')
         .fontSize(this.px(8))
         .fontColor('#4E5357')
     }

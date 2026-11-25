@@ -146,7 +146,7 @@ export class AppPush {
       body['provider'] = 'harmony';
       body['token'] = token;
       body['device'] = deviceInfo.productModel;
-      body['app_version'] = '1.0.9';
+      body['app_version'] = '1.0.10';
       await Services.api.post('push_tokens', JSON.stringify(body), 'return=minimal');
     } catch (e) {
       Log.w('AppPush', '写 push_tokens 失败');
