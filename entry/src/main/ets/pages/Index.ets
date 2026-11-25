@@ -312,6 +312,7 @@ struct Index {
 
   onBackPress(): boolean {
     if (this.openToolId.length > 0) {
+      if (AppGlobal.toolBack?.()) return true;
       this.closeTool();
       return true;
     }

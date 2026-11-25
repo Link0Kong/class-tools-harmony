@@ -24,6 +24,7 @@ export struct ClassWebTool {
   @State private advanced: boolean = false;
   @State private currentHomework: string = '';
   @State private currentTask: string = '';
+  @State private sourceNotice: string = '';
   @State private incomingShare: string = '';
   private watchTimer: number = -1;
   private observedTaskStamp: string = '';
@@ -46,6 +47,7 @@ export struct ClassWebTool {
   }
 
   aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.handleEditorBack) AppGlobal.toolBack = undefined;
     this.active = false;
     clearInterval(this.watchTimer);
   }
@@ -66,7 +68,14 @@ export struct ClassWebTool {
     } catch (_) {} finally { this.polling = false; }
   }
 
+  private handleEditorBack = (): boolean => {
+    if (!this.advanced) return false;
+    this.editorBack();
+    return true;
+  };
+
   private openEditor(): void {
+    AppGlobal.toolBack = this.handleEditorBack;
     this.nativeView = false;
     this.advanced = true;
     this.error = '';
@@ -168,18 +177,21 @@ export struct ClassWebTool {
   }
 
   build() {
-    if (this.nativeView) {
+    if (this.sourceNotice) {
+      NoticeScreen({ noticeId: this.sourceNotice, onClose: () => { this.sourceNotice = ''; } })
+    } else if (this.nativeView) {
       if (this.toolId === 'nt') {
         NoticeScreen({ noticeId: this.noticeId, onClose: () => { if (this.noticeId) this.onClose(); else this.nativeView = false; } })
       } else {
         HomeworkScreen({ homeworkId: this.currentHomework, onClose: () => {
-          this.nativeView = false; this.currentHomework = ''; this.incomingShare = ''; this.currentTask = '';
+          this.nativeView = false; this.currentHomework = ''; this.incomingShare = '';
         } })
       }
     } else if (this.toolId === 'hw' && !this.advanced) {
       TaskScreen({ taskId: this.currentTask, taskShareUrl: this.incomingShare, onClose: this.onClose,
         onAdvanced: () => { this.openEditor(); }, onReminderSettings: this.onReminderSettings,
-        onHomework: (id: string) => { this.currentHomework = id; this.nativeView = true; } })
+        onNotice: (id: string, fromTask: string) => { this.currentTask = fromTask; this.sourceNotice = id; },
+        onHomework: (id: string, fromTask?: string) => { this.currentTask = fromTask || ''; this.currentHomework = id; this.nativeView = true; } })
     } else {
       PageHeader({
         title: this.toolId === 'nt' ? '通知' : '任务',

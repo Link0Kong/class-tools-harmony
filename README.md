@@ -2,7 +2,7 @@
 
 面向班级日常事务的 HarmonyOS 原生客户端：用 ArkTS + ArkUI 编写，与网页、微信小程序、Android、Windows 四端共用同一套云端数据契约。
 
-![version](https://img.shields.io/badge/version-1.0.11-4E9082)
+![version](https://img.shields.io/badge/version-1.0.12-4E9082)
 ![license](https://img.shields.io/badge/license-MIT-2EA44F)
 ![platform](https://img.shields.io/badge/platform-HarmonyOS-000000)
 ![stack](https://img.shields.io/badge/ArkTS-ArkUI-6E8CA8)
@@ -22,7 +22,7 @@
 | 抽签 `draw` | 支持范围、人数、排除与去重。云端存证后可分享核验链接或附二维码的结果图片，最近结果在本机留存 |
 | 分组 `group` | 全班 / 最近抽签 / 手动名单，按组数或每组人数随机分组，复制与导出分享 |
 | 课表 `tt` | 日/周视图、周次与单双周、下一节，个人课表优先 |
-| 任务 `hw` | 可左右滑动切换五个智能分类和自定义分组，支持本机待办、作业截止与逾期、完成和提醒、作业及通知转任务、单任务链接分享和导入。完整编辑器支持分组、步骤和附件 |
+| 任务 `hw` | 可左右滑动切换五个智能分类和自定义分组，支持本机待办、作业截止与逾期、完成和提醒、作业及通知转任务、单任务链接分享和导入。个人任务和班级作业支持全屏详情，可查看截止、提醒、步骤与附件。完整编辑器支持分组、步骤和附件 |
 | 通知 `nt` | 与网页共用五项统计、原始消息、附件预览、已处理标记和管理入口 |
 | 体测 `fit` | 国标评分、BMI、历史记录与导出 |
 | 名单 `roster` | 班委/团员/全班分类、搜索与职位标签（不展示学号） |

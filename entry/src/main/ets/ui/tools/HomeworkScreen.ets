@@ -1,3 +1,5 @@
+import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
+import { LengthMetrics } from '@kit.ArkUI';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
@@ -8,7 +10,6 @@ import {
   HomeworkDue,
   HomeworkDueCalculator,
   HomeworkDueTone,
-  HomeworkAttachmentKind,
   HomeworkFilter,
   HomeworkItem,
   HomeworkRow
@@ -71,7 +72,20 @@ export struct HomeworkScreen {
   @State private hiddenCount: number = 0;
   private shareSpec: ExportCardSpec = new ExportCardSpec();
 
+  private backLayer = (): boolean => {
+    if (this.previewOpen) this.closePreview();
+    else if (this.detailOpen) this.closeDetail();
+    else this.onClose();
+    return true;
+  };
+
+  aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.backLayer) AppGlobal.toolBack = undefined;
+    clearTimeout(this.refreshTimer);
+  }
+
   aboutToAppear(): void {
+    AppGlobal.toolBack = this.backLayer;
     this.target = this.homeworkId;
     this.reload(false);
     this.loadImported();
@@ -146,7 +160,7 @@ export struct HomeworkScreen {
     const hidden = HidePrefs.read(Services.userdata.currentSections());
     for (let i = 0; i < result.rows.length; i++) {
       const due: HomeworkDue | undefined = HomeworkDueCalculator.evaluate(result.rows[i], this.now);
-      if (due !== undefined && due.prunable) {
+      if (due?.prunable && result.rows[i].id !== this.homeworkId) {
         continue;
       }
       if (hidden.hwHide.has(result.rows[i].id)) {
@@ -233,6 +247,8 @@ export struct HomeworkScreen {
   }
 
   private openDetail(item: HomeworkItem): void {
+    this.notice = '';
+    this.calendarFor = '';
     this.detail = item;
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.detailOpen = true;
@@ -240,6 +256,7 @@ export struct HomeworkScreen {
   }
 
   private closeDetail(): void {
+    if (this.homeworkId) { this.onClose(); return; }
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.detailOpen = false;
     });
@@ -349,25 +366,6 @@ export struct HomeworkScreen {
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.previewOpen = false;
     });
-  }
-
-  private openUrl(url: string): void {
-    const context = AppGlobal.context;
-    if (context === undefined) {
-      this.notice = '无法打开链接';
-      return;
-    }
-    try {
-      context.startAbility({
-        action: 'ohos.want.action.viewData',
-        entities: ['entity.system.browsable'],
-        uri: url
-      }).catch(() => {
-        this.notice = '无法打开该链接';
-      });
-    } catch (e) {
-      this.notice = '无法打开该链接';
-    }
   }
 
   private dueColor(tone: HomeworkDueTone): ResourceColor {
@@ -513,39 +511,6 @@ export struct HomeworkScreen {
 
 
 
-  @Builder
-  detailAttachment(meta: HomeworkAttachmentMeta) {
-    Column() {
-      if (this.detail !== undefined && meta.isImage()) {
-        Image(HomeworkAttachments.dataOf(this.detail.row.attachments, meta.index))
-          .width('100%')
-          .height(150)
-          .borderRadius(10)
-          .objectFit(ImageFit.Cover)
-          .backgroundColor($r('app.color.task_card'))
-          .border({ width: 0.5, color: Tokens.CARD_EDGE })
-          .onClick(() => {
-            this.openPreview(HomeworkAttachments.dataOf((this.detail as HomeworkItem).row.attachments, meta.index));
-          })
-      }
-      Row() {
-        Text(meta.name)
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor($r('app.color.task_text'))
-          .layoutWeight(1)
-          .maxLines(2)
-        Text(meta.sizeText())
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor($r('app.color.task_muted'))
-          .margin({ left: 8 })
-      }
-      .width('100%')
-      .padding({ top: 4, bottom: 4 })
-    }
-    .width('100%')
-    .padding({ top: 4, bottom: 4 })
-  }
-
   /** 作业详情 → 分享卡图片 → 系统图片分享。 */
   private shareDetail(): void {
     if (this.detail === undefined) {
@@ -570,186 +535,69 @@ export struct HomeworkScreen {
   }
 
   @Builder
-  detailPanel() {
-    Column() {
-      Row() {
-        Text('作业详情')
-          .fontSize(Tokens.F_LABEL)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.task_text'))
-        Blank()
-        Text('分享')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.SLATE_BLUE)
-          .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-          .onClick(() => {
-            this.shareDetail();
-          })
-        Text('关闭')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(Tokens.SLATE_BLUE)
-          .onClick(() => {
-            this.closeDetail();
-          })
-      }
-      .width('100%')
-
-      if (this.detail !== undefined) {
+  detailPanel(item: HomeworkItem) {
+    PageHeader({ taskColors: true, title: '作业详情', onBack: () => { this.closeDetail(); },
+      actionText: '分享作业', onAction: () => { this.shareDetail(); },
+      actionText2: '隐藏作业', onAction2: () => { this.hideCurrent(); } }) {
+      Column() {
         Scroll() {
-          Column() {
-            Text(this.detail.title())
-              .fontSize(Tokens.F_TITLE)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.task_text'))
-              .width('100%')
-            Row({ space: 10 }) {
-              if (this.detail.due !== undefined) {
-                Text(this.detail.due.label + ' · 截止 ' + HomeworkDueCalculator.dueText(this.detail.due.atMillis))
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(this.dueColor(this.detail.due.tone))
-              }
-              if (this.detail.row.author.length > 0) {
-                Text(this.detail.row.author)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor($r('app.color.task_muted'))
-              }
-              Blank()
+          Column({ space: 12 }) {
+            Column({ space: 8 }) {
+              Text(item.done ? '已完成' : item.due?.expired ? '已逾期' : '待完成').fontSize(14).fontWeight(FontWeight.Medium)
+                .fontColor(item.done || !item.due ? $r('app.color.task_accent') : this.dueColor(item.due.tone))
+              Text(item.title() || '班级作业').fontSize(26).lineHeight(35).fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.task_text')).copyOption(CopyOptions.InApp)
+            }.width('100%').alignItems(HorizontalAlign.Start).padding({ top: 8, bottom: 6 })
+            DetailSection({ title: '作业安排' }) {
+              DetailField({ label: '截止时间', value: item.row.date ? item.row.date + ' ' + (item.row.time || '00:00') :
+                item.row.due || '未设置' })
+              if (!item.done && item.due) { DetailField({ label: '时间进度', value: item.due.label }) }
+              if (item.row.author) { DetailField({ label: '发布人', value: item.row.author }) }
             }
-            .width('100%')
-            .margin({ top: 6 })
-
-            Text(this.detail.row.content.length > 0 ? this.detail.row.content : '（无正文）')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor($r('app.color.task_muted'))
-              .width('100%')
-              .margin({ top: 10 })
-
-            if (this.detail.attachments.length > 0) {
-              Text('附件')
-                .fontSize(Tokens.F_LABEL)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.task_text'))
-                .width('100%')
-                .margin({ top: 14 })
-              Column() {
-                ForEach(this.detail.attachments, (meta: HomeworkAttachmentMeta) => {
-                  this.detailAttachment(meta)
-                }, (meta: HomeworkAttachmentMeta) => 'att_' + meta.index + '_' + meta.name)
-              }
-              .width('100%')
-              .padding({ left: 14, right: 14 })
-              .margin({ top: 6 })
-              .backgroundColor($r('app.color.task_control'))
-              .borderRadius(Tokens.RADIUS_CARD)
-            }
-
-            Button(this.imported.includes(this.detail.row.id) ? '已加入个人任务' : '加入个人任务')
-              .enabled(!this.imported.includes(this.detail.row.id)).margin({ top: 12 })
-              .onClick(() => { this.importTask(this.detail as HomeworkItem); })
-
-            Text('截止提醒')
-              .fontSize(Tokens.F_LABEL)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.task_text'))
-              .width('100%')
-              .margin({ top: 14 })
-            Row() {
-              ForEach(ReminderPlanner.ADVANCE_OPTIONS, (value: number) => {
-                this.advanceChip(value)
-              }, (value: number) => 'adv_' + value)
-              Blank()
-            }
-            .width('100%')
-            .margin({ top: 6 })
-
-            Row({ space: 10 }) {
-              Button(this.hasReminder(this.detail.row.id) ? '更新提醒' : '设置提醒')
-                .enabled(!this.detail.done && this.detail.due !== undefined && !this.detail.due.expired)
-                .layoutWeight(1)
-                .height(42)
-                .backgroundColor(Tokens.MIST_TEAL)
-                .fontColor('#FFFFFF')
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.setReminder(this.detail as HomeworkItem);
-                })
-              if (this.desiredIds.includes(this.detail.row.id)) {
-                Button('取消提醒')
-                  .layoutWeight(1)
-                  .height(42)
-                  .backgroundColor($r('app.color.task_control'))
-                  .fontColor($r('app.color.task_urgent'))
-                  .borderRadius(Tokens.RADIUS_PILL)
-                  .onClick(() => {
-                    this.cancelReminder(this.detail as HomeworkItem);
-                  })
+            if (item.row.content.trim() && item.row.content.trim() !== item.title()) {
+              DetailSection({ title: '作业要求' }) {
+                Text(item.row.content.trim()).fontSize(17).lineHeight(27).fontColor($r('app.color.task_text'))
+                  .copyOption(CopyOptions.InApp)
               }
             }
-            .width('100%')
-            .margin({ top: 8 })
-
-            if (this.calendarFor === this.detail.row.id) {
-              Button('添加到系统日历').margin({ top: 8 }).onClick(() => { this.addCalendar(this.detail as HomeworkItem); })
+            if (item.attachments.length) {
+              DetailSection({ title: '附件 · ' + item.attachments.length }) {
+                ForEach(item.attachments, (meta: HomeworkAttachmentMeta) => {
+                  TaskAttachmentRow({ meta: meta, data: () => HomeworkAttachments.dataOf(item.row.attachments, meta.index),
+                    onImage: (src: string) => { this.openPreview(src); } })
+                }, (meta: HomeworkAttachmentMeta) => meta.index + meta.name)
+              }
             }
-            if (this.notice.length > 0) {
-              Text(this.notice)
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor($r('app.color.task_soon'))
-                .width('100%')
-                .margin({ top: 8 })
-            }
-
-            Row({ space: 10 }) {
-              Button(this.detail.done ? '标记为未完成' : '标记为已完成')
-                .layoutWeight(2)
-                .height(44)
-                .backgroundColor(this.detail.done ? $r('app.color.task_control') : Tokens.MIST_TEAL)
-                .fontColor(this.detail.done ? $r('app.color.task_muted') : '#FFFFFF')
-                .borderRadius(Tokens.RADIUS_PILL)
-                .onClick(() => {
-                  this.toggle(this.detail as HomeworkItem);
-                })
-              Button('更多')
-                .layoutWeight(1)
-                .height(44)
-                .backgroundColor($r('app.color.task_control'))
-                .border({ width: 0.5, color: Tokens.CARD_EDGE })
-                .fontColor($r('app.color.task_muted'))
-                .borderRadius(Tokens.RADIUS_PILL)
-                .bindMenu([
-                  {
-                    value: '隐藏（仅自己不可见）',
-                    action: () => {
-                      this.hideCurrent();
-                    }
+            if (!item.done && item.due && !item.due.expired) {
+              DetailSection({ title: '截止提醒' }) {
+                if (this.hasReminder(item.row.id)) { Text('已设置系统提醒').fontColor($r('app.color.task_accent')) }
+                Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(6), cross: LengthMetrics.vp(6) } }) {
+                  ForEach(ReminderPlanner.ADVANCE_OPTIONS, (value: number) => { this.advanceChip(value) }, (v: number) => 'adv_' + v)
+                }
+                Row({ space: 8 }) {
+                  Button(this.hasReminder(item.row.id) ? '更新提醒' : '设置提醒').height(40).fontColor($r('app.color.task_text'))
+                    .backgroundColor($r('app.color.task_control')).onClick(() => { this.setReminder(item); })
+                  if (this.desiredIds.includes(item.row.id)) {
+                    Button('取消提醒').height(40).fontColor($r('app.color.task_urgent')).backgroundColor($r('app.color.task_control'))
+                      .onClick(() => { this.cancelReminder(item); })
                   }
-                ], { systemMaterial: Immersive.dialogMaterial() })
+                }
+                Button('添加到系统日历').height(40).fontColor($r('app.color.task_text')).backgroundColor($r('app.color.task_control'))
+                  .onClick(() => { this.addCalendar(item); })
+              }
             }
-            .width('100%')
-            .margin({ top: 10, bottom: 12 })
-          }
-          .width('100%')
-          .padding({ bottom: 8 })
-        }
-        .layoutWeight(1)
-        .align(Alignment.Top)
-        .scrollBar(BarState.Off)
-        .onDidScroll((offset: number) => {
-          const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
-          if (Math.abs(next - this.headerFade) > 0.03) {
-            this.headerFade = next;
-          }
-        })
-      }
+            if (this.notice.length > 0) { Text(this.notice).fontSize(14).fontColor($r('app.color.task_soon')) }
+          }.width('100%').padding(16).alignItems(HorizontalAlign.Start)
+        }.layoutWeight(1).width('100%').align(Alignment.Top)
+        Row({ space: 8 }) {
+          Button(this.imported.includes(item.row.id) ? '已加入任务' : '加入个人任务').layoutWeight(1).height(44)
+            .enabled(!this.imported.includes(item.row.id)).backgroundColor($r('app.color.task_control')).fontColor($r('app.color.task_text'))
+            .onClick(() => { this.importTask(item); })
+          Button(item.done ? '撤销完成' : '标记完成').layoutWeight(1).height(44).fontColor(Color.White).backgroundColor('#326F60')
+            .onClick(() => { this.toggle(item); })
+        }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 12 }).backgroundColor($r('app.color.task_card'))
+      }.width('100%').height('100%')
     }
-    .width('100%')
-    .height('80%')
-    .padding(16)
-    .backgroundColor($r('app.color.task_card'))
-    .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-    .border({ width: 0.5, color: Tokens.CARD_EDGE })
-    .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
-    .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
   }
 
   @State private headerFade: number = 0;
@@ -867,16 +715,8 @@ export struct HomeworkScreen {
         .padding({ top: 0 })
       }
 
-      if (this.detailOpen) {
-        Column() {
-          this.detailPanel()
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Tokens.SCRIM)
-        .justifyContent(FlexAlign.End)
-        .transition(Motion.scrim())
-        .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
+      if (this.detailOpen && this.detail) {
+        this.detailPanel(this.detail)
       }
 
       if (this.previewOpen) {

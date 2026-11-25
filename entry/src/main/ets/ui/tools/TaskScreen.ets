@@ -1,3 +1,7 @@
+import { LengthMetrics } from '@kit.ArkUI';
+import { AppGlobal } from '../../app/AppGlobal';
+import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
+import { HomeworkAttachmentMeta } from '../../data/homework/HomeworkModels';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { HidePrefs } from '../../data/home/HidePrefs';
@@ -18,7 +22,8 @@ export struct TaskScreen {
   @Prop taskId: string = '';
   @Prop taskShareUrl: string = '';
   onClose: () => void = () => {};
-  onHomework: (id: string) => void = () => {};
+  onHomework: (id: string, fromTask?: string) => void = () => {};
+  onNotice: (id: string, fromTask: string) => void = () => {};
   onAdvanced: () => void = () => {};
   onReminderSettings: () => void = () => {};
   @State private personal: PersonalTask[] = [];
@@ -45,6 +50,18 @@ export struct TaskScreen {
   @State private hwStatus: string = '加载中';
   @State private reminderIds: string[] = [];
   @State private calendarFor: string = '';
+  @State private imagePreview: string = '';
+  private backLayer = (): boolean => {
+    if (this.imagePreview) this.imagePreview = '';
+    else if (this.editing) this.editing = undefined;
+    else if (this.shared) this.shared = undefined;
+    else if (this.selected) this.selected = undefined;
+    else if (this.linkInput) this.linkInput = false;
+    else if (this.searching) { this.searching = false; this.query = ''; }
+    else return false;
+    return true;
+  };
+
   private rows: HomeworkRow[] = [];
   private excluded: Set<string> = new Set<string>();
   private active: boolean = false;
@@ -53,6 +70,7 @@ export struct TaskScreen {
   private owner: string = '';
 
   aboutToAppear(): void {
+    AppGlobal.toolBack = this.backLayer;
     this.active = true;
     this.owner = Services.currentSid;
     this.initialId = this.taskId;
@@ -65,6 +83,7 @@ export struct TaskScreen {
   }
 
   aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.backLayer) AppGlobal.toolBack = undefined;
     this.active = false;
     clearInterval(this.tick);
   }
@@ -321,40 +340,87 @@ export struct TaskScreen {
     }.width('100%').padding(12).backgroundColor($r('app.color.task_card')).borderRadius(12)
   }
 
+  private async shareTask(task: PersonalTask): Promise<void> {
+    const result = await NativeShare.shareLink(TaskShare.link(task), task.title);
+    if (!result.ok) this.message(result.message);
+  }
+
   @Builder
   detail(task: PersonalTask) {
-    PageHeader({ taskColors: true, title: '任务详情', onBack: () => { this.selected = undefined; } }) {
-      Scroll() {
-        Column({ space: 14 }) {
-          Text(task.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
-          if (task.group || task.due) { Text([task.group, task.dueLabel()].filter((s: string) => !!s).join(' · ')).fontColor($r('app.color.task_muted')) }
-          if (task.notes) { Text(task.notes).fontSize(16).fontColor($r('app.color.task_text')) }
-          ForEach(task.steps, (step: string, index: number) => {
-            Text((task.stepsDone[index] ? '☑  ' : '☐  ') + step).fontColor($r('app.color.task_text')).padding(5)
-              .onClick(async () => { await TaskRepository.toggleStep(task.id, index); await this.afterEdit(); })
-          }, (step: string, index: number) => index + step + task.stepsDone[index])
-          if (task.remindAt > 0) { Text('提醒时间 ' + new Date(task.remindAt).toLocaleString()).fontColor($r('app.color.task_muted')) }
-          if (!task.done) {
-            Row({ space: 8 }) {
-              this.action('30 分钟后提醒', () => { this.remind(task, Date.now() + 1800000); })
-              if (task.remindAt > 0) { this.action('取消提醒', () => { this.remind(task, 0); }) }
+    PageHeader({ taskColors: true, title: '任务详情', onBack: () => { this.selected = undefined; },
+      actionText: '分享任务链接', onAction: () => { this.shareTask(task); },
+      actionText2: '完整任务管理', onAction2: this.onAdvanced }) {
+      Column() {
+        Scroll() {
+          Column({ space: 12 }) {
+            Column({ space: 8 }) {
+              Text([task.statusLabel(Date.now()), task.starred ? '重要' : ''].filter((s: string) => !!s).join(' · '))
+                .fontSize(14).fontWeight(FontWeight.Medium).fontColor(task.statusLabel(Date.now()) === '已逾期' ?
+                  $r('app.color.task_urgent') : $r('app.color.task_accent'))
+              Text(task.title).fontSize(26).lineHeight(35).fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.task_text')).copyOption(CopyOptions.InApp)
+            }.width('100%').alignItems(HorizontalAlign.Start).padding({ top: 8, bottom: 6 })
+            DetailSection({ title: '任务安排' }) {
+              DetailField({ label: '截止时间', value: task.deadlineText() })
+              DetailField({ label: '提醒时间', value: Math.max(task.remindAt, task.snoozeUntil) > 0 ?
+                new Date(Math.max(task.remindAt, task.snoozeUntil)).toLocaleString() : '未设置' })
+              if (task.repeatLabel) { DetailField({ label: '重复', value: task.repeatLabel }) }
+              if (task.group) { DetailField({ label: '分组', value: task.group }) }
+              if (task.myDay) { DetailField({ label: '我的一天', value: task.myDay }) }
+              if (task.tags.length) { DetailField({ label: '标签', value: task.tags.join('、') }) }
+              if (task.done && task.doneAt > 0) { DetailField({ label: '完成时间', value: new Date(task.doneAt).toLocaleString() }) }
+              if (!task.done) {
+                Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(8), cross: LengthMetrics.vp(6) } }) {
+                  this.action('30 分钟后提醒', () => { this.remind(task, Date.now() + 1800000); })
+                  if (Math.max(task.remindAt, task.snoozeUntil) > 0) { this.action('取消提醒', () => { this.remind(task, 0); }) }
+                  if (Math.max(task.remindAt, task.snoozeUntil) > Date.now()) {
+                    this.action('添加到系统日历', () => { this.calendarForTask(task); })
+                  }
+                }
+              }
             }
-            if (Math.max(task.remindAt, task.snoozeUntil) > Date.now()) {
-              this.action('添加到系统日历', () => { this.calendarForTask(task); })
+            if (task.notes.trim()) {
+              DetailSection({ title: '备注' }) {
+                Text(task.notes).fontSize(16).lineHeight(25).fontColor($r('app.color.task_text')).copyOption(CopyOptions.InApp)
+              }
             }
-          }
-          Row({ space: 8 }) {
-            this.action('编辑任务', () => { this.startEdit(task); })
-            this.action(task.done ? '撤销完成' : '标记完成', () => { this.toggle(task); })
-            this.action('分享链接', async () => {
-              const result = await NativeShare.shareLink(TaskShare.link(task), task.title);
-              if (!result.ok) this.message(result.message);
-            })
-          }
-          if (task.sourceHwId) { this.action('查看原作业', () => this.onHomework(task.sourceHwId)) }
-          this.action('完整任务管理', this.onAdvanced)
-        }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
-      }.width('100%').height('100%').align(Alignment.Top)
+            if (task.steps.length) {
+              DetailSection({ title: '步骤 · ' + task.stepsDone.filter((done: boolean) => done).length + '/' + task.steps.length }) {
+                ForEach(task.steps, (step: string, i: number) => {
+                  Row({ space: 10 }) {
+                    Text(task.stepsDone[i] ? '☑' : '☐').fontSize(22).fontColor($r('app.color.task_accent'))
+                    Text(step).layoutWeight(1).fontSize(16).lineHeight(24)
+                      .fontColor(task.stepsDone[i] ? $r('app.color.task_muted') : $r('app.color.task_text'))
+                  }.width('100%').constraintSize({ minHeight: 44 }).accessibilityText((task.stepsDone[i] ? '已完成，' : '未完成，') + step)
+                    .onClick(async () => { await TaskRepository.toggleStep(task.id, i); await this.afterEdit(); })
+                }, (step: string, i: number) => i + step + task.stepsDone[i])
+              }
+            }
+            if (task.attachments.length) {
+              DetailSection({ title: '附件 · ' + task.attachments.length }) {
+                ForEach(task.attachments, (meta: HomeworkAttachmentMeta) => {
+                  TaskAttachmentRow({ meta: meta, data: () => TaskRepository.attachmentData(task.id, meta.index),
+                    onImage: (src: string) => { this.imagePreview = src; } })
+                }, (meta: HomeworkAttachmentMeta) => meta.index + meta.name)
+              }
+            }
+            if (task.sourceHwId || task.sourceNoticeId || task.sourceTitle) {
+              DetailSection({ title: '任务来源' }) {
+                DetailField({ label: task.sourceHwId ? '班级作业' : task.sourceNoticeId ? '班级通知' : '来源',
+                  value: task.sourceTitle || task.title })
+                if (task.sourceHwId) { this.action('查看原作业', () => this.onHomework(task.sourceHwId, task.id)) }
+                if (task.sourceNoticeId) { this.action('查看原通知', () => this.onNotice(task.sourceNoticeId, task.id)) }
+              }
+            }
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(16)
+        }.width('100%').layoutWeight(1).align(Alignment.Top)
+        Row({ space: 10 }) {
+          Button('编辑任务').height(44).layoutWeight(1).fontColor($r('app.color.task_text')).backgroundColor($r('app.color.task_control'))
+            .onClick(() => { this.startEdit(task); })
+          Button(task.done ? '撤销完成' : '标记完成').height(44).layoutWeight(1).fontColor(Color.White).backgroundColor('#326F60')
+            .onClick(() => { this.toggle(task); })
+        }.width('100%').padding({ left: 16, right: 16, top: 8, bottom: 12 }).backgroundColor($r('app.color.task_card'))
+      }.width('100%').height('100%')
     }
   }
 
@@ -410,7 +476,11 @@ export struct TaskScreen {
   }
 
   build() {
-    if (this.shared) {
+    if (this.imagePreview) {
+      PageHeader({ taskColors: true, title: '图片附件', onBack: () => { this.imagePreview = ''; } }) {
+        Image(this.imagePreview).objectFit(ImageFit.Contain).width('100%').height('100%')
+      }
+    } else if (this.shared) {
       PageHeader({ taskColors: true, title: '分享的任务', onBack: () => { this.shared = undefined; } }) {
         Scroll() {
           Column({ space: 14 }) {

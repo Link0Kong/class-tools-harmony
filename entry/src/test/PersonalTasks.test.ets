@@ -16,6 +16,19 @@ function homework(id: string, time: string): HomeworkRow {
 
 export default function personalTaskTest() {
   describe('PersonalTasks', () => {
+    it('details_keep_full_deadline_and_read_wire_attachment_metadata', 0, () => {
+      const tasks = PersonalTask.list(document('{"items":[{"id":"qa","title":"报告","due":"2026-11-25","dueTime":"08:30","repeat":"weekly","attachments":[{"n":"题目.pdf","t":"application/pdf","s":128,"d":"data:application/pdf;base64,QQ=="}]}]}'));
+      const t = tasks[0];
+      expect(t.deadlineText()).assertEqual('2026-11-25 08:30');
+      expect(t.statusLabel(new Date(2026, 10, 25, 9).getTime())).assertEqual('已逾期');
+      t.done = true;
+      expect(t.statusLabel(new Date(2026, 10, 26).getTime())).assertEqual('已完成');
+      expect(t.repeatLabel).assertEqual('每周');
+      expect(t.attachments[0].name).assertEqual('题目.pdf');
+      t.done = false;
+      t.dueTime = '';
+      expect(t.statusLabel(new Date(2026, 10, 25, 23, 59, 30).getTime())).assertEqual('待完成');
+    });
     it('pager_follows_cross_client_order_and_retains_empty_and_same_named_groups', 0, () => {
       const doc = document('{"prefs":{"sidebarOrder":["done","bad","all","done"]},"lists":[{"id":"g2","name":"课程","order":2},{"id":"inbox","name":"收件箱"},{"id":"g1","name":"课程","order":1}],"items":[]}');
       const tabs = TaskView.categories(doc);

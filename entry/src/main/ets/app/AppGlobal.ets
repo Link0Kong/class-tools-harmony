@@ -8,6 +8,7 @@ import { common, UIAbility } from '@kit.AbilityKit';
  * `openToolId` 记录当前打开的工具页（根页面维护），供 Ability 级返回键处理使用。
  */
 export class AppGlobal {
+  static toolBack: (() => boolean) | undefined = undefined;
   static pendingLaunch: ToolLaunch | undefined = undefined;
   static onLaunch: (() => void) | undefined = undefined;
 

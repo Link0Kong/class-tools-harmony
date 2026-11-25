@@ -1,5 +1,5 @@
 import { Blob, JsonBlob } from '../sync/JsonBlob';
-import { HomeworkDueCalculator, HomeworkItem, HomeworkRow } from '../homework/HomeworkModels';
+import { HomeworkAttachmentMeta, HomeworkAttachments, HomeworkDueCalculator, HomeworkItem, HomeworkRow } from '../homework/HomeworkModels';
 
 export function taskObjects(doc: Blob, key: string): Blob[] {
   const rows = JsonBlob.asArray(doc[key]) || [];
@@ -16,6 +16,8 @@ export function numberField(doc: Blob, key: string): number { return JsonBlob.as
 export function taskDay(date: Date): string {
   return date.getFullYear() + '-' + ('0' + (date.getMonth() + 1)).slice(-2) + '-' + ('0' + date.getDate()).slice(-2);
 }
+
+const REPEAT_LABELS: Record<string, string> = { 'daily': '每天', 'weekday': '工作日', 'weekly': '每周', 'monthly': '每月', 'yearly': '每年' };
 
 export class PersonalTask {
   id: string = '';
@@ -39,6 +41,23 @@ export class PersonalTask {
   doneAt: number = 0;
   steps: string[] = [];
   stepsDone: boolean[] = [];
+  attachments: HomeworkAttachmentMeta[] = [];
+  repeatLabel: string = '';
+
+  static attachmentJson(row: Blob): string {
+    const value = row['attachments'];
+    return typeof value === 'string' ? value : Array.isArray(value) ? JSON.stringify(value) : '';
+  }
+
+  deadlineText(): string {
+    return this.due ? this.due + (this.dueTime ? ' ' + this.dueTime : '（全天）') : '未设置';
+  }
+
+  statusLabel(now: number): string {
+    if (this.done) return '已完成';
+    const due = HomeworkDueCalculator.parseDue(this.due, this.dueTime || '23:59');
+    return due && now > due + (this.dueTime ? 0 : 59999) ? '已逾期' : '待完成';
+  }
 
   static validDue(due: string, time: string): boolean {
     if (!due) return !time;
@@ -69,6 +88,8 @@ export class PersonalTask {
       item.groupId = field(row, 'list');
       item.group = groups.get(item.groupId) || '';
       item.doneAt = numberField(row, 'doneAt');
+      item.attachments = HomeworkAttachments.parse(PersonalTask.attachmentJson(row));
+      item.repeatLabel = REPEAT_LABELS[field(row, 'repeat')] || '';
       item.sourceTitle = field(row, 'sourceTitle');
       item.tags = (JsonBlob.asArray(row['tags']) || []).map((tag: Object) => JsonBlob.asString(tag, ''));
       const steps = taskObjects(row, 'steps');

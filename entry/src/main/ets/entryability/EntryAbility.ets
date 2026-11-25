@@ -94,6 +94,7 @@ export default class EntryAbility extends UIAbility {
    */
   onBackPressed(): boolean {
     if (AppGlobal.openToolId.length > 0) {
+      if (AppGlobal.toolBack?.()) return true;
       AppGlobal.openToolId = '';
       if (AppGlobal.onToolClosed !== undefined) {
         AppGlobal.onToolClosed();

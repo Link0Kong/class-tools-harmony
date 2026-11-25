@@ -2,7 +2,7 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
-import { HomeworkRow } from '../homework/HomeworkModels';
+import { HomeworkAttachments, HomeworkRow } from '../homework/HomeworkModels';
 import { Blob, JsonBlob } from '../sync/JsonBlob';
 import { PersonalTask, TaskShare, TaskView, field, numberField, taskDay, taskObjects } from './TaskModels';
 import { completeTask, emptyTasks, firstOrder, mergeTaskEdits, TaskWire } from './TaskMerge';
@@ -51,6 +51,12 @@ export class TaskRepository {
     } catch (_) { return undefined; }
     TaskRepository.owner = account;
     return account;
+  }
+
+  static attachmentData(id: string, index: number): string {
+    const doc = TaskRepository.account()?.local;
+    const row = doc ? taskObjects(doc, 'items').find((item: Blob) => field(item, 'id') === id) : undefined;
+    return row ? HomeworkAttachments.dataOf(PersonalTask.attachmentJson(row), index) : '';
   }
 
   static categories(): TaskView[] {

@@ -93,7 +93,19 @@ export struct NoticeScreen {
   /** 正在按需拉取完整 body 的通知行 id（防重复请求）。 */
   private detailLoadingIds: string[] = [];
 
+  private sourceBack = (): boolean => {
+    if (this.previewOpen) this.closePreview();
+    else if (this.rawOpen) this.closeRaw();
+    else this.onClose();
+    return true;
+  };
+
+  aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.sourceBack) AppGlobal.toolBack = undefined;
+  }
+
   aboutToAppear(): void {
+    if (this.noticeId) AppGlobal.toolBack = this.sourceBack;
     HomeNtBadge.markOpened(Services.currentSid);
     // 先回放本机缓存（冷启动/弱网秒开），再后台刷新
     Services.notices.hydrate().then(() => {
