@@ -61,10 +61,14 @@ export class RollCodec {
     if (rollSt !== undefined) {
       const keys: string[] = JsonBlob.keys(rollSt);
       for (let i = 0; i < keys.length; i++) {
-        const seat: number = Number(keys[i]);
+        const key: number = Number(keys[i]);
         const value: string = JsonBlob.asString(JsonBlob.get(rollSt, keys[i]), '');
-        if (Number.isFinite(seat) && seat > 0 && (value === RollStatus.DONE || value === RollStatus.ABSENT)) {
-          state.rollSt.set(Math.round(seat), value);
+        if (!Number.isInteger(key)) continue;
+        if ((value === 'in' || value === 'ab') && key >= 0 && key < state.rollSel.length) {
+          state.rollSt.set(state.rollSel[key], value === 'in' ? RollStatus.DONE : RollStatus.ABSENT);
+        } else if (key > 0 && (value === RollStatus.DONE || value === RollStatus.ABSENT)) {
+          // Earlier Harmony releases keyed local Chinese labels by seat.
+          state.rollSt.set(key, value);
         }
       }
     }
@@ -89,9 +93,10 @@ export class RollCodec {
     roster['rollSel'] = state.rollSel.slice(0);
     roster['rollNames'] = state.rollNames;
     const rollSt: Blob = {};
-    state.rollSt.forEach((value: string, seat: number) => {
+    state.rollSel.forEach((seat: number, index: number) => {
+      const value: string | undefined = state.rollSt.get(seat);
       if (value === RollStatus.DONE || value === RollStatus.ABSENT) {
-        rollSt['' + seat] = value;
+        rollSt['' + index] = value === RollStatus.DONE ? 'in' : 'ab';
       }
     });
     roster['rollSt'] = rollSt;

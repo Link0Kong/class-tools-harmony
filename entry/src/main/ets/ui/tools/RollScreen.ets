@@ -32,6 +32,8 @@ export struct RollScreen {
   @State private notice: string = '';
   @State private showExport: boolean = false;
   @State private selSeats: number[] = [];
+  @State private draftSeats: number[] = [];
+  @State private search: string = '';
   @State private pickerOpen: boolean = false;
   @State private resetConfirm: boolean = false;
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
@@ -50,6 +52,9 @@ export struct RollScreen {
     this.selSeats = state.rollSel.slice(0);
     const membersResult: ClassMembersResult = await Services.members.load(false);
     this.members = membersResult.members;
+    if (this.selSeats.length === 0 && this.statuses.size > 0) {
+      this.selSeats = this.members.map((member: ClassMember) => member.seat);
+    }
     const leagueResult: ClassLeagueResult = await Services.league.load(false);
     const seats: number[] = [];
     for (let i = 0; i < leagueResult.members.length; i++) {
@@ -64,23 +69,22 @@ export struct RollScreen {
 
   private scopeSeats(): Set<number> {
     const base: Set<number> = RollLogic.scopeSeats(this.members, this.leagueSeats, this.scope);
-    return RollLogic.intersect(base, this.selSeats);
+    return new Set<number>(this.selSeats.filter((seat: number) => this.scope === RollScope.ALL || base.has(seat)));
   }
 
   private toggleSelSeat(seat: number): void {
-    const index: number = this.selSeats.indexOf(seat);
-    if (index >= 0) {
-      this.selSeats.splice(index, 1);
-    } else {
-      this.selSeats.push(seat);
-    }
-    this.selSeats = this.selSeats.slice(0);
-    if (this.selSeats.length === 0) {
-      this.statuses = RollLogic.clear(this.statuses, new Set<number>());
-    }
+    this.draftSeats = this.draftSeats.indexOf(seat) >= 0 ?
+      this.draftSeats.filter((item: number) => item !== seat) : this.draftSeats.concat([seat]);
   }
 
   private async saveRoster(): Promise<void> {
+    this.selSeats = this.draftSeats.slice().sort((a: number, b: number) => a - b);
+    const kept: Map<number, string> = new Map<number, string>();
+    this.selSeats.forEach((seat: number) => {
+      const previous: string | undefined = this.statuses.get(seat);
+      if (previous !== undefined) kept.set(seat, previous);
+    });
+    this.statuses = kept;
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.pickerOpen = false;
     });
@@ -88,18 +92,16 @@ export struct RollScreen {
   }
 
   private openPicker(): void {
+    this.draftSeats = this.selSeats.slice();
+    this.search = '';
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.pickerOpen = true;
     });
   }
 
-  private openRosterAll(): void {
-    this.selSeats = [];
-    this.schedulePersist();
-  }
-
   private rows(): RollRow[] {
-    return RollLogic.rows(this.members, this.statuses, this.scopeSeats());
+    const seats: Set<number> = this.scopeSeats();
+    return seats.size > 0 ? RollLogic.rows(this.members, this.statuses, seats) : [];
   }
 
   private counts(): RollCounts {
@@ -110,6 +112,9 @@ export struct RollScreen {
     const state: RollState = RollCodec.read(Services.userdata.currentSections());
     state.rollSt = this.statuses;
     state.rollSel = this.selSeats.slice(0);
+    state.rollNames = this.members.filter((m: ClassMember) => state.rollSel.indexOf(m.seat) >= 0)
+      .sort((a: ClassMember, b: ClassMember) => a.seat - b.seat)
+      .map((m: ClassMember) => m.seat + ' ' + m.name).join('\n');
     const next: Blob = RollCodec.write(Services.userdata.currentSections(), state);
     await Services.userdata.updateCurrent(next);
   }
@@ -138,6 +143,7 @@ export struct RollScreen {
   }
 
   private confirmReset(): void {
+    if (this.scopeSeats().size === 0) return;
     this.getUIContext().showAlertDialog({
       title: '重置点名',
       message: '清空「' + this.scope + '」范围的到 / 假记录？',
@@ -332,7 +338,7 @@ export struct RollScreen {
           this.scopeChip(RollScope.COMMITTEE)
           this.scopeChip(RollScope.LEAGUE)
           Blank()
-          Text('名单' + (this.selSeats.length > 0 ? ' ' + this.selSeats.length : ''))
+          Text('编辑名单')
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.SLATE_BLUE)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
@@ -425,11 +431,11 @@ export struct RollScreen {
               .fontSize(Tokens.F_LABEL)
               .fontWeight(FontWeight.Bold)
               .fontColor(Tokens.TEXT_PRIMARY)
-            Text(' 已选 ' + this.selSeats.length + ' 人')
+            Text(' 已选 ' + this.draftSeats.length + ' 人')
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.SLATE_BLUE)
             Blank()
-            Text('关闭')
+            Text('取消')
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.SLATE_BLUE)
               .padding({ left: 10, right: 4, top: 4, bottom: 4 })
@@ -441,14 +447,14 @@ export struct RollScreen {
           }
           .width('100%')
           Row({ space: 10 }) {
-            Text('全部')
+            Text('全选')
               .fontSize(Tokens.F_CAPTION)
-              .fontColor(this.selSeats.length === 0 ? Tokens.MIST_TEAL : Tokens.TEXT_SECONDARY)
+              .fontColor(Tokens.MIST_TEAL)
               .padding({ left: 10, right: 10, top: 6, bottom: 6 })
               .backgroundColor(Tokens.CONTROL)
               .borderRadius(Tokens.RADIUS_PILL)
               .onClick(() => {
-                this.openRosterAll();
+                this.draftSeats = this.members.map((member: ClassMember) => member.seat);
               })
             Text('清空')
               .fontSize(Tokens.F_CAPTION)
@@ -457,8 +463,7 @@ export struct RollScreen {
               .backgroundColor(Tokens.CONTROL)
               .borderRadius(Tokens.RADIUS_PILL)
               .onClick(() => {
-                this.selSeats = [];
-                this.schedulePersist();
+                this.draftSeats = [];
               })
             Blank()
             Button('确定')
@@ -473,20 +478,23 @@ export struct RollScreen {
           }
           .width('100%')
           .margin({ top: 8 })
+          TextInput({ text: this.search, placeholder: '搜索姓名或座号' })
+            .onChange((value: string) => { this.search = value.trim(); })
           Scroll() {
             Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.members, (member: ClassMember) => {
-                Text(member.name)
+              ForEach(this.members.filter((m: ClassMember) => m.name.includes(this.search) ||
+                m.seat.toString() === this.search), (member: ClassMember) => {
+                Text(member.seat + ' ' + member.name)
                   .fontSize(Tokens.F_CAPTION)
-                  .fontColor(this.selSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+                  .fontColor(this.draftSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
                   .padding({ left: 8, right: 8, top: 4, bottom: 4 })
                   .margin({ right: 6, bottom: 6 })
-                  .backgroundColor(this.selSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
+                  .backgroundColor(this.draftSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
                   .borderRadius(8)
                   .onClick(() => {
                     this.toggleSelSeat(member.seat);
                   })
-              }, (member: ClassMember) => 'rs_' + member.seat + (this.selSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
+              }, (member: ClassMember) => 'rs_' + member.seat + (this.draftSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
             }
             .width('100%')
           }

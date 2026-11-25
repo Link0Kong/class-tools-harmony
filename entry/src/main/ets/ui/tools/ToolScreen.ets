@@ -7,8 +7,7 @@ import { RosterScreen } from './RosterScreen';
 import { DrawScreen } from './DrawScreen';
 import { GroupScreen } from './GroupScreen';
 import { FitScreen } from './FitScreen';
-import { HomeworkScreen } from './HomeworkScreen';
-import { NoticeScreen } from './NoticeScreen';
+import { ClassWebTool } from './ClassWebTool';
 import { TimetableScreen } from './TimetableScreen';
 import { PowerScreen } from './PowerScreen';
 import { WaterScreen } from './WaterScreen';
@@ -83,14 +82,9 @@ export struct ToolScreen {
           this.onClose();
         }
       })
-    } else if (this.toolId === 'hw') {
-      HomeworkScreen({
-        onClose: () => {
-          this.onClose();
-        }
-      })
-    } else if (this.toolId === 'nt') {
-      NoticeScreen({
+    } else if (this.toolId === 'hw' || this.toolId === 'nt') {
+      ClassWebTool({
+        toolId: this.toolId,
         onClose: () => {
           this.onClose();
         }

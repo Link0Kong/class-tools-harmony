@@ -51,7 +51,11 @@ export default function rollTest() {
       expect(nextRoster !== undefined).assertTrue();
       const rollSt: Blob | undefined = nextRoster['rollSt'] as Blob;
       expect(rollSt !== undefined).assertTrue();
-      expect(Object.keys(rollSt).sort().join(',')).assertEqual('1,2');
+      expect(Object.keys(rollSt).join(',')).assertEqual('0');
+      expect(rollSt['0']).assertEqual('in');
+      const roundTrip: RollState = RollCodec.read(next);
+      expect(roundTrip.rollSt.get(1)).assertEqual('到');
+      expect(roundTrip.rollSt.has(2)).assertFalse();
       expect((nextRoster['rosterSel'] as number[]).join(',')).assertEqual('5');
       expect((next['power'] as Blob)['sel']).assertEqual('x');
       expect(next['v']).assertEqual(6);
