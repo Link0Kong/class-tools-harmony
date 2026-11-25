@@ -34,7 +34,7 @@ export class MemberCategoryCounts {
 export class MemberCategoryBuilder {
   /** 班委判定与服务端 `auth_is_committee()` 同口径：`role` 非空 **或** `badge` 含「班委」。 */
   static isCommittee(member: ClassMember): boolean {
-    return member.role.trim().length > 0 || member.badge.indexOf('班委') >= 0;
+    return member.isCommittee();
   }
 
   /** 班委名单（按座号升序；badge 优先 role，均无则「班委」）。 */
@@ -109,7 +109,7 @@ export class MemberCategoryBuilder {
   static counts(classMembers: ClassMember[], leagueMembers: LeagueMember[]): MemberCategoryCounts {
     return new MemberCategoryCounts(
       MemberCategoryBuilder.committee(classMembers).length,
-      MemberCategoryBuilder.league(leagueMembers).length,
+      MemberCategoryBuilder.visibleEntries(MemberCategory.LEAGUE, classMembers, leagueMembers, '').length,
       MemberCategoryBuilder.all(classMembers).length
     );
   }
@@ -131,8 +131,29 @@ export class MemberCategoryBuilder {
 
   /** 方便 UI：按分类 + 搜索过滤。 */
   static visibleEntries(category: MemberCategory, classMembers: ClassMember[], leagueMembers: LeagueMember[],
-    query: string): MemberEntry[] {
-    return MemberCategoryBuilder.search(
-      MemberCategoryBuilder.entries(category, classMembers, leagueMembers), query);
+    query: string, matchedSeats: number[] = []): MemberEntry[] {
+    const leagueSeats: number[] = leagueMembers.map((m: LeagueMember) => m.seat);
+    return MemberCategoryBuilder.matchingMembers(category, classMembers, leagueSeats, query, matchedSeats)
+      .map((m: ClassMember) => new MemberEntry(m.seat, m.name, m.role.trim() || m.badge.trim()));
+  }
+
+  static matchingMembers(category: MemberCategory, members: ClassMember[], leagueSeats: number[],
+    query: string, matchedSeats: number[] = []): ClassMember[] {
+    const league: Set<number> = new Set<number>(leagueSeats);
+    const seen: Set<number> = new Set<number>();
+    const words: string[] = query.trim().toLowerCase().split(/\s+/).filter((s: string) => s.length > 0);
+    return members.filter((m: ClassMember) => {
+      if (m.seat <= 0 || !m.name.trim() || seen.has(m.seat)) return false;
+      seen.add(m.seat);
+      const inLeague: boolean = league.has(m.seat);
+      if ((category === MemberCategory.COMMITTEE && !m.isCommittee()) ||
+        (category === MemberCategory.LEAGUE && !inLeague)) {
+        return false;
+      }
+      const fields: string[] = [m.name, m.role, m.badge, m.isCommittee() ? '班委' : '', inLeague ? '团员' : '']
+        .map((s: string) => s.toLowerCase());
+      return matchedSeats.includes(m.seat) || words.every((word: string) =>
+        m.seat.toString() === word || fields.some((s: string) => s.includes(word)));
+    }).sort((a: ClassMember, b: ClassMember) => a.seat - b.seat);
   }
 }

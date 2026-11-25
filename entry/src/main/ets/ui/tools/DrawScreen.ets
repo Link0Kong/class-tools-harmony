@@ -1,6 +1,7 @@
-﻿import { Services } from '../../app/Services';
+﻿import { RosterPicker } from '../components/RosterPicker';
+import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
+import { Services } from '../../app/Services';
 import { Blob, JsonBlob, JsonValue } from '../../data/sync/JsonBlob';
-import { ClassMember } from '../../data/member/ClassMember';
 import {
   DrawConfig,
   DrawEntry,
@@ -46,6 +47,10 @@ export struct DrawScreen {
   @State private errorMsg: string = '';
   @State private seatNames: string[] = [];
   @State private seats: number[] = [];
+  @State private selectedSeats: number[] = [];
+  @State private leagueSeats: number[] = [];
+  @State private membersList: ClassMember[] = [];
+  @State private editingRoster: boolean = false;
   @State private showExport: boolean = false;
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
 
@@ -74,7 +79,11 @@ export struct DrawScreen {
       names.push(loaded.members[i].name);
     }
     this.seats = seats;
+    this.selectedSeats = seats.slice();
+    this.membersList = loaded.members;
     this.seatNames = names;
+    const league = await Services.league.load(false);
+    this.leagueSeats = league.members.map((m: LeagueMember) => m.seat);
   }
 
   private currentConfig(): DrawConfig {
@@ -114,7 +123,7 @@ export struct DrawScreen {
     this.persistConfig();
     let state: DrawWorkflowState = new DrawWorkflowState();
     state.config = this.currentConfig();
-    const transition: DrawTransition = DrawWorkflow.toPreview(state, this.seats, (n: number) => this.nameOf(n));
+    const transition: DrawTransition = DrawWorkflow.toPreview(state, this.selectedSeats, (n: number) => this.nameOf(n));
     if (!transition.ok || transition.state === undefined) {
       this.errorMsg = transition.error !== undefined ? transition.error.message : '无法生成候选';
       return;
@@ -333,6 +342,16 @@ export struct DrawScreen {
           Row() {
             this.sourceChip(DrawPoolSource.RANGE, '号码范围')
             this.sourceChip(DrawPoolSource.ROSTER, '班级名单' + (this.seats.length > 0 ? ' · ' + this.seats.length : ''))
+          }
+
+          if (this.source === DrawPoolSource.ROSTER) {
+            Button((this.editingRoster ? '收起名单' : '编辑名单') + ' · 已选 ' + this.selectedSeats.length + ' 人')
+              .fontSize(Tokens.F_LABEL).fontColor('#285E54').backgroundColor(Tokens.TINT_TEAL)
+              .onClick(() => { this.editingRoster = !this.editingRoster; })
+            if (this.editingRoster) {
+              RosterPicker({ members: this.membersList, leagueSeats: this.leagueSeats, selected: this.selectedSeats,
+                onSelect: (seats: number[]) => { this.selectedSeats = seats; } })
+            }
           }
 
           Text('结果排序')

@@ -26,7 +26,7 @@ export class ClassMember {
 
   /** 是否班委：契约里「role 非空」即班委（badge=班委 是展示徽章）。 */
   isCommittee(): boolean {
-    return this.role.trim().length > 0;
+    return this.role.trim().length > 0 || this.badge.includes('班委');
   }
 
   static fromJson(obj: Blob): ClassMember | undefined {

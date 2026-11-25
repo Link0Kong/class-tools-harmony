@@ -49,6 +49,17 @@ function seatJson(seat: number, name: string): Blob {
 
 export default function membersTest() {
   describe('ClassMembersParsing', () => {
+    it('filters_search_matches_by_scope_and_keeps_other_seats_out', 0, () => {
+      const people: ClassMember[] = [new ClassMember(1, '', '甲', '学习委员'),
+        new ClassMember(2, '', '乙', '', '班委'), new ClassMember(3, '', '丙')];
+      expect(MemberCategoryBuilder.matchingMembers(MemberCategory.ALL, people, [1, 3], '学习').length).assertEqual(1);
+      expect(MemberCategoryBuilder.matchingMembers(MemberCategory.ALL, people, [1, 3], '团员').length).assertEqual(2);
+      const found: ClassMember[] = MemberCategoryBuilder.matchingMembers(MemberCategory.COMMITTEE, people, [1, 3],
+        '完整查询', [2, 3]);
+      expect(found.length).assertEqual(1);
+      expect(found[0].seat).assertEqual(2);
+      expect(MemberCategoryBuilder.matchingMembers(MemberCategory.ALL, people, [], '完整').length).assertEqual(0);
+    });
     it('parse_members_skips_bad_rows', 0, () => {
       const arr: Object[] = [memberJson(1, '张一', '班长', '班委'), memberJson(0, '无座号', '', ''), 'junk'];
       const members: ClassMember[] = parseMembers(JSON.stringify(arr));

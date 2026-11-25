@@ -1,5 +1,6 @@
-﻿import { Services } from '../../app/Services';
-import { ClassMember } from '../../data/member/ClassMember';
+﻿import { RosterPicker } from '../components/RosterPicker';
+import { Services } from '../../app/Services';
+import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
 import {
   Poll,
@@ -74,6 +75,7 @@ export struct VoteScreen {
   @State private editingId: string = '';
   @State private fSeats: number[] = [];
   @State private members: ClassMember[] = [];
+  @State private leagueSeats: number[] = [];
   @State private extendOpen: boolean = false;
   @State private extendMinutes: number = 30;
   private shareSpec: ExportCardSpec = new ExportCardSpec();
@@ -102,6 +104,8 @@ export struct VoteScreen {
   private async loadMembers(): Promise<void> {
     const result: ClassMembersResult = await Services.members.load(false);
     this.members = result.members;
+    const league = await Services.league.load(false);
+    this.leagueSeats = league.members.map((m: LeagueMember) => m.seat);
   }
 
   private async silentRefreshDetail(): Promise<void> {
@@ -382,17 +386,6 @@ export struct VoteScreen {
     });
     await this.loadDetail(this.detail.poll.id);
     await this.reload();
-  }
-
-  private toggleSeat(seat: number): void {
-    const index: number = this.fSeats.indexOf(seat);
-    if (index >= 0) {
-      this.fSeats.splice(index, 1);
-    } else {
-      this.fSeats.push(seat);
-    }
-    this.fSeats = this.fSeats.slice(0);
-    this.fError = '';
   }
 
   private updateOption(index: number, text: string): void {
@@ -1062,37 +1055,8 @@ export struct VoteScreen {
           .width('100%')
 
           if (this.fAudience === PollAudience.CUSTOM) {
-            Row() {
-              Text('已选 ' + this.fSeats.length + ' 人')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.SLATE_BLUE)
-              Blank()
-              Text('清空')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .onClick(() => {
-                  this.fSeats = [];
-                })
-            }
-            .width('100%')
-            .margin({ top: 6 })
-
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.members, (member: ClassMember) => {
-                Text(member.name)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(this.fSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                  .margin({ right: 6, bottom: 6 })
-                  .backgroundColor(this.fSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
-                  .borderRadius(8)
-                  .onClick(() => {
-                    this.toggleSeat(member.seat);
-                  })
-              }, (member: ClassMember) => 'seat_' + member.seat + (this.fSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
-            }
-            .width('100%')
-            .margin({ top: 4 })
+            RosterPicker({ members: this.members, leagueSeats: this.leagueSeats, selected: this.fSeats,
+              onSelect: (seats: number[]) => { this.fSeats = seats; this.fError = ''; } })
           }
 
           Text('时长')

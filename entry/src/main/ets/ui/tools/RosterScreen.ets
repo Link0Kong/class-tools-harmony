@@ -1,4 +1,5 @@
-﻿import { Services } from '../../app/Services';
+﻿import { RosterSearchBox } from '../components/RosterSearchBox';
+import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember, MemberEntry } from '../../data/member/ClassMember';
 import { MemberCategory, MemberCategoryBuilder, MemberCategoryCounts } from '../../data/member/MemberCategories';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
@@ -16,13 +17,15 @@ export struct RosterScreen {
   onClose: () => void = () => {
   };
 
-  @State private category: MemberCategory = MemberCategory.COMMITTEE;
+  @State private category: MemberCategory = MemberCategory.ALL;
   @State private classMembers: ClassMember[] = [];
   @State private leagueMembers: LeagueMember[] = [];
   @State private query: string = '';
+  @State private matchedSeats: number[] = [];
   @State private loading: boolean = true;
   @State private refreshing: boolean = false;
   @State private errorMsg: string = '';
+  @State private leagueError: string = '';
   private scroller: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -41,9 +44,7 @@ export struct RosterScreen {
     if (!membersResult.ok) {
       this.errorMsg = membersResult.message.length > 0 ? membersResult.message : '名单加载失败';
     }
-    if (!leagueResult.ok && this.errorMsg.length === 0) {
-      this.errorMsg = leagueResult.message.length > 0 ? leagueResult.message : '团员名单加载失败';
-    }
+    this.leagueError = leagueResult.ok ? '' : (leagueResult.message || '团员名单加载失败');
     this.loading = false;
   }
 
@@ -52,11 +53,11 @@ export struct RosterScreen {
   }
 
   private entries(): MemberEntry[] {
-    return MemberCategoryBuilder.visibleEntries(this.category, this.classMembers, this.leagueMembers, this.query);
+    return MemberCategoryBuilder.visibleEntries(this.category, this.classMembers, this.leagueMembers, this.query, this.matchedSeats);
   }
 
   private categories(): MemberCategory[] {
-    return [MemberCategory.COMMITTEE, MemberCategory.LEAGUE, MemberCategory.ALL];
+    return [MemberCategory.ALL, MemberCategory.COMMITTEE, MemberCategory.LEAGUE];
   }
 
   private countOf(category: MemberCategory): number {
@@ -162,20 +163,17 @@ export struct RosterScreen {
           .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
 
-          TextInput({ placeholder: '搜索姓名', text: this.query })
-            .height(40)
-            .margin({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10 })
-            .backgroundColor(Tokens.CONTROL)
-            .border({ width: 0.5, color: Tokens.CARD_EDGE })
-            .borderRadius(Tokens.RADIUS_INPUT)
-            .fontSize(Tokens.F_LABEL)
-            .onChange((value: string) => {
-              this.query = value;
-            })
+          Row() {
+            RosterSearchBox({ onFilter: (text: string, seats: number[]) => {
+              this.query = text;
+              this.matchedSeats = seats;
+            } })
+          }.padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10 })
 
           if (this.entries().length === 0) {
             Column() {
-              Text(this.query.length > 0 ? '没有匹配的姓名' : '暂无数据')
+              Text(this.category === MemberCategory.LEAGUE && this.leagueError ? this.leagueError :
+                (this.query.length > 0 ? '没有匹配的成员' : '暂无数据'))
                 .fontSize(Tokens.F_LABEL)
                 .fontColor(Tokens.TEXT_TERTIARY)
             }

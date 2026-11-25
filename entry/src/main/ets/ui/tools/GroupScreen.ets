@@ -1,3 +1,5 @@
+import { RosterPicker } from '../components/RosterPicker';
+import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { Services } from '../../app/Services';
 import { DrawSession } from '../../app/DrawSession';
 import { pasteboard } from '@kit.BasicServicesKit';
@@ -41,6 +43,8 @@ export struct GroupScreen {
   @State private mode: GroupMode = GroupMode.GROUPS;
   @State private n: number = GroupConfig.DEFAULT_N;
   @State private shuffle: boolean = false;
+  @State private membersList: ClassMember[] = [];
+  @State private leagueSeats: number[] = [];
   @State private seats: number[] = [];
   @State private names: string[] = [];
   @State private selected: number[] = [];
@@ -69,6 +73,9 @@ export struct GroupScreen {
 
   private async loadRoster(): Promise<void> {
     const loaded = await Services.members.load(false);
+    this.membersList = loaded.members;
+    const league = await Services.league.load(false);
+    this.leagueSeats = league.members.map((m: LeagueMember) => m.seat);
     const seats: number[] = [];
     const names: string[] = [];
     for (let i = 0; i < loaded.members.length; i++) {
@@ -195,17 +202,6 @@ export struct GroupScreen {
     return GroupEngine.groupCount(this.members().length, this.currentConfig());
   }
 
-  private toggleSeat(seat: number): void {
-    const index: number = this.selected.indexOf(seat);
-    if (index >= 0) {
-      this.selected.splice(index, 1);
-    } else {
-      this.selected.push(seat);
-    }
-    this.selected = this.selected.slice(0);
-    this.persistConfig();
-  }
-
   private startGroup(): void {
     const members: GroupMember[] = this.members();
     const config: GroupConfig = this.currentConfig();
@@ -327,22 +323,6 @@ export struct GroupScreen {
   }
 
   @Builder
-  seatChip(seat: number) {
-    Text('' + seat)
-      .fontSize(Tokens.F_CAPTION)
-      .fontColor(this.selected.indexOf(seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-      .width(44)
-      .height(34)
-      .textAlign(TextAlign.Center)
-      .backgroundColor(this.selected.indexOf(seat) >= 0 ? Tokens.SLATE_BLUE : Tokens.CONTROL)
-      .borderRadius(8)
-      .margin({ right: 6, bottom: 6 })
-      .onClick(() => {
-        this.toggleSeat(seat);
-      })
-  }
-
-  @Builder
   memberText(member: GroupMember) {
     Text(member.label())
       .fontSize(Tokens.F_CAPTION)
@@ -404,33 +384,8 @@ export struct GroupScreen {
             .width('100%')
 
           if (this.source === GroupSource.NAMES) {
-            Row() {
-              Text('全选')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.MIST_TEAL)
-                .margin({ right: 14 })
-                .onClick(() => {
-                  this.selected = this.seats.slice(0);
-                  this.persistConfig();
-                })
-              Text('清空')
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_TERTIARY)
-                .onClick(() => {
-                  this.selected = [];
-                  this.persistConfig();
-                })
-            }
-            .width('100%')
-            .margin({ top: 10, bottom: 6 })
-
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.seats, (seat: number) => {
-                this.seatChip(seat)
-              }, (seat: number) => 'seat_' + seat)
-            }
-            .width('100%')
-            .margin({ top: 4 })
+            RosterPicker({ members: this.membersList, leagueSeats: this.leagueSeats, selected: this.selected,
+              onSelect: (seats: number[]) => { this.selected = seats; this.persistConfig(); } })
           }
         }
         .width('100%')

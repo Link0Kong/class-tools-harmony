@@ -1,4 +1,5 @@
-﻿import { Services } from '../../app/Services';
+﻿import { RosterPicker } from '../components/RosterPicker';
+import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
 import { ClassLeagueResult } from '../../data/member/ClassLeagueRepository';
@@ -33,7 +34,6 @@ export struct RollScreen {
   @State private showExport: boolean = false;
   @State private selSeats: number[] = [];
   @State private draftSeats: number[] = [];
-  @State private search: string = '';
   @State private pickerOpen: boolean = false;
   @State private resetConfirm: boolean = false;
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
@@ -72,11 +72,6 @@ export struct RollScreen {
     return new Set<number>(this.selSeats.filter((seat: number) => this.scope === RollScope.ALL || base.has(seat)));
   }
 
-  private toggleSelSeat(seat: number): void {
-    this.draftSeats = this.draftSeats.indexOf(seat) >= 0 ?
-      this.draftSeats.filter((item: number) => item !== seat) : this.draftSeats.concat([seat]);
-  }
-
   private async saveRoster(): Promise<void> {
     this.selSeats = this.draftSeats.slice().sort((a: number, b: number) => a - b);
     const kept: Map<number, string> = new Map<number, string>();
@@ -93,7 +88,6 @@ export struct RollScreen {
 
   private openPicker(): void {
     this.draftSeats = this.selSeats.slice();
-    this.search = '';
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.pickerOpen = true;
     });
@@ -446,68 +440,13 @@ export struct RollScreen {
               })
           }
           .width('100%')
-          Row({ space: 10 }) {
-            Text('全选')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.MIST_TEAL)
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .backgroundColor(Tokens.CONTROL)
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.draftSeats = this.members.map((member: ClassMember) => member.seat);
-              })
-            Text('清空')
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.TEXT_SECONDARY)
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .backgroundColor(Tokens.CONTROL)
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.draftSeats = [];
-              })
-            Blank()
-            Button('确定')
-              .height(32)
-              .fontSize(Tokens.F_CAPTION)
-              .backgroundColor(Tokens.MIST_TEAL)
-              .fontColor('#FFFFFF')
-              .borderRadius(Tokens.RADIUS_PILL)
-              .onClick(() => {
-                this.saveRoster();
-              })
-          }
-          .width('100%')
-          .margin({ top: 8 })
-          TextInput({ text: this.search, placeholder: '搜索姓名或座号' })
-            .onChange((value: string) => { this.search = value.trim(); })
+          Button('保存名单')
+            .height(36).fontSize(Tokens.F_LABEL).backgroundColor('#356C61')
+            .alignSelf(ItemAlign.End).onClick(() => { this.saveRoster(); })
           Scroll() {
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.members.filter((m: ClassMember) => m.name.includes(this.search) ||
-                m.seat.toString() === this.search), (member: ClassMember) => {
-                Text(member.seat + ' ' + member.name)
-                  .fontSize(Tokens.F_CAPTION)
-                  .fontColor(this.draftSeats.indexOf(member.seat) >= 0 ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                  .margin({ right: 6, bottom: 6 })
-                  .backgroundColor(this.draftSeats.indexOf(member.seat) >= 0 ? Tokens.MIST_TEAL : Tokens.CONTROL)
-                  .borderRadius(8)
-                  .onClick(() => {
-                    this.toggleSelSeat(member.seat);
-                  })
-              }, (member: ClassMember) => 'rs_' + member.seat + (this.draftSeats.indexOf(member.seat) >= 0 ? '_y' : '_n'))
-            }
-            .width('100%')
-          }
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .scrollBar(BarState.Off)
-          .onDidScroll((offset: number) => {
-            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
-            if (Math.abs(next - this.headerFade) > 0.03) {
-              this.headerFade = next;
-            }
-          })
-          .margin({ top: 6 })
+            RosterPicker({ members: this.members, leagueSeats: this.leagueSeats, selected: this.draftSeats,
+              onSelect: (seats: number[]) => { this.draftSeats = seats; } })
+          }.width('100%').layoutWeight(1).align(Alignment.Top)
         }
       }
 

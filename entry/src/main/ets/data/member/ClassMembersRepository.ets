@@ -245,6 +245,22 @@ export class ClassMembersRepository {
     return ClassMembersResult.success(members, false);
   }
 
+  async searchSeats(query: string): Promise<number[]> {
+    const sid: string = this.sidProvider();
+    const text: string = query.trim();
+    if (!sid || !text || Array.from(text).length > 128) return [];
+    const body: Blob = { 'p_query': text };
+    try {
+      const result: ApiResult = await this.api.post('rpc/class_roster_search', JSON.stringify(body), '', true);
+      if (!result.ok || this.sidProvider() !== sid) return [];
+      const arr: Object[] = JsonBlob.asArray(JSON.parse(result.value) as JsonValue) ?? [];
+      return arr.map((value: Object) => JsonBlob.asNumber(value, 0))
+        .filter((seat: number) => Number.isInteger(seat) && seat > 0);
+    } catch (_) {
+      return [];
+    }
+  }
+
   /** 只读本机内存/文件缓存，不发请求。 */
   async cached(): Promise<ClassMember[]> {
     const sid: string = this.sidProvider().trim();

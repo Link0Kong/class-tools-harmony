@@ -47,12 +47,6 @@ export struct HomeCardShell {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
-        Row()
-          .width('100%')
-          .height(3)
-          .backgroundColor(Tokens.tint(this.accentColor, 0.55))
-          .borderRadius(2)
-          .margin({ bottom: 9 })
         Column() {
           this.content()
         }
@@ -65,11 +59,16 @@ export struct HomeCardShell {
       .padding(Tokens.CARD_PADDING)
       .alignItems(HorizontalAlign.Start)
 
-      Stack() {
+      Stack({ alignContent: Alignment.BottomEnd }) {
         Row()
           .width('100%')
           .height('100%')
           .backgroundColor('#01000000')
+        Row()
+          .width(15).height(15)
+          .border({ width: { bottom: this.gripEdgeWidth(), right: this.gripEdgeWidth() }, color: this.gripColor() })
+          .borderRadius({ bottomRight: 7 })
+          .margin({ right: 9, bottom: 9 })
       }
       .width(56)
       .height(56)
@@ -97,20 +96,7 @@ export struct HomeCardShell {
     .width('100%')
     .height(this.cardHeightVp)
     .backgroundColor(Tokens.CARD)
-    .border({
-      width: {
-        left: 0.5,
-        top: 0.5,
-        right: this.gripEdgeWidth(),
-        bottom: this.gripEdgeWidth()
-      },
-      color: {
-        left: this.edgeColor(),
-        top: this.edgeColor(),
-        right: this.gripColor(),
-        bottom: this.gripColor()
-      }
-    })
+    .border({ width: this.resizing ? 1.5 : 1, color: this.edgeColor() })
     .borderRadius(Tokens.RADIUS_CARD)
     .shadow({
       radius: this.liftRadius(),
