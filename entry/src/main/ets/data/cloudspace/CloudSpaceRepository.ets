@@ -9,6 +9,7 @@ import { Log } from '../../common/Log';
 import { Blob } from '../sync/JsonBlob';
 import { CloudSpaceApi, CloudSpaceRequestSpec } from './CloudSpaceApi';
 import {
+  DropAsset,
   CloudSpaceDefaults,
   CloudSpaceError,
   CloudSpaceErrors,
@@ -59,6 +60,10 @@ export class CloudSpaceRepository {
   private files: CloudSpaceFile[] = [];
   private expiredIds: string[] = [];
   private cursor: number = 0;
+  private pptConversion: boolean = false;
+  private expiredCount: number = 0;
+
+  isCurrent(): boolean { return this.tokenProvider().length > 0; }
 
   constructor(tokenProvider: () => string, baseUrl: string = CloudSpaceDefaults.BASE_URL,
     now: () => number = () => Date.now(), chunkSize: number = CloudSpaceDefaults.CHUNK_SIZE) {
@@ -73,7 +78,8 @@ export class CloudSpaceRepository {
     const snapshot: CloudSpaceSnapshot = new CloudSpaceSnapshot();
     snapshot.session = this.session;
     snapshot.files = this.files.slice(0);
-    snapshot.expiredCount = this.expiredIds.length;
+    snapshot.expiredCount = this.expiredCount;
+    snapshot.pptConversion = this.pptConversion;
     snapshot.cursor = this.cursor;
     return snapshot;
   }
@@ -84,6 +90,8 @@ export class CloudSpaceRepository {
     this.files = [];
     this.expiredIds = [];
     this.cursor = 0;
+    this.expiredCount = 0;
+    this.pptConversion = false;
   }
 
   // ---- 会话 + 列表 ---------------------------------------------------------
@@ -121,10 +129,50 @@ export class CloudSpaceRepository {
     const state = CloudSpaceApi.parseState(result.value!);
     const merged = CloudSpaceLogic.applyEvents(force ? [] : this.files, force ? [] : this.expiredIds, state.events);
     this.session = state.session !== undefined ? state.session : session;
-    this.files = merged.files;
-    this.expiredIds = merged.expiredIds;
+    this.files = state.files !== undefined ? state.files.sort((a, b) => b.uploadedAt - a.uploadedAt) : merged.files;
+    this.expiredIds = state.files !== undefined ? [] : merged.expiredIds;
+    this.expiredCount = state.files !== undefined ? state.expiredCount : this.expiredIds.length;
+    this.pptConversion = state.pptConversion;
     this.cursor = force ? state.cursor : Math.max(this.cursor, state.cursor);
     return CloudSpaceResult.success<CloudSpaceSnapshot>(this.snapshot());
+  }
+
+  async convert(file: CloudSpaceFile): Promise<CloudSpaceResult<CloudSpaceSnapshot>> {
+    const sid = this.session?.id;
+    const current = this.files.find((item: CloudSpaceFile) => item.id === file.id);
+    if (!sid || !this.pptConversion || !current?.canConvert() ||
+      current.conversion?.status !== file.conversion?.status || current.conversion?.attempt !== file.conversion?.attempt) {
+      return CloudSpaceResult.failure<CloudSpaceSnapshot>(CloudSpaceErrors.local('文件状态已变化，请刷新'));
+    }
+    const seen = file.conversion;
+    if (seen && (seen.status !== 'failed' || seen.attempt < 1)) return CloudSpaceResult.success(this.snapshot());
+    const reply = await this.request(this.api.conversionSpec(sid, file.id, true, seen?.attempt));
+    if (!reply.ok) return CloudSpaceResult.failure<CloudSpaceSnapshot>(reply.error ?? CloudSpaceErrors.parse());
+    return this.refresh(true);
+  }
+
+  async assets(id: string): Promise<CloudSpaceResult<DropAsset[]>> {
+    const sid = this.session?.id;
+    if (!sid || !this.pptConversion || !this.files.some((file: CloudSpaceFile) =>
+      file.id === id && file.conversion?.status === 'ready')) {
+      return CloudSpaceResult.failure<DropAsset[]>(CloudSpaceErrors.local('文件已过期或转换结果不可用'));
+    }
+    const reply = await this.request(this.api.conversionSpec(sid, id, false));
+    if (!reply.ok || !reply.value) return CloudSpaceResult.failure<DropAsset[]>(reply.error ?? CloudSpaceErrors.parse());
+    return CloudSpaceResult.success(this.api.assets(reply.value, sid, id));
+  }
+
+  async downloadAsset(id: string, key: string, progress: (received: number, total: number) => void):
+    Promise<CloudSpaceResult<string>> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await this.assets(id);
+      const asset = result.value?.find((item: DropAsset) => item.key === key);
+      if (!asset) return CloudSpaceResult.failure<string>(result.error ?? CloudSpaceErrors.local('转换产物已不可用'));
+      const target = new CloudSpaceFile(id + '_' + key, asset.name, 0, asset.mime, asset.url);
+      const saved = await this.downloadTarget(target, progress, true);
+      if (saved.error?.status !== 403 || attempt > 0) return saved;
+    }
+    return CloudSpaceResult.failure<string>(CloudSpaceErrors.local('下载链接已过期'));
   }
 
   /** 下载前调用：强拉一次最新列表并返回该文件（带 30 分钟有效的签名下载链接）。 */
@@ -380,7 +428,13 @@ export class CloudSpaceRepository {
       return CloudSpaceResult.failure<string>(
         fresh.error !== undefined ? fresh.error : CloudSpaceErrors.parse());
     }
-    const target: CloudSpaceFile = fresh.value!;
+    return this.downloadTarget(fresh.value!, onProgress, false);
+  }
+
+  private async downloadTarget(target: CloudSpaceFile, onProgress: (received: number, total: number) => void,
+    privateAsset: boolean): Promise<CloudSpaceResult<string>> {
+    const token = this.tokenProvider();
+    if (!token) return CloudSpaceResult.failure<string>(CloudSpaceErrors.local('身份已切换'));
     const dir: string = this.sandboxDir();
     if (dir.length === 0) {
       return CloudSpaceResult.failure<string>(CloudSpaceErrors.local('下载目录不可用'));
@@ -413,15 +467,18 @@ export class CloudSpaceRepository {
           Log.w(TAG, '写入下载文件失败');
         }
       });
+      const headers: Record<string, string> = privateAsset ? this.api.headers(token) : this.api.headers('');
+      headers['Accept'] = '*/*';
       const options: http.HttpRequestOptions = {
         method: http.RequestMethod.GET,
-        header: { 'Accept': '*/*', 'Cache-Control': 'no-store' },
+        header: headers,
+        maxRedirects: privateAsset ? 0 : 5,
         connectTimeout: 30000,
         readTimeout: 120000,
         usingCache: false
       };
       const status: number = await request.requestInStream(target.downloadUrl, options);
-      if (status < 200 || status >= 300) {
+      if (status < 200 || status >= 300 || !this.isCurrent()) {
         try {
           fs.unlinkSync(path);
         } catch (e) {
@@ -520,6 +577,7 @@ export class CloudSpaceRepository {
       return CloudSpaceResult.failure<Blob>(CloudSpaceErrors.local('身份缺失，请重新登录后重试'));
     }
     const raw: RawResponse | undefined = await this.execute(spec, bodyData);
+    if (!this.isCurrent()) return CloudSpaceResult.failure<Blob>(CloudSpaceErrors.local("身份已切换"));
     if (raw === undefined) {
       return CloudSpaceResult.failure<Blob>(CloudSpaceErrors.network());
     }

@@ -55,7 +55,34 @@ export class CloudSpaceSession {
  * `downloadUrl` 由服务端**每次读取重新签发**（30 分钟有效），不要长期缓存：
  * 下载前先刷新一次列表，遇到 403「下载链接已过期」再刷新重试。
  */
+export class DropConversion {
+  status: string = '';
+  attempt: number = 0;
+  progress: number = 0;
+  error: string = '';
+
+  label(): string {
+    if (this.status === 'queued') return '等待转换';
+    if (this.status === 'processing') return '转换中 ' + this.progress + '%';
+    if (this.status === 'ready') return '查看转换结果';
+    return this.error ? '转换失败，重试 · ' + this.error : '转换失败，重试';
+  }
+}
+
+export class DropAsset {
+  key: string = '';
+  name: string = '';
+  mime: string = '';
+  url: string = '';
+}
+
 export class CloudSpaceFile {
+  conversion: DropConversion | undefined = undefined;
+
+  canConvert(): boolean {
+    return !this.expired && this.sizeBytes > 0 && this.sizeBytes <= 64 * 1024 * 1024 && /\.pptx?$/i.test(this.name);
+  }
+
   id: string = '';
   name: string = '';
   sizeBytes: number = 0;
@@ -79,6 +106,7 @@ export class CloudSpaceFile {
 
 /** 列表页渲染用的只读快照（同一时刻的文件集合 + 统计）。 */
 export class CloudSpaceSnapshot {
+  pptConversion: boolean = false;
   session: CloudSpaceSession | undefined = undefined;
   files: CloudSpaceFile[] = [];
   /** 已过期（上传超过 72h，服务端已删）的文件事件数；只用于提示。 */
@@ -114,6 +142,9 @@ export class CloudSpaceEvent {
 
 /** `/state` 一次响应（events 尚未合并进列表）。 */
 export class CloudSpaceState {
+  pptConversion: boolean = false;
+  files: CloudSpaceFile[] | undefined = undefined;
+  expiredCount: number = 0;
   session: CloudSpaceSession | undefined = undefined;
   events: CloudSpaceEvent[] = [];
   cursor: number = 0;

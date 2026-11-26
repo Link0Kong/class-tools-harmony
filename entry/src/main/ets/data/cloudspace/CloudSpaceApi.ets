@@ -1,5 +1,6 @@
 ﻿import { Blob, JsonBlob } from '../sync/JsonBlob';
 import {
+  DropConversion, DropAsset,
   CloudSpaceDefaults,
   CloudSpaceError,
   CloudSpaceErrors,
@@ -99,8 +100,58 @@ export class CloudSpaceApi {
 
   stateSpec(sessionId: string, since: number): CloudSpaceRequestSpec {
     const path: string = '/state?sessionId=' + encodeURIComponent(sessionId)
-      + '&since=' + Math.max(0, Math.floor(since));
+      + '&all=1&ppt=1&since=' + Math.max(0, Math.floor(since));
     return CloudSpaceApi.spec('GET', path);
+  }
+
+  conversionSpec(sid: string, id: string, submit: boolean, retry?: number): CloudSpaceRequestSpec {
+    const path = '/ppt/' + encodeURIComponent(id);
+    if (!submit) return CloudSpaceApi.spec('GET', path + '?sessionId=' + encodeURIComponent(sid));
+    const spec = CloudSpaceApi.spec('POST', path);
+    const payload: Blob = {};
+    payload['sessionId'] = sid;
+    if (retry !== undefined) payload['retryAttempt'] = retry;
+    spec.bodyText = JSON.stringify(payload);
+    spec.contentType = CloudSpaceApi.APPLICATION_JSON;
+    return spec;
+  }
+
+  static conversion(blob?: Blob): DropConversion | undefined {
+    if (!blob) return undefined;
+    const result = new DropConversion();
+    result.status = JsonBlob.asString(blob['status'], '');
+    if (['queued', 'processing', 'ready', 'failed'].indexOf(result.status) < 0) return undefined;
+    result.attempt = JsonBlob.asNumber(blob['attempt'], 0);
+    result.progress = Math.min(100, Math.max(0, JsonBlob.asNumber(blob['progress'], 0)));
+    result.error = JsonBlob.asString(blob['error'], '');
+    return result;
+  }
+
+  assets(detail: Blob, sid: string, id: string): DropAsset[] {
+    const assets: DropAsset[] = [];
+    if (CloudSpaceApi.conversion(JsonBlob.asBlob(detail['conversion']))?.status !== 'ready') return assets;
+    const manifest = JsonBlob.asBlob(detail['manifest']);
+    if (!manifest) return assets;
+    const prefix = this.url('/ppt-result/' + encodeURIComponent(sid) + '/' + encodeURIComponent(id) + '/');
+    const add = (key: string, blob?: Blob): void => {
+      if (!blob) return;
+      const link = JsonBlob.asString(blob['s'], '');
+      if (!link.startsWith(prefix)) return;
+      const suffix = link.substring(prefix.length).split('?')[0];
+      if (!/^[a-zA-Z0-9_-]+$/.test(suffix)) return;
+      const item = new DropAsset();
+      item.key = key || suffix;
+      item.name = JsonBlob.asString(blob['name'], item.key);
+      item.mime = JsonBlob.asString(blob['mime'], 'application/octet-stream');
+      item.url = link;
+      assets.push(item);
+    };
+    const files = JsonBlob.asBlob(manifest['files']);
+    add('compat', JsonBlob.asBlob(JsonBlob.get(files, 'compat')));
+    add('pdf', JsonBlob.asBlob(JsonBlob.get(files, 'pdf')));
+    const media = JsonBlob.asArray(manifest['media_files']) ?? [];
+    for (let i = 0; i < media.length; i++) add('', JsonBlob.asBlob(media[i]));
+    return assets;
   }
 
   initSpec(sessionId: string, name: string, size: number, mimeType: string, totalChunks: number): CloudSpaceRequestSpec {
@@ -193,6 +244,19 @@ export class CloudSpaceApi {
   static parseState(blob: Blob): CloudSpaceState {
     const state: CloudSpaceState = new CloudSpaceState();
     state.session = CloudSpaceApi.parseSessionNode(JsonBlob.asBlob(JsonBlob.get(blob, 'session')));
+    state.pptConversion = JsonBlob.asBoolean(blob['pptConversion'], false);
+    state.expiredCount = JsonBlob.asNumber(blob['expiredNotice'], 0);
+    const rawFiles = JsonBlob.asArray(blob['files']);
+    if (rawFiles !== undefined) {
+      const files: CloudSpaceFile[] = [];
+      for (let i = 0; i < rawFiles.length; i++) {
+        const item = JsonBlob.asBlob(rawFiles[i]);
+        if (!item) continue;
+        const file = CloudSpaceApi.parseFileObject(item, JsonBlob.asNumber(item['at'], 0));
+        if (file && !file.expired) files.push(file);
+      }
+      state.files = files;
+    }
     const rawEvents: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(blob, 'events'));
     let maxSeq: number = 0;
     if (rawEvents !== undefined) {
@@ -304,7 +368,7 @@ export class CloudSpaceApi {
     if (name.length === 0) {
       name = '文件';
     }
-    return new CloudSpaceFile(
+    const file = new CloudSpaceFile(
       fileId,
       name,
       JsonBlob.asNumber(JsonBlob.get(blob, 'size'), 0),
@@ -312,6 +376,8 @@ export class CloudSpaceApi {
       expired ? '' : downloadUrl,
       expired,
       uploadedAt);
+    file.conversion = CloudSpaceApi.conversion(JsonBlob.asBlob(blob["conversion"]));
+    return file;
   }
 
   private static spec(method: string, path: string): CloudSpaceRequestSpec {

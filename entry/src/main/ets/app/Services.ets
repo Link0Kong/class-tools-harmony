@@ -52,6 +52,7 @@ export class Services {
     Services.userdata.endSession();
     const generation = ++Services.userdataGeneration;
     const owner = (): string => generation === Services.userdataGeneration ? sid : '';
+    Services.cloudspace = new CloudSpaceRepository(() => generation === Services.userdataGeneration ? Services.currentToken : '');
     Services.userdataRepo = new UserdataRepository(Services.api, new FileUserdataLocalStore(owner), owner);
     return Services.userdata;
   }
@@ -126,8 +127,7 @@ export class Services {
   static readonly login: TimetableLoginRepository = new TimetableLoginRepository(Services.api);
 
   /** 文件传输 / 临时云空间（ECS drop v2.2；token 只在 X-Device-Id 请求头）。 */
-  static readonly cloudspace: CloudSpaceRepository = new CloudSpaceRepository(
-    () => Services.currentToken);
+  static cloudspace: CloudSpaceRepository = new CloudSpaceRepository(() => '');
 
   static readonly visits: VisitsReporter = new VisitsReporter(
     Services.api,

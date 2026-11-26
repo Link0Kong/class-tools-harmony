@@ -27,6 +27,23 @@ function fileOf(id: string, name: string, size: number, uploadedAt: number, url:
 
 export default function cloudSpaceTest() {
   describe('CloudSpaceDefaults', () => {
+    it('full_listing_capability_attempt_and_private_manifest', 0, () => {
+      const api = new CloudSpaceApi('https://qa.invalid/drop');
+      expect(api.stateSpec('s1', 500).path.indexOf('&all=1&ppt=1') >= 0).assertTrue();
+      const state = CloudSpaceApi.parseState(JSON.parse('{"events":[],"files":[{"at":1,"id":"f","name":"deck.pptx","size":5,"downloadUrl":"x","conversion":{"status":"failed","attempt":2}}],"pptConversion":true}') as Blob);
+      expect(state.files!.length).assertEqual(1);
+      expect(state.pptConversion).assertTrue();
+      expect(state.files![0].canConvert()).assertTrue();
+      expect(api.conversionSpec('s1', 'f', true, state.files![0].conversion!.attempt).bodyText).assertEqual('{"sessionId":"s1","retryAttempt":2}');
+      const detail = JSON.parse('{"conversion":{"status":"ready"},"manifest":{"files":{"pdf":{"s":"https://qa.invalid/drop/ppt-result/s1/f/pdf?x=1"},"compat":{"s":"https://else.invalid/x"}},"media_files":[{"name":"demo","s":"https://qa.invalid/drop/ppt-result/s1/f/media1?x=1"}]}}') as Blob;
+      const assets = api.assets(detail, 's1', 'f');
+      expect(assets.length).assertEqual(2);
+      expect(assets[1].name).assertEqual('demo');
+      const old = CloudSpaceApi.parseState(JSON.parse('{"events":[],"pptConversion":"true"}') as Blob);
+      expect(old.pptConversion).assertFalse();
+      expect(old.files === undefined).assertTrue();
+    });
+
     it('contract_constants', 0, () => {
       expect(CloudSpaceDefaults.BASE_URL).assertEqual('https://tool.furina.fun/drop');
       expect(CloudSpaceDefaults.CHUNK_SIZE).assertEqual(8 * 1024 * 1024);

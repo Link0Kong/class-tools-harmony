@@ -1,6 +1,6 @@
 ﻿import { showFeedback } from '../components/AppFeedback';
 import { Services } from '../../app/Services';
-import { CloudSpaceFile, CloudSpaceSnapshot, CloudSpaceResult } from '../../data/cloudspace/CloudSpaceModels';
+import { DropAsset, CloudSpaceFile, CloudSpaceSnapshot, CloudSpaceResult } from '../../data/cloudspace/CloudSpaceModels';
 import { CloudSpaceLogic } from '../../data/cloudspace/CloudSpaceLogic';
 import { CloudSpaceRepository, PickedFile } from '../../data/cloudspace/CloudSpaceRepository';
 import { Tokens } from '../theme/Tokens';
@@ -24,6 +24,10 @@ export struct FileTransferScreen {
 
   @State private loading: boolean = true;
   @State private connected: boolean = false;
+  @State private pptConversion: boolean = false;
+  @State private selectedFile: string = '';
+  @State private assets: DropAsset[] = [];
+  private visible: boolean = false;
   @State private files: CloudSpaceFile[] = [];
   @State private expiredCount: number = 0;
   @State private statusMsg: string = '';
@@ -42,6 +46,7 @@ export struct FileTransferScreen {
   }
 
   aboutToAppear(): void {
+    this.visible = true;
     this.refresh(true);
     this.pollTimer = setInterval(() => {
       if (!this.uploading) {
@@ -51,6 +56,7 @@ export struct FileTransferScreen {
   }
 
   aboutToDisappear(): void {
+    this.visible = false;
     if (this.pollTimer >= 0) {
       clearInterval(this.pollTimer);
       this.pollTimer = -1;
@@ -60,6 +66,11 @@ export struct FileTransferScreen {
   private applySnapshot(snapshot: CloudSpaceSnapshot): void {
     this.connected = snapshot.connected();
     this.files = snapshot.files;
+    this.pptConversion = snapshot.pptConversion;
+    if (!this.files.some((f: CloudSpaceFile) => f.id === this.selectedFile && f.conversion?.status === 'ready')) {
+      this.assets = [];
+      this.selectedFile = '';
+    }
     this.expiredCount = snapshot.expiredCount;
     this.loading = false;
   }
@@ -70,8 +81,10 @@ export struct FileTransferScreen {
       this.errorMsg = '身份缺失，请重新登录';
       return;
     }
+    const owner = this.repo();
     const result: CloudSpaceResult<CloudSpaceSnapshot> = force
-      ? await this.repo().ensureSpace() : await this.repo().refresh(false);
+      ? await owner.ensureSpace() : await owner.refresh(false);
+    if (!this.visible || owner !== this.repo()) return;
     if (result.ok && result.value !== undefined) {
       this.applySnapshot(result.value);
       if (force) {
@@ -123,10 +136,12 @@ export struct FileTransferScreen {
     this.downloadingId = file.id;
     this.errorMsg = '';
     this.statusMsg = '正在下载「' + file.name + '」…';
-    const result: CloudSpaceResult<string> = await this.repo().download(file,
+    const owner = this.repo();
+    const result: CloudSpaceResult<string> = await owner.download(file,
       (received: number, total: number) => {
         this.uploadStateText = '下载中 ' + CloudSpaceLogic.uploadPercent(received, total) + '%';
       });
+    if (!this.visible || owner !== this.repo()) return;
     if (!result.ok || result.value === undefined) {
       this.downloadingId = '';
       this.statusMsg = '';
@@ -138,6 +153,36 @@ export struct FileTransferScreen {
     this.downloadingId = '';
     this.statusMsg = '';
     showFeedback(this.getUIContext(), openError.length > 0 ? openError : '已下载并打开「' + file.name + '」');
+  }
+
+  private async openConversion(file: CloudSpaceFile): Promise<void> {
+    const owner = this.repo();
+    if (file.conversion?.status === 'ready') {
+      const result = await owner.assets(file.id);
+      if (!this.visible || owner !== this.repo()) return;
+      this.selectedFile = file.id;
+      this.assets = result.value ?? [];
+      this.statusMsg = result.error?.displayMessage() ?? (this.assets.length > 0 ? '' : '没有可下载的产物');
+    } else {
+      const result = await owner.convert(file);
+      if (!this.visible || owner !== this.repo()) return;
+      if (result.value) this.applySnapshot(result.value);
+      this.statusMsg = result.error?.displayMessage() ?? '';
+    }
+  }
+
+  private async saveAsset(id: string, asset: DropAsset): Promise<void> {
+    if (this.downloadingId.length > 0) return;
+    const owner = this.repo();
+    this.downloadingId = id;
+    const saved = await owner.downloadAsset(id, asset.key, () => {});
+    if (!this.visible || owner !== this.repo()) return;
+    this.downloadingId = '';
+    if (!saved.value) {
+      this.statusMsg = saved.error?.displayMessage() ?? '下载失败';
+      return;
+    }
+    this.statusMsg = await owner.openLocalFile(saved.value, asset.mime) || '已下载并打开';
   }
 
   private confirmDelete(file: CloudSpaceFile): void {
@@ -328,6 +373,20 @@ export struct FileTransferScreen {
       .margin({ left: 10 })
 
       Column({ space: 6 }) {
+        if (this.pptConversion && file.canConvert()) {
+          Button(file.conversion?.label() ?? '转换为兼容版和 PDF')
+            .fontSize(Tokens.F_CAPTION)
+            .enabled(file.conversion?.status !== 'queued' && file.conversion?.status !== 'processing' &&
+              (file.conversion?.status !== 'failed' || file.conversion.attempt > 0))
+            .onClick(() => { this.openConversion(file); })
+          if (this.selectedFile === file.id) {
+            ForEach(this.assets, (asset: DropAsset) => {
+              Button(asset.key === 'compat' ? '下载兼容版' : asset.key === 'pdf' ? '下载 PDF' : '下载 ' + asset.name)
+                .fontSize(Tokens.F_CAPTION)
+                .onClick(() => { this.saveAsset(file.id, asset); })
+            }, (asset: DropAsset) => asset.key)
+          }
+        }
         Text('下载')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.MIST_TEAL)
@@ -388,7 +447,7 @@ export struct FileTransferScreen {
       } else {
         ForEach(this.files, (file: CloudSpaceFile) => {
           this.fileRow(file)
-        }, (file: CloudSpaceFile) => file.id)
+        }, (file: CloudSpaceFile) => file.id + JSON.stringify(file.conversion) + this.pptConversion)
       }
 
       if (this.expiredCount > 0) {
