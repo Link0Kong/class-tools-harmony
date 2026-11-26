@@ -114,8 +114,13 @@ export class Breakpoints {
     return Breakpoints.isWide(width) ? Breakpoints.SIDE_BAR_SPACE : Breakpoints.FLOAT_BAR_SPACE;
   }
 
-  /** 工具页内容最大宽度（vp）：宽屏居中约束，手机不限制。 */
-  static toolContentMaxWidth(width: number): number {
+  /** 任务与课表的双栏各需约 400vp，以内容区实测宽度判定。 */
+  static supportsToolPanes(width: number): boolean {
+    return Breakpoints.normalize(width) >= 840;
+  }
+
+  static toolContentMaxWidth(width: number, paired: boolean = false): number {
+    if (paired && Breakpoints.supportsToolPanes(width)) return 1200;
     return Breakpoints.isWide(width) ? Breakpoints.TOOL_MAX_WIDE : 100000;
   }
 

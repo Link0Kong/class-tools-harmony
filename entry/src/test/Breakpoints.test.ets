@@ -45,6 +45,14 @@ export default function breakpointsTest() {
       expect(Breakpoints.useTwoPane(700)).assertFalse();
       expect(Breakpoints.useTwoPane(1000)).assertTrue();
     });
+
+    it('paired_tools_follow_available_width', 0, () => {
+      expect(Breakpoints.supportsToolPanes(0)).assertFalse();
+      expect(Breakpoints.supportsToolPanes(839)).assertFalse();
+      expect(Breakpoints.supportsToolPanes(840)).assertTrue();
+      expect(Breakpoints.toolContentMaxWidth(1400, true)).assertEqual(1200);
+      expect(Breakpoints.toolContentMaxWidth(1400)).assertEqual(960);
+    });
   });
 
   describe('VisualTokens', () => {

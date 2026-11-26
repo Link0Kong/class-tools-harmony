@@ -266,7 +266,7 @@ export struct ToolScreen {
     }
     .width('100%')
     .height('100%')
-    .constraintSize({ maxWidth: Breakpoints.toolContentMaxWidth(this.layoutWidth) })
+    .constraintSize({ maxWidth: Breakpoints.toolContentMaxWidth(this.layoutWidth, this.toolId === 'hw' || this.toolId === 'tt') })
     .padding({ top: this.topInset })
     }
     .width('100%')

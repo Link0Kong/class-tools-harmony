@@ -18,6 +18,7 @@ import { ExportCardView } from '../components/ExportCardView';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { PageHeader } from '../components/PageHeader';
+import { Breakpoints } from '../theme/Breakpoints';
 
 const ROW_H: number = 46;
 const TIME_W: number = 46;
@@ -79,6 +80,7 @@ export struct TimetableScreen {
   @State private source: string = '';
   @State private now: number = Date.now();
   @State private gridWidth: number = 0;
+  @State private wideLayout: boolean = false;
   @State private dragX: number = 0;
   @State private weekBusy: boolean = false;
   @State private detailCourse: Course | undefined = undefined;
@@ -393,6 +395,7 @@ export struct TimetableScreen {
   }
 
   private openCourse(course: Course, day: number): void {
+    if (this.wideLayout) this.dayIdx = day;
     this.detailCourse = course;
     const date: Date = this.dateAt(day);
     this.detailDate = TtPeriods.DAY_LABELS[day] + ' ' + (date.getMonth() + 1) + '-' + date.getDate();
@@ -677,8 +680,16 @@ export struct TimetableScreen {
       .margin({ top: 2 })
     }
     .layoutWeight(1)
-    .height(38)
+    .height(this.wideLayout ? 48 : 38)
     .justifyContent(FlexAlign.Center)
+    .borderRadius(8)
+    .backgroundColor(this.wideLayout && this.dayIdx === day ? Tokens.tint(Tokens.MIST_TEAL, 0.14) : Color.Transparent)
+    .accessibilityText(TtPeriods.DAY_LABELS[day] + ' ' + (this.dateAt(day).getMonth() + 1) + '月' +
+      this.dateAt(day).getDate() + '日' + (this.wideLayout && this.dayIdx === day ? '，已选择' : ''))
+    .onClick(() => {
+      this.pickDay(day);
+      if (!this.wideLayout) this.switchView('day');
+    })
   }
 
   private isToday(day: number): boolean {
@@ -967,6 +978,17 @@ export struct TimetableScreen {
       .width('100%')
       .margin({ top: 12 })
 
+      this.dayAgenda()
+    }
+    .width('100%')
+    .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })))
+  }
+
+  @Builder
+  dayAgenda() {
+    Column() {
+      Text((this.selectedDate().getMonth() + 1) + '月' + this.selectedDate().getDate() + '日 · ' + TtPeriods.DAY_LABELS[this.dayIdx])
+        .fontSize(16).fontWeight(FontWeight.Bold).fontColor(Tokens.TEXT_PRIMARY).width('100%')
       if (this.coursesOf(this.dayIdx).length === 0) {
         Text('这天没课')
           .fontSize(12)
@@ -984,9 +1006,7 @@ export struct TimetableScreen {
         .width('100%')
         .margin({ top: 12 })
       }
-    }
-    .width('100%')
-    .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })))
+    }.width('100%').margin({ top: 12 })
   }
 
   @Builder
@@ -1329,6 +1349,82 @@ export struct TimetableScreen {
     .justifyContent(FlexAlign.Center)
   }
 
+  @Builder
+  nextSession() {
+    if (this.currentSession() !== undefined) {
+      Column() {
+        this.nextCard(this.currentSession()!)
+      }
+      .transition(Motion.popIn())
+    }
+  }
+
+  @Builder
+  scheduleView() {
+    Column() {
+      if (this.viewMode === 'week') {
+        Column() {
+          this.weekGrid()
+        }
+        .width('100%')
+        .margin({ top: 12 })
+        .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: -10 })))
+      } else {
+        this.dayView()
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  courseDirectory() {
+    Column() {
+      this.groupsPanel()
+
+      Row() {
+        Text(this.source === '我的课表'
+          ? '个人课表来自网页/安卓端教务登录同步'
+          : '个人课表需在网页/安卓端完成教务登录后同步')
+          .fontSize(10)
+          .fontColor(Tokens.TEXT_TERTIARY)
+          .layoutWeight(1)
+        Text('教务系统')
+          .fontSize(10)
+          .fontColor(Tokens.SLATE_BLUE)
+          .onClick(() => {
+            this.openJw();
+          })
+      }
+      .width('100%')
+      .margin({ top: 14 })
+    }.width('100%')
+  }
+
+  @Builder
+  tabletSchedule() {
+    Row({ space: 16 }) {
+      Scroll(this.scroller) {
+        Column() {
+          this.weekHead()
+          this.actionsRow()
+          this.scheduleView()
+        }.width('100%').padding(16).backgroundColor(Tokens.CARD)
+          .border({ width: 0.5, color: Tokens.CARD_EDGE }).borderRadius(20).clip(true)
+      }.layoutWeight(1.6).height('100%').align(Alignment.Top).scrollBar(BarState.Auto)
+      Scroll() {
+        Column({ space: 12 }) {
+          if (this.viewMode === 'week') {
+            Column() { this.dayAgenda() }.width('100%').padding({ left: 16, right: 16, bottom: 16 })
+              .backgroundColor(Tokens.CARD).border({ width: 0.5, color: Tokens.CARD_EDGE }).borderRadius(20)
+          }
+          this.nextSession()
+          this.courseDirectory()
+        }.width('100%')
+      }.layoutWeight(1).height('100%').align(Alignment.Top).scrollBar(BarState.Auto)
+    }.width('100%').height('100%').alignItems(VerticalAlign.Top)
+      .padding({ left: 20, right: 20, top: 10, bottom: 16 })
+  }
+
   @State private headerFade: number = 0;
 
   build() {
@@ -1350,74 +1446,42 @@ export struct TimetableScreen {
             .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 12 })
           } else {
             Refresh({ refreshing: $$this.refreshing }) {
-              Scroll(this.scroller) {
-                Column() {
+              if (this.wideLayout) {
+                this.tabletSchedule()
+              } else {
+                Scroll(this.scroller) {
                   Column() {
-                    this.weekHead()
-                    this.actionsRow()
-
-                    if (this.currentSession() !== undefined) {
-                      Column() {
-                        this.nextCard(this.currentSession()!)
-                      }
-                      .transition(Motion.popIn())
-                    }
-
                     Column() {
-                      if (this.viewMode === 'week') {
-                        Column() {
-                          this.weekGrid()
-                        }
-                        .width('100%')
-                        .margin({ top: 12 })
-                        .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: -10 })))
-                      } else {
-                        this.dayView()
-                      }
+                      this.weekHead()
+                      this.actionsRow()
+
+                      this.nextSession()
+                      this.scheduleView()
+                      this.courseDirectory()
                     }
                     .width('100%')
-
-                    this.groupsPanel()
-
-                    Row() {
-                      Text(this.source === '我的课表'
-                        ? '个人课表来自网页/安卓端教务登录同步'
-                        : '个人课表需在网页/安卓端完成教务登录后同步')
-                        .fontSize(10)
-                        .fontColor(Tokens.TEXT_TERTIARY)
-                        .layoutWeight(1)
-                      Text('教务系统')
-                        .fontSize(10)
-                        .fontColor(Tokens.SLATE_BLUE)
-                        .onClick(() => {
-                          this.openJw();
-                        })
-                    }
-                    .width('100%')
-                    .margin({ top: 14 })
+                    .padding(14)
+                    .backgroundColor(Tokens.CARD)
+                    .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+                    .border({ width: 0.5, color: Tokens.CARD_EDGE })
+                    .borderRadius(20)
+                    .shadow({ radius: 18, color: Tokens.CARD_SHADOW, offsetX: 0, offsetY: 6 })
+                    .clip(true)
                   }
                   .width('100%')
-                  .padding(14)
-                  .backgroundColor(Tokens.CARD)
-                  .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-                  .border({ width: 0.5, color: Tokens.CARD_EDGE })
-                  .borderRadius(20)
-                  .shadow({ radius: 18, color: Tokens.CARD_SHADOW, offsetX: 0, offsetY: 6 })
-                  .clip(true)
+                  .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10, bottom: 24 })
                 }
                 .width('100%')
-                .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10, bottom: 24 })
+                .height('100%')
+                .align(Alignment.Top)
+                .scrollBar(BarState.Off)
+                .onDidScroll((offset: number) => {
+                  const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+                  if (Math.abs(next - this.headerFade) > 0.03) {
+                    this.headerFade = next;
+                  }
+                })
               }
-              .width('100%')
-              .height('100%')
-              .align(Alignment.Top)
-              .scrollBar(BarState.Off)
-              .onDidScroll((offset: number) => {
-                const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
-                if (Math.abs(next - this.headerFade) > 0.03) {
-                  this.headerFade = next;
-                }
-              })
             }
             .layoutWeight(1)
             .onRefreshing(() => {
@@ -1448,5 +1512,8 @@ export struct TimetableScreen {
     }
     .width('100%')
     .height('100%')
+    .onAreaChange((_old: Area, area: Area) => {
+      this.wideLayout = Breakpoints.supportsToolPanes(Number(area.width));
+    })
   }
 }

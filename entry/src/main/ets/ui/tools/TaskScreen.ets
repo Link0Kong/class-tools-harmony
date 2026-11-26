@@ -18,6 +18,7 @@ import { HomeworkBrief, PersonalTask, TaskCreateDraft, TaskDraftStep, TaskShare,
 import { NativeShare } from '../../features/share/NativeShare';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
+import { Breakpoints } from '../theme/Breakpoints';
 
 @Component
 export struct TaskScreen {
@@ -31,6 +32,9 @@ export struct TaskScreen {
   @State private personal: PersonalTask[] = [];
   @State private brief: HomeworkBrief = new HomeworkBrief();
   @State private selected: PersonalTask | undefined = undefined;
+  @State private wideLayout: boolean = false;
+  private detailScroller: Scroller = new Scroller();
+  private detailScrollId: string = '';
   @State private shared: TaskShare | undefined = undefined;
   @State private linkInput: boolean = false;
   @State private link: string = '';
@@ -450,11 +454,20 @@ export struct TaskScreen {
       }.alignItems(HorizontalAlign.Start).layoutWeight(1).onClick(() => { this.selected = task; })
       this.action(task.done ? '撤销完成' : '完成', () => { this.toggle(task); })
     }.width('100%').padding(12).backgroundColor($r('app.color.task_card')).borderRadius(12)
+      .border({ width: this.wideLayout && this.selected?.id === task.id ? 2 : 0, color: $r('app.color.task_accent') })
   }
 
   private async shareTask(task: PersonalTask): Promise<void> {
     const result = await NativeShare.shareLink(TaskShare.link(task), task.title);
     if (!result.ok) this.message(result.message);
+  }
+
+  private scrollerForDetail(id: string): Scroller {
+    if (this.detailScrollId !== id) {
+      this.detailScrollId = id;
+      this.detailScroller = new Scroller();
+    }
+    return this.detailScroller;
   }
 
   @Builder
@@ -463,7 +476,7 @@ export struct TaskScreen {
       actionText: '分享任务链接', onAction: () => { this.shareTask(task); },
       actionText2: '完整任务管理', onAction2: this.onAdvanced }) {
       Column() {
-        Scroll() {
+        Scroll(this.scrollerForDetail(task.id)) {
           Column({ space: 12 }) {
             Column({ space: 8 }) {
               Text([task.statusLabel(Date.now()), task.starred ? '重要' : ''].filter((s: string) => !!s).join(' · '))
@@ -652,7 +665,7 @@ export struct TaskScreen {
   categoryPage(view: TaskView, tasks: PersonalTask[]) {
     Refresh({ refreshing: this.refreshing }) {
       List({ space: 10 }) {
-        if (view.key === 'all' && !this.searching) {
+        if (!this.wideLayout && view.key === 'all' && !this.searching) {
           ListItem() { this.homeworkCard() }
         }
         ListItem() {
@@ -673,58 +686,86 @@ export struct TaskScreen {
     }.onRefreshing(() => { this.refresh(true); })
   }
 
-  build() {
-    if (this.imagePreview) {
-      PageHeader({ taskColors: true, title: '图片附件', onBack: () => { this.imagePreview = ''; } }) {
-        Image(this.imagePreview).objectFit(ImageFit.Contain).width('100%').height('100%')
-      }
-    } else if (this.shared) {
-      PageHeader({ taskColors: true, title: '分享的任务', onBack: () => { this.shared = undefined; } }) {
-        Scroll() {
-          Column({ space: 14 }) {
-            Text(this.shared.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
-            Text([this.shared.group, this.shared.due].filter((s: string) => !!s).join(' · ')).fontColor($r('app.color.task_muted'))
-            if (this.shared.notes) { Text(this.shared.notes).fontColor($r('app.color.task_text')) }
-            ForEach(this.shared.steps, (step: string) => { Text('• ' + step).fontColor($r('app.color.task_text')) },
-              (step: string, index: number) => index + step)
-            this.action('保存为我的任务', () => { this.acceptShare(); })
-          }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
-        }.height('100%').align(Alignment.Top)
-      }
-    } else if (this.editing || this.aiDraftIndex >= 0) {
-      this.taskEditor()
-    } else if (this.aiOpen) {
-      this.aiIntake()
-    } else if (this.selected) {
-      this.detail(this.selected)
-    } else {
-      PageHeader({ taskColors: true, title: '任务', actionText: '完整任务管理', onAction: this.onAdvanced,
-        actionText2: '从链接添加任务', onAction2: () => { this.linkInput = true; },
-        actionText3: this.searching ? '结束搜索' : '搜索任务', onAction3: () => {
-          this.searching = !this.searching;
-          if (!this.searching) this.query = '';
-        }, onBack: this.onClose }) {
-        Column() {
-          if (this.searching) {
-            TextInput({ placeholder: '搜索标题、备注、来源或标签', text: this.query })
-              .margin({ left: 14, right: 14 }).height(38).onChange((s: string) => { this.query = s; })
-          }
-          Tabs({ barPosition: BarPosition.Start, index: TaskView.index(this.views, this.activeView) }) {
-            ForEach(this.views, (view: TaskView) => {
-              TabContent() {
-                this.categoryPage(view, TaskView.filter(this.personal, view.key, taskDay(new Date()), this.query))
-              }.tabBar(view.label)
-            }, (view: TaskView) => view.key + ':' + view.label)
-          }.width('100%').layoutWeight(1).barMode(BarMode.Scrollable).barHeight(44).scrollable(true).edgeEffect(EdgeEffect.None)
-          .onChange((index: number) => {
-            if (index >= 0 && index < this.views.length) this.activeView = this.views[index].key;
-          })
-          if (this.activeView !== 'all' || this.searching) {
-            this.action('查看班级作业', () => this.onHomework(''))
-          }
-          this.quickEntry()
-        }.width('100%').height('100%')
-      }
+  @Builder
+  taskList() {
+    PageHeader({ taskColors: true, title: '任务', actionText: '完整任务管理', onAction: this.onAdvanced,
+      actionText2: '从链接添加任务', onAction2: () => { this.linkInput = true; },
+      actionText3: this.searching ? '结束搜索' : '搜索任务', onAction3: () => {
+        this.searching = !this.searching;
+        if (!this.searching) this.query = '';
+      }, onBack: this.onClose }) {
+      Column() {
+        if (this.searching) {
+          TextInput({ placeholder: '搜索标题、备注、来源或标签', text: this.query })
+            .margin({ left: 14, right: 14 }).height(38).onChange((s: string) => { this.query = s; })
+        }
+        Tabs({ barPosition: BarPosition.Start, index: TaskView.index(this.views, this.activeView) }) {
+          ForEach(this.views, (view: TaskView) => {
+            TabContent() {
+              this.categoryPage(view, TaskView.filter(this.personal, view.key, taskDay(new Date()), this.query))
+            }.tabBar(view.label)
+          }, (view: TaskView) => view.key + ':' + view.label)
+        }.width('100%').layoutWeight(1).barMode(BarMode.Scrollable).barHeight(44).scrollable(true).edgeEffect(EdgeEffect.None)
+        .onChange((index: number) => {
+          if (index >= 0 && index < this.views.length) this.activeView = this.views[index].key;
+        })
+        if (this.wideLayout || this.activeView !== 'all' || this.searching) {
+          this.action('查看班级作业', () => this.onHomework(''))
+        }
+        this.quickEntry()
+      }.width('100%').height('100%')
     }
+  }
+
+  build() {
+    Stack() {
+      Row() {
+        Column() { this.taskList() }.layoutWeight(1).height('100%')
+        if (this.wideLayout) {
+          Divider().vertical(true).height('100%').color($r('app.color.task_line'))
+          Column() {
+            if (this.selected) {
+              ForEach([this.selected], (task: PersonalTask) => {
+                this.detail(task)
+              }, (task: PersonalTask) => JSON.stringify(task))
+            } else {
+              Scroll() {
+                Column() { this.homeworkCard() }.width('100%').padding(20)
+              }.width('100%').height('100%').align(Alignment.Top)
+            }
+          }.layoutWeight(1.08).height('100%')
+        }
+      }.width('100%').height('100%').backgroundColor($r('app.color.task_page'))
+        .visibility(this.imagePreview || this.shared || this.editing || this.aiOpen || (!this.wideLayout && this.selected)
+          ? Visibility.Hidden : Visibility.Visible)
+
+      if (this.imagePreview) {
+        PageHeader({ taskColors: true, title: '图片附件', onBack: () => { this.imagePreview = ''; } }) {
+          Image(this.imagePreview).objectFit(ImageFit.Contain).width('100%').height('100%')
+        }
+      } else if (this.shared) {
+        PageHeader({ taskColors: true, title: '分享的任务', onBack: () => { this.shared = undefined; } }) {
+          Scroll() {
+            Column({ space: 14 }) {
+              Text(this.shared.title).fontSize(22).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
+              Text([this.shared.group, this.shared.due].filter((s: string) => !!s).join(' · ')).fontColor($r('app.color.task_muted'))
+              if (this.shared.notes) { Text(this.shared.notes).fontColor($r('app.color.task_text')) }
+              ForEach(this.shared.steps, (step: string) => { Text('• ' + step).fontColor($r('app.color.task_text')) },
+                (step: string, index: number) => index + step)
+              this.action('保存为我的任务', () => { this.acceptShare(); })
+            }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+          }.height('100%').align(Alignment.Top)
+        }
+      } else if (this.editing || this.aiDraftIndex >= 0) {
+        this.taskEditor()
+      } else if (this.aiOpen) {
+        this.aiIntake()
+      } else if (!this.wideLayout && this.selected) {
+        this.detail(this.selected)
+      }
+    }.width('100%').height('100%')
+      .onAreaChange((_old: Area, area: Area) => {
+        this.wideLayout = Breakpoints.supportsToolPanes(Number(area.width));
+      })
   }
 }
