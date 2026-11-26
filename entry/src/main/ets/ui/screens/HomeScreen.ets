@@ -164,9 +164,7 @@ export struct HomeScreen {
     this.rotateTimer = setInterval(() => {
       this.rotateTick();
     }, 5000);
-    this.clockTimer = setInterval(() => {
-      this.tickClock();
-    }, 20000);
+    this.scheduleClock();
   }
 
   aboutToDisappear(): void {
@@ -191,9 +189,16 @@ export struct HomeScreen {
       this.refreshTimer = -1;
     }
     if (this.clockTimer >= 0) {
-      clearInterval(this.clockTimer);
+      clearTimeout(this.clockTimer);
       this.clockTimer = -1;
     }
+  }
+
+  private scheduleClock(): void {
+    this.clockTimer = setTimeout(() => {
+      this.tickClock();
+      this.scheduleClock();
+    }, 60000 - Date.now() % 60000);
   }
 
   private tickClock(): void {
@@ -1150,8 +1155,8 @@ export struct HomeScreen {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      if (s.state === SessionState.ONGOING || (this.plan.next !== undefined && s.startAt === this.plan.next.startAt)) {
-        Text(s.state === SessionState.ONGOING ? '上课中' : '下一节')
+      if (s.countdown.length > 0) {
+        Text(s.countdown)
           .fontSize(11)
           .fontColor(Tokens.MIST_TEAL)
           .padding({ left: 7, right: 7, top: 2, bottom: 2 })
@@ -1232,7 +1237,7 @@ export struct HomeScreen {
       .fontColor(Tokens.TEXT_SECONDARY)
       .maxLines(1)
     Blank()
-    this.cardFooter('查看本周课表')
+    this.cardFooter(s.countdown && s.countdown !== '下一节' ? s.countdown : '查看本周课表')
   }
 
   @Builder
@@ -1244,7 +1249,7 @@ export struct HomeScreen {
         Column() {
           ForEach(this.plan.today, (s: SessionInfo) => {
             this.sessionRow(s)
-          }, (s: SessionInfo, index: number) => index + '_' + s.startAt + '_' + s.name + '_' + s.room + '_' + s.span + '_' + s.state)
+          }, (s: SessionInfo, index: number) => index + '_' + s.startAt + '_' + s.name + '_' + s.room + '_' + s.span + '_' + s.state + '_' + s.countdown)
         }
         .width('100%')
         Blank()

@@ -147,7 +147,8 @@ export class NotifyCenter {
 
       if (settings.classRemind && settings.liveActivities) {
         if (!input.unavailable.includes('cls')) {
-          LiveActivity.coursePlan(sid, input.classes, NotifySettings.normalizeClassLead(settings.classLeadMinutes));
+          LiveActivity.coursePlan(sid, input.classes, NotifySettings.normalizeClassLead(settings.classLeadMinutes),
+            NotifySettings.normalizeBreakLead(settings.breakLeadMinutes));
         }
       } else {
         LiveActivity.coursePlan(sid, [], 0);

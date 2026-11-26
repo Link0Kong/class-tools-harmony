@@ -41,6 +41,19 @@ function bodyJson(courses: string, termStart: string): string {
 
 export default function timetableTest() {
   describe('TtCalendarBasics', () => {
+    it('workbench_tracks_each_bell_and_recognizes_short_breaks', 0, () => {
+      const table = snapshotWith([course('数学', 0, 1, 2, '1', 'all'), course('物理', 0, 3, 3, '1', 'all'),
+        course('实验', 0, 6, 6, '1', 'all')], TERM_START);
+      const at = (hour: number, minute: number): number => new Date(2026, 8, 7, hour, minute).getTime();
+      expect(TtCalendar.plan(table, at(7, 59)).today[0].countdown).assertEqual('下一节');
+      expect(TtCalendar.plan(table, at(8, 0)).today[0].countdown).assertEqual('距上课 10 分钟');
+      expect(TtCalendar.plan(table, at(8, 49)).today[0].countdown).assertEqual('距下课 1 分钟');
+      expect(TtCalendar.plan(table, at(8, 50)).today[0].countdown).assertEqual('距上课 10 分钟');
+      expect(TtCalendar.plan(table, at(9, 0)).today[0].countdown).assertEqual('距下课 40 分钟');
+      const bells = TtCalendar.upcomingBells(table, at(7, 0), 1);
+      expect(bells.map((bell: SessionInfo) => bell.afterShortBreak).join(',')).assertEqual('false,true,true,false');
+    });
+
     it('parses_term_start', 0, () => {
       const date: Date | undefined = TtCalendar.parseTermStart(TERM_START);
       expect(date !== undefined).assertTrue();

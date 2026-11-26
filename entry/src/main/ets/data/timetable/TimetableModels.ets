@@ -80,6 +80,8 @@ export class SessionInfo {
   startAt: number = 0;
   endAt: number = 0;
   state: SessionState = SessionState.NEXT;
+  afterShortBreak: boolean = false;
+  countdown: string = '';
   dayOffset: number = 0;
   dayText: string = '';
   dateText: string = '';

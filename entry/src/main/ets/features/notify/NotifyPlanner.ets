@@ -19,13 +19,13 @@ export class CourseWindow {
   session: SessionInfo | undefined = undefined;
   nextAt: number = 0;
 
-  static select(classes: SessionInfo[], leadMinutes: number, now: number): CourseWindow {
+  static select(classes: SessionInfo[], leadMinutes: number, now: number, breakLead: number = 3): CourseWindow {
     const result: CourseWindow = new CourseWindow();
     for (const cls of classes) {
       if (cls.startAt <= now) {
         continue;
       }
-      const at: number = cls.startAt - leadMinutes * 60000;
+      const at: number = cls.startAt - (cls.afterShortBreak ? breakLead : leadMinutes) * 60000;
       const transition: number = at > now ? at : cls.startAt;
       if (result.nextAt === 0 || transition < result.nextAt) {
         result.nextAt = transition;
@@ -111,7 +111,8 @@ export class NotifyPlanner {
   }
 
   private static planClasses(input: NotifyInput, settings: NotifySettings, out: NotifyEvent[]): void {
-    const leadMs: number = NotifySettings.normalizeClassLead(settings.classLeadMinutes) * 60 * 1000;
+    const lead = NotifySettings.normalizeClassLead(settings.classLeadMinutes);
+    const breakLead = NotifySettings.normalizeBreakLead(settings.breakLeadMinutes);
     for (let i = 0; i < input.classes.length; i++) {
       const cls: SessionInfo = input.classes[i];
       if (cls.startAt <= input.now) {
@@ -120,7 +121,7 @@ export class NotifyPlanner {
       if (cls.startAt - input.now > SCHEDULE_WINDOW_MS) {
         continue;
       }
-      const fireAt: number = cls.startAt - leadMs;
+      const fireAt: number = cls.startAt - (cls.afterShortBreak ? breakLead : lead) * 60000;
       const event: NotifyEvent = new NotifyEvent();
       event.key = 'cls:' + cls.startAt + ':' + cls.name;
       event.kind = 'class_remind';

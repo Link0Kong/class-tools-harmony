@@ -30,6 +30,7 @@ export class LiveActivity {
   private static clockOffset: number = 0;
   private static voteExpiry: number = 0;
   private static lead: number = 0;
+  private static breakLead: number = 3;
   private static courseNotice: number = 0;
   private static uploads: Set<number> = new Set();
 
@@ -59,10 +60,11 @@ export class LiveActivity {
     LiveActivity.endVote();
   }
 
-  static coursePlan(sid: string, classes: SessionInfo[], lead: number): void {
+  static coursePlan(sid: string, classes: SessionInfo[], lead: number, breakLead: number = 3): void {
     LiveActivity.courseSid = sid;
     LiveActivity.classes = classes;
     LiveActivity.lead = lead;
+    LiveActivity.breakLead = breakLead;
     LiveActivity.updateCourse();
   }
 
@@ -82,7 +84,7 @@ export class LiveActivity {
       LiveActivity.last.delete(COURSE_ID);
       LiveActivity.clockOffset = offset;
     }
-    const window: CourseWindow = CourseWindow.select(LiveActivity.classes, LiveActivity.lead, now);
+    const window: CourseWindow = CourseWindow.select(LiveActivity.classes, LiveActivity.lead, now, LiveActivity.breakLead);
     const cls = window.session;
     if (cls) {
       const room = cls.fullRoom || cls.room;

@@ -203,10 +203,16 @@ export class TtCalendar {
     for (let offset = 0; offset < Math.floor(days); offset++) {
       const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
       if (TtCalendar.weekOf(term, date) === undefined) continue;
-      for (const course of TtCalendar.coursesOn(snapshot.c, term, date)) {
+      const courses = TtCalendar.coursesOn(snapshot.c, term, date);
+      for (const course of courses) {
         for (let period = course.start; period <= course.end; period++) {
           const bell = TtCalendar.session(course, date, period, period, now);
           if (bell.startAt <= now) continue;
+          if (period > 1) {
+            const gap = bell.startAt - TtCalendar.at(date, TtPeriods.endText(period - 1));
+            bell.afterShortBreak = gap > 0 && gap <= 10 * 60000 &&
+              courses.some((c: Course) => c.start <= period - 1 && c.end >= period - 1);
+          }
           TtCalendar.describeDay(bell, date, offset);
           bells.push(bell);
         }
@@ -251,6 +257,14 @@ export class TtCalendar {
     plan.week = TtCalendar.weekOf(termStart, today);
     plan.today = TtCalendar.sessionsOn(snapshot.c, termStart, today, nowMillis, true);
     plan.next = TtCalendar.nextSession(snapshot.c, termStart, nowMillis, 14);
+    for (const session of plan.today) {
+      if (session.state === SessionState.ONGOING) {
+        session.countdown = '距下课 ' + Math.ceil((session.endAt - nowMillis) / 60000) + ' 分钟';
+      } else if (session.state === SessionState.NEXT && session.startAt === plan.next?.startAt) {
+        const minutes = Math.ceil((session.startAt - nowMillis) / 60000);
+        session.countdown = minutes <= 10 ? '距上课 ' + minutes + ' 分钟' : '下一节';
+      }
+    }
     if (plan.today.length === 0) {
       plan.todayState = TodayState.NONE;
     } else {

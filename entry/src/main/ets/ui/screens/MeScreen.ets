@@ -302,13 +302,14 @@ export struct MeScreen {
     await NotifyCenter.syncAll(true);
   }
 
-  private async setClassLead(minutes: number): Promise<void> {
+  private async setClassLead(minutes: number, duringBreak: boolean): Promise<void> {
     if (!this.notifySettings.master || !this.notifySettings.classRemind) {
       return;
     }
     this.settingsTouched = true;
     const settings: NotifySettings = this.notifySettings.copy();
-    settings.classLeadMinutes = NotifySettings.normalizeClassLead(minutes);
+    if (duringBreak) settings.breakLeadMinutes = NotifySettings.normalizeBreakLead(minutes);
+    else settings.classLeadMinutes = NotifySettings.normalizeClassLead(minutes);
     this.notifySettings = settings;
     await NotifyCenter.saveSettings(settings);
     await NotifyCenter.syncAll(true);
@@ -468,26 +469,26 @@ export struct MeScreen {
   }
 
   @Builder
-  classLeadRow() {
+  classLeadRow(duringBreak: boolean) {
     Column() {
-      Text('提前时间')
+      Text(duringBreak ? '课间提前时间' : '提前时间')
         .fontSize(Tokens.F_CAPTION)
         .fontColor(Tokens.TEXT_TERTIARY)
         .width('100%')
         .margin({ bottom: 8 })
       Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(NotifySettings.CLASS_LEAD_OPTIONS, (minutes: number, i: number) => {
+        ForEach(duringBreak ? NotifySettings.BREAK_LEAD_OPTIONS : NotifySettings.CLASS_LEAD_OPTIONS, (minutes: number, i: number) => {
           Text(minutes + ' 分钟')
             .fontSize(Tokens.F_LABEL)
-            .fontColor(this.notifySettings.classLeadMinutes === minutes ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
-            .backgroundColor(this.notifySettings.classLeadMinutes === minutes ? Tokens.MIST_TEAL : '#FFFFFF')
-            .border({ width: 1, color: this.notifySettings.classLeadMinutes === minutes
+            .fontColor((duringBreak ? this.notifySettings.breakLeadMinutes : this.notifySettings.classLeadMinutes) === minutes ? '#FFFFFF' : Tokens.TEXT_SECONDARY)
+            .backgroundColor((duringBreak ? this.notifySettings.breakLeadMinutes : this.notifySettings.classLeadMinutes) === minutes ? Tokens.MIST_TEAL : '#FFFFFF')
+            .border({ width: 1, color: (duringBreak ? this.notifySettings.breakLeadMinutes : this.notifySettings.classLeadMinutes) === minutes
               ? Tokens.MIST_TEAL : Tokens.DIVIDER })
             .borderRadius(Tokens.RADIUS_PILL)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .margin({ right: Tokens.GAP_SM, bottom: Tokens.GAP_SM })
             .onClick(() => {
-              this.setClassLead(minutes);
+              this.setClassLead(minutes, duringBreak);
             })
         }, (minutes: number, i: number) => 'class_lead_' + minutes)
       }
@@ -587,7 +588,8 @@ export struct MeScreen {
           Column() {
             this.notifySwitch('classRemind', '上课提醒', '按课表在课前提醒')
             this.notifyDivider()
-            this.classLeadRow()
+            this.classLeadRow(false)
+            this.classLeadRow(true)
           }
           .width('100%')
           .backgroundColor('#F7F8F8')

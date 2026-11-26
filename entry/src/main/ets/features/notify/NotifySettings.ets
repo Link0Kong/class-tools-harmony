@@ -14,6 +14,12 @@ export class NotifySettings {
   /** 作业/通知截止与投票结果的统一提前分钟数。 */
   leadMinutes: number = 60;
   classLeadMinutes: number = 10;
+  breakLeadMinutes: number = 3;
+  static readonly BREAK_LEAD_OPTIONS: number[] = [1, 3, 5, 10];
+
+  static normalizeBreakLead(value: number): number {
+    return NotifySettings.BREAK_LEAD_OPTIONS.includes(value) ? value : 3;
+  }
 
   static readonly LEAD_OPTIONS: number[] = [10, 30, 60, 120, 1440];
   static readonly CLASS_LEAD_OPTIONS: number[] = [5, 10, 15, 30];
@@ -91,6 +97,7 @@ export class NotifySettings {
     next.voteResult = this.voteResult;
     next.waterDeduct = this.waterDeduct;
     next.leadMinutes = NotifySettings.normalizeLead(this.leadMinutes);
+    next.breakLeadMinutes = NotifySettings.normalizeBreakLead(this.breakLeadMinutes);
     next.classLeadMinutes = NotifySettings.normalizeClassLead(this.classLeadMinutes);
     return next;
   }
@@ -119,6 +126,7 @@ export class NotifySettings {
       out.waterDeduct = obj.waterDeduct !== false;
       out.leadMinutes = NotifySettings.normalizeLead(
         typeof obj.leadMinutes === 'number' ? obj.leadMinutes : 60);
+      out.breakLeadMinutes = NotifySettings.normalizeBreakLead(obj.breakLeadMinutes);
       out.classLeadMinutes = NotifySettings.normalizeClassLead(
         typeof obj.classLeadMinutes === 'number' ? obj.classLeadMinutes : 10);
       return out;
