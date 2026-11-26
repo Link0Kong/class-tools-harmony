@@ -1,12 +1,60 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { FakeApi } from './support/FakeApi';
+import { ApiResult } from '../main/ets/data/net/ApiResult';
 import { InMemoryUserdataLocalStore } from '../main/ets/data/sync/UserdataLocalStore';
-import { UserdataRepository, UserdataPullResult, UserdataPushResult } from '../main/ets/data/sync/UserdataRepository';
+import { UserdataRepository, UserdataPullResult, UserdataPushResult, UserdataSyncConfig } from '../main/ets/data/sync/UserdataRepository';
 import { UserdataV6 } from '../main/ets/data/sync/UserdataV6';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 import { USERDATA_V6_WEB } from './fixtures/SyncFixtures';
 
 const SID: string = '3260799999';
+
+class ResponseGate {
+  private signal: () => void = () => {};
+  private resume: () => void = () => {};
+  started: Promise<void> = new Promise<void>((resolve: () => void) => { this.signal = resolve; });
+  private released: Promise<void> = new Promise<void>((resolve: () => void) => { this.resume = resolve; });
+
+  wait(): Promise<void> {
+    this.signal();
+    return this.released;
+  }
+
+  release(): void { this.resume(); }
+}
+
+class HeldUserdataApi extends FakeApi {
+  getGate?: ResponseGate;
+  postGate?: ResponseGate;
+
+  async get(path: string, authenticated: boolean = true, readTimeoutMs: number = 0,
+    retryOnNetworkFailure: boolean = true): Promise<ApiResult> {
+    const result = await super.get(path, authenticated, readTimeoutMs, retryOnNetworkFailure);
+    if (this.getGate) await this.getGate.wait();
+    return result;
+  }
+
+  async post(path: string, body: string, prefer: string = '', authenticated: boolean = true,
+    readTimeoutMs: number = 0): Promise<ApiResult> {
+    const result = await super.post(path, body, prefer, authenticated, readTimeoutMs);
+    if (this.postGate) await this.postGate.wait();
+    return result;
+  }
+}
+
+class HeldReadStore extends InMemoryUserdataLocalStore {
+  gate: ResponseGate = new ResponseGate();
+
+  async readCurrent(): Promise<Blob> {
+    const sections = await super.readCurrent();
+    await this.gate.wait();
+    return sections;
+  }
+}
+
+function nick(blob: Blob | undefined): string {
+  return JsonBlob.asString(JsonBlob.get(blob, 'nick'), '');
+}
 
 function remoteV6(nick: string, at: number): string {
   const blob: Blob = UserdataV6.empty();
@@ -32,6 +80,149 @@ function postedBlob(api: FakeApi): Blob {
 
 export default function userdataRepositoryTest() {
   describe('UserdataRepository', () => {
+    it('retired_hydration_cannot_repopulate_memory_and_anonymous_store_is_inert', 0, async () => {
+      const disk = new HeldReadStore();
+      const api = new FakeApi();
+      await disk.writeCurrent({ 'nick': 'old-local' });
+      const old = new UserdataRepository(api, disk, () => SID);
+      let count = 0;
+      old.onSectionsChanged(() => { count++; });
+      const reading = old.hydrateFromLocal();
+      await disk.gate.started;
+      old.endSession();
+      const signedOut = new UserdataRepository(api, disk, () => '');
+      await signedOut.updateCurrent({ 'nick': 'anonymous-write' });
+      await signedOut.clearLocal();
+      expect((await signedOut.flush()).status).assertEqual('disabled');
+      disk.gate.release();
+      await reading;
+      expect(nick(await disk.readCurrent())).assertEqual('old-local');
+      expect(nick(old.currentSections())).assertEqual('');
+      expect(count).assertEqual(0);
+      expect(api.getPaths.length).assertEqual(0);
+    });
+
+    it('late_pull_after_switch_cannot_publish_or_persist_into_other_account', 0, async () => {
+      const sidB = 'test-b';
+      const apiA = new HeldUserdataApi();
+      const apiB = new FakeApi();
+      apiA.userdataBlob = remoteV6('A-only', 10);
+      apiB.userdataBlob = remoteV6('B-only', 20);
+      const diskA = new InMemoryUserdataLocalStore();
+      const diskB = new InMemoryUserdataLocalStore();
+      const a = new UserdataRepository(apiA, diskA, () => SID);
+      let oldEvents = 0;
+      a.onSectionsChanged(() => { oldEvents++; });
+      const gate = new ResponseGate();
+      apiA.getGate = gate;
+      const inFlight = a.pull(true);
+      await gate.started;
+      a.endSession();
+      const b = new UserdataRepository(apiB, diskB, () => sidB);
+      let visible = '';
+      b.onSectionsChanged((sections: Blob) => { visible = nick(sections); });
+      await b.pull(true);
+      gate.release();
+      expect((await inFlight).status).assertEqual('disabled');
+      expect(oldEvents).assertEqual(0);
+      expect(visible).assertEqual('B-only');
+      expect(nick(await b.cachedBlob())).assertEqual('B-only');
+      expect(nick(await diskB.readCurrent())).assertEqual('B-only');
+      expect(nick(a.currentSections())).assertEqual('');
+      expect(await diskA.lastPullAt()).assertEqual(0);
+      // 下一次跨端修改和手动刷新仍能收敛，接着保存只命中乙。
+      apiB.userdataBlob = remoteV6('B-from-another-device', 30);
+      await b.pull(true);
+      expect(visible).assertEqual('B-from-another-device');
+      await b.updateCurrent({ 'nick': 'B-edit' });
+      expect((await b.flush()).pushed).assertTrue();
+      expect(apiB.lastPostBody().indexOf('B-edit') >= 0).assertTrue();
+      expect(apiB.lastPostBody().indexOf('"id":"test-b"') >= 0).assertTrue();
+      expect(apiB.lastPostBody().indexOf('A-only')).assertEqual(-1);
+    });
+
+    it('renewed_sid_drops_previous_queued_get_failure_and_preserves_own_pending', 0, async () => {
+      const disk = new InMemoryUserdataLocalStore();
+      const oldApi = new HeldUserdataApi();
+      const old = new UserdataRepository(oldApi, disk, () => SID);
+      const gate = new ResponseGate();
+      oldApi.getGate = gate;
+      oldApi.failGets = true;
+      const running = old.push(true, new Set<string>(['nick']));
+      await gate.started;
+      const queued = old.push(true, new Set<string>(['power']));
+      old.endSession();
+      // 甲退出、乙退出、甲以新角色登录；底层文件名和旧甲相同。
+      const b = new UserdataRepository(new FakeApi(), new InMemoryUserdataLocalStore(), () => 'test-b');
+      b.endSession();
+      const newApi = new FakeApi();
+      newApi.userdataBlob = remoteV6('renewed', 90);
+      const fresh = new UserdataRepository(newApi, disk, () => SID);
+      await fresh.pull(true);
+      await disk.markPending(['tt']);
+      gate.release();
+      expect((await running).status).assertEqual('disabled');
+      expect((await queued).status).assertEqual('disabled');
+      expect(oldApi.getPaths.length).assertEqual(1);
+      expect(oldApi.postBodies.length).assertEqual(0);
+      expect((await disk.pendingKeys()).size).assertEqual(1);
+      expect((await disk.pendingKeys()).has('tt')).assertTrue();
+      expect(nick(await disk.readCache())).assertEqual('renewed');
+      expect(nick(fresh.currentSections())).assertEqual('renewed');
+    });
+
+    it('late_post_success_or_failure_does_not_clear_or_add_pending_in_renewed_sid', 0, async () => {
+      for (let i = 0; i < 2; i++) {
+        const disk = new InMemoryUserdataLocalStore();
+        const api = new HeldUserdataApi();
+        api.failPosts = i === 1;
+        const old = new UserdataRepository(api, disk, () => SID);
+        await old.pull(true);
+        await old.updateCurrent({ 'nick': 'old-post' });
+        const gate = new ResponseGate();
+        api.postGate = gate;
+        const running = old.flush();
+        await gate.started;
+        old.endSession();
+        const newApi = new FakeApi();
+        const fresh = new UserdataRepository(newApi, disk, () => SID);
+        await disk.clear();
+        newApi.userdataBlob = remoteV6('new', 30);
+        await fresh.pull(true);
+        await disk.markPending(['tt']);
+        gate.release();
+        expect((await running).status).assertEqual('disabled');
+        expect(nick(await fresh.cachedBlob())).assertEqual('new');
+        expect(nick(await disk.readCurrent())).assertEqual('new');
+        expect(await disk.pend()).assertTrue();
+        expect((await disk.pendingKeys()).size).assertEqual(1);
+        expect((await disk.pendingKeys()).has('tt')).assertTrue();
+        await old.clearLocal();
+        expect(nick(await disk.readCurrent())).assertEqual('new');
+      }
+    });
+
+    it('expiry_keeps_owner_file_and_cancels_debounce_explicit_logout_clears_owner', 0, async () => {
+      const disk = new InMemoryUserdataLocalStore();
+      const other = new InMemoryUserdataLocalStore();
+      await other.writeCurrent({ 'nick': 'untouched' });
+      const api = new FakeApi();
+      const old = new UserdataRepository(api, disk, () => SID, () => 1000, new UserdataSyncConfig(100, 10));
+      await old.pull(true);
+      await old.updateCurrent({ 'nick': 'recover-on-reauth' });
+      old.endSession();
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 30); });
+      expect(api.getPaths.length).assertEqual(1);
+      expect(api.postBodies.length).assertEqual(0);
+      const fresh = new UserdataRepository(new FakeApi(), disk, () => SID);
+      await fresh.hydrateFromLocal();
+      expect(nick(fresh.currentSections())).assertEqual('recover-on-reauth');
+      await fresh.clearLocal();
+      fresh.endSession();
+      expect(nick(await disk.readCurrent())).assertEqual('');
+      expect(nick(await other.readCurrent())).assertEqual('untouched');
+    });
+
     it('pull_empty_cloud_builds_baseline_without_push', 0, async () => {
       const api: FakeApi = new FakeApi();
       const store: InMemoryUserdataLocalStore = new InMemoryUserdataLocalStore();

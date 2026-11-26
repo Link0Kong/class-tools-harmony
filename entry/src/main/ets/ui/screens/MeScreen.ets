@@ -345,12 +345,11 @@ export struct MeScreen {
 
   private async saveNick(): Promise<void> {
     const next: string = NickLogic.normalize(this.nickDraft);
-    const sections: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const sections: Blob = userdata.currentSections();
     sections['nick'] = next;
-    await Services.userdata.updateCurrent(sections);
-    const keys: Set<string> = new Set<string>();
-    keys.add('nick');
-    const result = await Services.userdata.push(false, keys);
+    const result = await userdata.saveAndPush(sections, 'nick');
+    if (userdata !== Services.userdata) return;
     this.nick = next;
     this.nickEditing = false;
     showFeedback(this.getUIContext(), result.ok() ? '昵称已保存并同步' : '已保存到本机，稍后自动同步');

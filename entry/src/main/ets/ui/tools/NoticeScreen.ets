@@ -390,13 +390,12 @@ export struct NoticeScreen {
       return;
     }
     const id: string = card.entry.row.id;
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const data = HidePrefs.read(current);
     data.ntHide.add(id);
-    await Services.userdata.updateCurrent(HidePrefs.write(current, data));
-    const keys: Set<string> = new Set<string>();
-    keys.add('hide');
-    await Services.userdata.push(false, keys);
+    await userdata.saveAndPush(HidePrefs.write(current, data), 'hide');
+    if (userdata !== Services.userdata) return;
     this.notify('已隐藏该通知（仅自己不可见，可在「已隐藏」恢复）');
     await this.reload(true);
   }
@@ -406,13 +405,12 @@ export struct NoticeScreen {
       return;
     }
     const id: string = card.entry.row.id;
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const data = HidePrefs.read(current);
     data.ntHide.delete(id);
-    await Services.userdata.updateCurrent(HidePrefs.write(current, data));
-    const keys: Set<string> = new Set<string>();
-    keys.add('hide');
-    await Services.userdata.push(false, keys);
+    await userdata.saveAndPush(HidePrefs.write(current, data), 'hide');
+    if (userdata !== Services.userdata) return;
     this.notify('已恢复该通知');
     await this.reload(true);
   }
@@ -421,13 +419,12 @@ export struct NoticeScreen {
     if (this.hiddenIds.length === 0) {
       return;
     }
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const data = HidePrefs.read(current);
     data.ntHide.clear();
-    await Services.userdata.updateCurrent(HidePrefs.write(current, data));
-    const keys: Set<string> = new Set<string>();
-    keys.add('hide');
-    await Services.userdata.push(false, keys);
+    await userdata.saveAndPush(HidePrefs.write(current, data), 'hide');
+    if (userdata !== Services.userdata) return;
     this.notify('已恢复全部隐藏通知');
     await this.reload(true);
   }

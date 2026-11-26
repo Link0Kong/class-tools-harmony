@@ -5,6 +5,7 @@ import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { ClassMembersResult } from '../../data/member/ClassMembersRepository';
 import { ClassLeagueResult } from '../../data/member/ClassLeagueRepository';
 import { Blob } from '../../data/sync/JsonBlob';
+import { UserdataRepository } from '../../data/sync/UserdataRepository';
 import { ExportCardSpec, ExportNaming, ExportParam } from '../../features/export/ExportCard';
 import { RollCodec, RollCounts, RollLogic, RollRow, RollScope, RollState, RollStatus } from '../../features/roll/RollModels';
 import { Tokens } from '../theme/Tokens';
@@ -40,6 +41,7 @@ export struct RollScreen {
 
   private scroller: Scroller = new Scroller();
   private persistTimer: number = -1;
+  private userdata: UserdataRepository = Services.userdata;
 
   aboutToAppear(): void {
     this.load();
@@ -47,7 +49,7 @@ export struct RollScreen {
 
   private async load(): Promise<void> {
     this.loading = this.members.length === 0;
-    const state: RollState = RollCodec.read(Services.userdata.currentSections());
+    const state: RollState = RollCodec.read(this.userdata.currentSections());
     this.statuses = state.rollSt;
     this.selSeats = state.rollSel.slice(0);
     const membersResult: ClassMembersResult = await Services.members.load(false);
@@ -103,14 +105,15 @@ export struct RollScreen {
   }
 
   private async persist(): Promise<void> {
-    const state: RollState = RollCodec.read(Services.userdata.currentSections());
+    const current = this.userdata.currentSections();
+    const state: RollState = RollCodec.read(current);
     state.rollSt = this.statuses;
     state.rollSel = this.selSeats.slice(0);
     state.rollNames = this.members.filter((m: ClassMember) => state.rollSel.indexOf(m.seat) >= 0)
       .sort((a: ClassMember, b: ClassMember) => a.seat - b.seat)
       .map((m: ClassMember) => m.seat + ' ' + m.name).join('\n');
-    const next: Blob = RollCodec.write(Services.userdata.currentSections(), state);
-    await Services.userdata.updateCurrent(next);
+    const next: Blob = RollCodec.write(current, state);
+    await this.userdata.updateCurrent(next);
   }
 
   private schedulePersist(): void {

@@ -57,12 +57,8 @@ struct Index {
   private appReady: boolean = false;
 
   aboutToAppear(): void {
-    Services.api.setTokenProvider(() => this.session !== undefined ? this.session.token : '');
     Services.api.setTokenInvalidHandler(() => {
       this.handleTokenInvalid();
-    });
-    Services.userdata.onSectionsChanged((sections: Blob) => {
-      this.applySections(sections);
     });
     AppGlobal.onToolClosed = () => {
       this.closeTool();
@@ -112,6 +108,11 @@ struct Index {
 
   private async enterApp(session: Session): Promise<void> {
     this.session = session;
+    Services.api.setTokenProvider(() => this.session === session ? session.token : '');
+    const userdata = Services.startUserdataSession(session.sid);
+    userdata.onSectionsChanged((sections: Blob) => this.applySections(sections));
+    this.quickIds = [];
+    this.syncState = '未同步';
     this.userName = session.name;
     this.maskedSid = session.maskedSid();
     this.isAdmin = session.isAdmin;
@@ -127,9 +128,9 @@ struct Index {
     Services.currentIsAdmin = session.isAdmin;
     // 先恢复本机偏好（离线/未同步时 UI 也看到上次设置），再后台拉云端
     // 两份本机缓存互不依赖，并行读取，缩短冷启动首帧等待
-    await Promise.all([Services.userdata.hydrateFromLocal(), Services.notices.hydrate()]);
+    await Promise.all([userdata.hydrateFromLocal(), Services.notices.hydrate()]);
     if (this.session !== session) return;
-    this.applySections(Services.userdata.currentSections());
+    this.applySections(userdata.currentSections());
     DeskForms.sessionChanged(session.sid);
     TaskRepository.load(true).then(() => DeskForms.refresh());
     this.syncNow();
@@ -187,7 +188,8 @@ struct Index {
   }
 
   private async syncNow(): Promise<void> {
-    if (Services.currentSid.length === 0) {
+    const session = this.session;
+    if (!session) {
       return;
     }
     this.syncState = '同步中';
@@ -195,6 +197,7 @@ struct Index {
     Services.members.load(false);
     Services.league.load(false);
     const pull: UserdataPullResult = await Services.userdata.pull(false);
+    if (session !== this.session) return;
     if (!pull.ok()) {
       this.syncState = pull.status === 'disabled' ? '云同步已关闭' : '离线';
       return;
@@ -227,52 +230,48 @@ struct Index {
   private async handleTokenInvalid(): Promise<void> {
     if (!this.session) return;
     Log.w(TAG, '身份失效，清除会话并回到身份页');
-    this.session = undefined;
-    await this.clearSurfaces();
-    await AppPush.endSession(false);
-    // 先按旧 sid 清掉通知缓存，再重置身份，避免下一位登录者看到上一位的通知
-    await Services.notices.clearLocal();
-    Services.homework.clearLocal();
-    Services.currentSid = '';
-    Services.currentName = '';
-    Services.currentToken = '';
-    Services.currentIsAdmin = false;
-    Services.cloudspace.reset();
-    Services.sessionStore.clear();
-    AppGlobal.openToolId = '';
-    this.openToolId = '';
-    this.authNotice = '身份已失效，请重新输入学号与姓名';
-    this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
-      this.phase = 'auth';
-    });
+    await this.leaveSession(true);
   }
 
   private async logout(): Promise<void> {
-    // 退出前尽力把本机改动推上去，再清空本机数据桶（合规：不留班级数据）
+    const session = this.session;
+    if (!session) return;
     await Services.userdata.flush();
+    if (session !== this.session) return;
     await AppPush.endSession(true);
+    if (session === this.session) await this.leaveSession(false);
+  }
+
+  private async leaveSession(expired: boolean): Promise<void> {
     this.session = undefined;
-    await this.clearSurfaces();
-    await Services.notices.clearLocal();
-    await Services.userdata.clearLocal();
-    await Services.members.clear();
-    await Services.league.clear();
+    this.phase = 'leaving';
+    // 每个清理入口先取得原账号。失效保留其个人设置，以便本人重新验证后恢复。
+    const cleanup = [this.clearSurfaces(), Services.notices.clearLocal(), Services.sessionStore.clear()];
+    if (expired) {
+      cleanup.push(AppPush.endSession(false));
+    } else {
+      cleanup.push(Services.userdata.clearLocal(), Services.members.clear(), Services.league.clear());
+    }
+    const signedOut = Services.startUserdataSession('');
     Services.homework.clearLocal();
     Services.currentSid = '';
     Services.currentName = '';
     Services.currentToken = '';
     Services.currentIsAdmin = false;
     Services.cloudspace.reset();
-    await Services.sessionStore.clear();
     AppGlobal.openToolId = '';
     this.openToolId = '';
     this.userName = '';
     this.maskedSid = '';
     this.roleLabel = '';
     this.isAdmin = false;
-    this.authNotice = '';
     this.quickIds = [];
     this.syncState = '未同步';
+    await Promise.all(cleanup.map((work: Promise<void>) => work.catch(() => {
+      Log.w(TAG, '退出时部分本机清理未完成');
+    })));
+    if (signedOut !== Services.userdata) return;
+    this.authNotice = expired ? '身份已失效，请重新输入学号与姓名' : '';
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.phase = 'auth';
     });

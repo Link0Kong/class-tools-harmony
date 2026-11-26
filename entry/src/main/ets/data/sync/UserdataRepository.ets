@@ -123,6 +123,8 @@ export class UserdataRepository {
   private api: Api;
   private local: UserdataLocalStore;
   private sidProvider: () => string;
+  private owner: string;
+  private ended: boolean = false;
   private clock: () => number;
   private config: UserdataSyncConfig;
   private owned: Set<string>;
@@ -140,6 +142,7 @@ export class UserdataRepository {
     this.api = api;
     this.local = local;
     this.sidProvider = sidProvider;
+    this.owner = sidProvider().trim();
     this.clock = clock;
     this.config = config;
     this.owned = ownedSections;
@@ -151,14 +154,29 @@ export class UserdataRepository {
   }
 
   currentSections(): Blob {
-    return this.sections;
+    return this.active() ? this.sections : {};
   }
 
-  private sid(): string {
-    return this.sidProvider().trim();
+  private active(): boolean {
+    return !this.ended && this.owner.length > 0 && this.sidProvider().trim() === this.owner;
+  }
+
+  endSession(): void {
+    this.ended = true;
+    this.listener = undefined;
+    this.sections = {};
+    this.cancelDebounce();
+  }
+
+  private cancelDebounce(): void {
+    if (this.debounceTimer >= 0) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = -1;
+    }
   }
 
   private emit(sections: Blob): void {
+    if (!this.active()) return;
     this.sections = sections;
     if (this.listener !== undefined) {
       this.listener(sections);
@@ -169,10 +187,17 @@ export class UserdataRepository {
 
   /** 业务层保存本机 section 后调用：持久化 → 更新内存 → 脏检测 → 防抖推送。 */
   async updateCurrent(sections: Blob): Promise<void> {
+    if (!this.active()) return;
     const normalized: Blob = UserdataV6.sectionsOf(sections);
     await this.local.writeCurrent(normalized);
     this.emit(normalized);
     await this.onLocalChanged();
+  }
+
+  /** 页面要求立即同步某个 section，保存和推送始终使用这一次登录的仓储。 */
+  async saveAndPush(sections: Blob, key: string): Promise<UserdataPushResult> {
+    await this.updateCurrent(sections);
+    return this.push(false, new Set<string>([key]));
   }
 
   /** 非阻塞通知（业务层已自行写盘时用）。 */
@@ -181,7 +206,7 @@ export class UserdataRepository {
   }
 
   private async onLocalChanged(): Promise<void> {
-    if (this.sid().length === 0) {
+    if (!this.active()) {
       return;
     }
     if (!(await this.local.syncEnabled())) {
@@ -190,6 +215,7 @@ export class UserdataRepository {
     const current: Blob = await this.normalizedCurrent();
     this.emit(current);
     const base: Blob | undefined = await this.local.readCache();
+    if (!this.active()) return;
 
     if (base === undefined) {
       // 无基线：只把「与默认值不同的 section」记为待补发，并先 pull 一次建基线（防默认值覆盖云端）
@@ -216,9 +242,8 @@ export class UserdataRepository {
   }
 
   private schedulePush(): void {
-    if (this.debounceTimer >= 0) {
-      clearTimeout(this.debounceTimer);
-    }
+    if (!this.active()) return;
+    this.cancelDebounce();
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = -1;
       this.push(false, new Set<string>());
@@ -248,19 +273,17 @@ export class UserdataRepository {
   // ---------------------------------------------------------------- 拉取
 
   async pull(force: boolean): Promise<UserdataPullResult> {
-    const sid: string = this.sid();
-    if (sid.length === 0) {
-      return UserdataPullResult.disabled();
-    }
-    if (!(await this.local.syncEnabled())) {
+    if (!this.active() || !(await this.local.syncEnabled())) {
       return UserdataPullResult.disabled();
     }
     const now: number = this.clock();
     if (!force && now - (await this.local.lastPullAt()) < this.config.ttlMs) {
-      return UserdataPullResult.success(false, false, true, false);
+      return this.active() ? UserdataPullResult.success(false, false, true, false) : UserdataPullResult.disabled();
     }
 
-    const remoteFetch: RemoteFetch = await this.fetchRemote(sid);
+    if (!this.active()) return UserdataPullResult.disabled();
+    const remoteFetch: RemoteFetch = await this.fetchRemote(this.owner);
+    if (!this.active()) return UserdataPullResult.disabled();
     if (!remoteFetch.ok) {
       const err: ApiError = remoteFetch.error !== undefined
         ? remoteFetch.error
@@ -279,6 +302,7 @@ export class UserdataRepository {
 
     const pending: Set<string> = await this.local.pendingKeys();
     const pendFlag: boolean = await this.local.pend();
+    if (!this.active()) return UserdataPullResult.disabled();
     const forceKeys: Set<string> = new Set<string>();
     if (pendFlag || pending.size > 0) {
       pending.forEach((key: string) => {
@@ -296,13 +320,16 @@ export class UserdataRepository {
     const changed: boolean = this.sectionsDiffer(current, merged);
 
     await this.persistApplied(merged);
+    if (!this.active()) return UserdataPullResult.disabled();
     await this.local.setLastPullAt(now);
 
     const afterCurrent: Blob = await this.normalizedCurrent();
+    if (!this.active()) return UserdataPullResult.disabled();
     const dirtyAfter: Set<string> = UserdataMerge.dirtySections(merged, afterCurrent, this.owned);
     const shouldPush: boolean = wasV5 || wasDirty.size > 0 || dirtyAfter.size > 0 || pendFlag || pending.size > 0;
     if (shouldPush) {
       const pushResult: UserdataPushResult = await this.push(true, forceKeys);
+      if (!this.active()) return UserdataPullResult.disabled();
       return UserdataPullResult.success(changed || wasV5, pushResult.ok() && pushResult.pushed, false, wasV5);
     }
     return UserdataPullResult.success(changed, false, false, false);
@@ -311,11 +338,7 @@ export class UserdataRepository {
   // ---------------------------------------------------------------- 推送
 
   async push(force: boolean, forceKeys: Set<string>): Promise<UserdataPushResult> {
-    const sid: string = this.sid();
-    if (sid.length === 0) {
-      return UserdataPushResult.disabled();
-    }
-    if (!(await this.local.syncEnabled())) {
+    if (!this.active() || !(await this.local.syncEnabled())) {
       return UserdataPushResult.disabled();
     }
     if (this.clock() < (await this.local.holdUntil())) {
@@ -323,11 +346,13 @@ export class UserdataRepository {
     }
     return await this.lock.run<UserdataPushResult>(async () => {
       const base: Blob | undefined = await this.local.readCache();
+      if (!this.active()) return UserdataPushResult.disabled();
       if (base === undefined && !force && forceKeys.size === 0) {
         return UserdataPushResult.skipped();
       }
 
-      const remoteFetch: RemoteFetch = await this.fetchRemote(sid);
+      const remoteFetch: RemoteFetch = await this.fetchRemote(this.owner);
+      if (!this.active()) return UserdataPushResult.disabled();
       if (!remoteFetch.ok) {
         await this.local.setPend(true);
         const err: ApiError = remoteFetch.error !== undefined
@@ -339,6 +364,7 @@ export class UserdataRepository {
 
       const now: number = this.clock();
       const current: Blob = await this.normalizedCurrent();
+      if (!this.active()) return UserdataPushResult.disabled();
       const localView: Blob = UserdataMerge.localView(base, current, remote, forceKeys, now, this.owned);
       const merged: Blob = UserdataMerge.merge(remote, localView);
       const remoteNormalized: Blob = UserdataMerge.merge(remote, undefined);
@@ -346,19 +372,22 @@ export class UserdataRepository {
 
       if (!mustWrite) {
         await this.persistApplied(merged);
+        if (!this.active()) return UserdataPushResult.disabled();
         await this.local.clearPending();
         return UserdataPushResult.success(false);
       }
 
-      const row: Blob = { 'id': sid, 'blob': UserdataV6.encode(merged), 'ts': now };
+      const row: Blob = { 'id': this.owner, 'blob': UserdataV6.encode(merged), 'ts': now };
       const bodyRows: Object[] = [row];
       const body: string = JSON.stringify(bodyRows);
       const result: ApiResult = await this.api.post(USERDATA_PATH, body, UPSERT_PREFER, true);
+      if (!this.active()) return UserdataPushResult.disabled();
       if (!result.ok) {
         const dirty: Set<string> = base !== undefined
           ? UserdataMerge.dirtySections(base, current, this.owned)
           : new Set<string>();
         await this.local.markPending(setToArray(forceKeys.size > 0 ? forceKeys : dirty));
+        if (!this.active()) return UserdataPushResult.disabled();
         await this.local.setPend(true);
         const err: ApiError = result.error !== undefined
           ? result.error
@@ -367,6 +396,7 @@ export class UserdataRepository {
         return UserdataPushResult.failure(err);
       }
       await this.persistApplied(merged);
+      if (!this.active()) return UserdataPushResult.disabled();
       await this.local.clearPending();
       return UserdataPushResult.success(true);
     });
@@ -374,11 +404,8 @@ export class UserdataRepository {
 
   /** 立即冲刷待推送（页面隐藏/退出前）。 */
   async flush(): Promise<UserdataPushResult> {
-    if (this.debounceTimer >= 0) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = -1;
-    }
-    if (this.sid().length === 0) {
+    this.cancelDebounce();
+    if (!this.active()) {
       return UserdataPushResult.disabled();
     }
     const base: Blob | undefined = await this.local.readCache();
@@ -387,6 +414,7 @@ export class UserdataRepository {
       ? UserdataMerge.dirtySections(base, current, this.owned)
       : new Set<string>();
     const pendFlag: boolean = await this.local.pend();
+    if (!this.active()) return UserdataPushResult.disabled();
     if (!pendFlag && dirty.size === 0) {
       return UserdataPushResult.skipped();
     }
@@ -401,12 +429,10 @@ export class UserdataRepository {
   // ---------------------------------------------------------------- 开关 / 恢复
 
   async setSyncEnabled(enabled: boolean): Promise<void> {
+    if (!this.active()) return;
     await this.local.setSyncEnabled(enabled);
     if (!enabled) {
-      if (this.debounceTimer >= 0) {
-        clearTimeout(this.debounceTimer);
-        this.debounceTimer = -1;
-      }
+      this.cancelDebounce();
       return;
     }
     // 恢复：先补推待发，再拉一次（契约 §4.3）
@@ -418,30 +444,27 @@ export class UserdataRepository {
   }
 
   async syncEnabled(): Promise<boolean> {
-    return await this.local.syncEnabled();
+    const enabled = await this.local.syncEnabled();
+    return this.active() && enabled;
   }
 
   /** 最近一次成功合并的基线 blob（调试/清除云端用）。 */
   async cachedBlob(): Promise<Blob | undefined> {
-    return await this.local.readCache();
+    const cached = await this.local.readCache();
+    return this.active() ? cached : undefined;
   }
 
   /** 退出登录/切换账号：清空本 sid 的本机数据桶（合规要求，与安卓一致）。 */
   async clearLocal(): Promise<void> {
+    if (!this.active()) return;
     await this.local.clear();
-    this.sections = {};
-    if (this.debounceTimer >= 0) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = -1;
-    }
-    if (this.listener !== undefined) {
-      this.listener({});
-    }
+    this.cancelDebounce();
+    this.emit({});
   }
 
   /** 从本机持久化的 current 恢复内存镜像（登录/启动时、pull 之前调用）。 */
   async hydrateFromLocal(): Promise<void> {
-    if (this.sid().length === 0) {
+    if (!this.active()) {
       return;
     }
     if (JsonBlob.keys(this.sections).length > 0) {
@@ -459,6 +482,7 @@ export class UserdataRepository {
   private async persistApplied(merged: Blob): Promise<void> {
     const sections: Blob = UserdataV6.sectionsOf(merged);
     await this.local.writeCache(merged);
+    if (!this.active()) return;
     await this.local.writeCurrent(sections);
     this.emit(sections);
   }

@@ -270,16 +270,15 @@ export struct HomeworkScreen {
   }
 
   private async restoreHidden(): Promise<void> {
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const data = HidePrefs.read(current);
     if (data.hwHide.size === 0) {
       return;
     }
     data.hwHide.clear();
-    await Services.userdata.updateCurrent(HidePrefs.write(current, data));
-    const keys: Set<string> = new Set<string>();
-    keys.add('hide');
-    await Services.userdata.push(false, keys);
+    await userdata.saveAndPush(HidePrefs.write(current, data), 'hide');
+    if (userdata !== Services.userdata) return;
     this.hiddenCount = 0;
     this.notify('已恢复隐藏的作业');
     await this.reload(true);
@@ -290,13 +289,12 @@ export struct HomeworkScreen {
       return;
     }
     const id: string = this.detail.row.id;
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const data = HidePrefs.read(current);
     data.hwHide.add(id);
-    await Services.userdata.updateCurrent(HidePrefs.write(current, data));
-    const keys: Set<string> = new Set<string>();
-    keys.add('hide');
-    await Services.userdata.push(false, keys);
+    await userdata.saveAndPush(HidePrefs.write(current, data), 'hide');
+    if (userdata !== Services.userdata) return;
     const cancelled = await HomeworkReminders.cancel(id);
     this.loadReminders();
     NotifyCenter.syncAll(true);

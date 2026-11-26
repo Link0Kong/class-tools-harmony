@@ -98,27 +98,27 @@ export class HttpClient implements Api {
   }
 
   async request(spec: HttpRequestSpec): Promise<ApiResult> {
-    const first: ApiResult = await this.execute(spec);
+    const provider = this.tokenProvider;
+    const token = spec.authenticated ? provider() : '';
+    const current = (): boolean => !spec.authenticated || (provider === this.tokenProvider && token === provider());
+    const first: ApiResult = await this.execute(spec, token, current);
     if (!first.ok && spec.retryOnNetworkFailure && first.error !== undefined
       && first.error.kind === ApiErrorKind.Network) {
       Log.w(TAG, 'GET 网络失败，350ms 后重试一次');
       await delay(CloudConfig.GET_RETRY_DELAY_MS);
-      return await this.execute(spec);
+      if (current()) return await this.execute(spec, token, current);
     }
     return first;
   }
 
-  private buildHeaders(spec: HttpRequestSpec): Record<string, string> {
+  private buildHeaders(spec: HttpRequestSpec, token: string): Record<string, string> {
     const headers: Record<string, string> = {};
     headers['Authorization'] = 'Bearer ' + CloudConfig.PUBLISHABLE_KEY;
     headers['Content-Type'] = 'application/json';
     headers['Accept'] = 'application/json';
     headers['Cache-Control'] = 'no-store';
-    if (spec.authenticated) {
-      const token: string = this.tokenProvider();
-      if (token.length > 0) {
-        headers['X-Class-Token'] = token;
-      }
+    if (spec.authenticated && token.length > 0) {
+      headers['X-Class-Token'] = token;
     }
     if (spec.prefer.length > 0) {
       headers['Prefer'] = spec.prefer;
@@ -132,11 +132,11 @@ export class HttpClient implements Api {
     return headers;
   }
 
-  private async execute(spec: HttpRequestSpec): Promise<ApiResult> {
+  private async execute(spec: HttpRequestSpec, token: string, current: () => boolean): Promise<ApiResult> {
     if (!CloudConfig.isConfigured()) {
       return ApiResult.failure(new ApiError(ApiErrorKind.Config, 0, 'not_configured', '云端配置缺失'));
     }
-    const headers = this.buildHeaders(spec);
+    const headers = this.buildHeaders(spec, token);
     const requestToken = headers['X-Class-Token'];
     const request: http.HttpRequest = http.createHttp();
     const options: http.HttpRequestOptions = {
@@ -162,7 +162,7 @@ export class HttpClient implements Api {
         const err: ApiError = new ApiError(ApiErrorKind.TokenInvalid, status, 'unauthorized', '身份已失效');
         // A missing push entitlement or token binding must not invalidate the user's class session.
         const pushDenied = spec.path === 'push_tokens' || spec.path.startsWith('push_tokens?');
-        if (!pushDenied && spec.authenticated && requestToken && this.tokenProvider() === requestToken) {
+        if (!pushDenied && spec.authenticated && requestToken && requestToken === token && current()) {
           this.onTokenInvalid();
         }
         return ApiResult.failure(err);

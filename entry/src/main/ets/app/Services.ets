@@ -39,10 +39,22 @@ export class Services {
   static readonly sessionStore: SessionStore = new SessionStore();
   static readonly auth: AuthRepository = new AuthRepository(Services.api);
 
-  static readonly userdata: UserdataRepository = new UserdataRepository(
-    Services.api,
-    new FileUserdataLocalStore(() => Services.currentSid),
-    () => Services.currentSid);
+  private static userdataGeneration: number = 0;
+  private static userdataRepo: UserdataRepository = new UserdataRepository(
+    Services.api, new FileUserdataLocalStore(() => ''), () => '');
+
+  static get userdata(): UserdataRepository {
+    return Services.userdataRepo;
+  }
+
+  /** 相同账号重新核验也启动新代次；旧仓储不再接触新会话的请求或文件桶。 */
+  static startUserdataSession(sid: string): UserdataRepository {
+    Services.userdata.endSession();
+    const generation = ++Services.userdataGeneration;
+    const owner = (): string => generation === Services.userdataGeneration ? sid : '';
+    Services.userdataRepo = new UserdataRepository(Services.api, new FileUserdataLocalStore(owner), owner);
+    return Services.userdata;
+  }
 
   private static marksSid: string = '';
   private static marksRepo: MarksRepository | undefined = undefined;

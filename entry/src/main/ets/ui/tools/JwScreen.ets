@@ -6,6 +6,7 @@ import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TtResult } from '../../data/timetable/TimetableRepository';
 import { TtLoginEnqueue, TtLoginStatus } from '../../data/timetable/TimetableLoginRepository';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
+import { UserdataRepository } from '../../data/sync/UserdataRepository';
 import { JwCardDef, JwEntries, JwLogic } from '../../features/jw/JwModels';
 import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
@@ -61,23 +62,27 @@ export struct JwScreen {
     this.loginBusy = true;
     this.loginOk = false;
     this.loginMsg = '正在提交登录任务…';
+    const userdata = Services.userdata;
     const enqueue: TtLoginEnqueue = await Services.login.enqueue(password);
+    if (userdata !== Services.userdata) return;
     if (!enqueue.ok || enqueue.jobId.length === 0) {
       this.loginBusy = false;
       this.loginMsg = enqueue.message.length > 0 ? enqueue.message : '登录任务提交失败';
       return;
     }
     this.loginMsg = enqueue.reused ? '已复用进行中的登录任务…' : '已提交，等待云端教务返回…';
-    this.pollLogin(enqueue.jobId, Date.now());
+    this.pollLogin(enqueue.jobId, Date.now(), userdata);
   }
 
-  private pollLogin(jobId: string, startedAt: number): void {
+  private pollLogin(jobId: string, startedAt: number, userdata: UserdataRepository): void {
     if (this.pollTimer >= 0) {
       clearTimeout(this.pollTimer);
     }
     this.pollTimer = setTimeout(async () => {
       this.pollTimer = -1;
+      if (userdata !== Services.userdata) return;
       const status: TtLoginStatus = await Services.login.status(jobId);
+      if (userdata !== Services.userdata) return;
       if (!status.ok) {
         this.loginBusy = false;
         this.loginMsg = status.message.length > 0 ? status.message : '状态查询失败';
@@ -90,7 +95,7 @@ export struct JwScreen {
           return;
         }
         this.loginMsg = '云端教务处理中（' + (status.status.length > 0 ? status.status : 'running') + '）…';
-        this.pollLogin(jobId, startedAt);
+        this.pollLogin(jobId, startedAt, userdata);
         return;
       }
       if (status.snapshot === undefined || status.raw === undefined || status.snapshot.c.length === 0) {
@@ -98,7 +103,8 @@ export struct JwScreen {
         this.loginMsg = status.error.length > 0 ? ('登录失败：' + status.error) : '未获取到课程，请稍后重试';
         return;
       }
-      await this.savePersonal(status.raw);
+      await this.savePersonal(status.raw, userdata);
+      if (userdata !== Services.userdata) return;
       await Services.timetable.load(true);
       await this.load();
       this.loginBusy = false;
@@ -107,8 +113,8 @@ export struct JwScreen {
     }, 2000);
   }
 
-  private async savePersonal(raw: Blob): Promise<void> {
-    const current: Blob = Services.userdata.currentSections();
+  private async savePersonal(raw: Blob, userdata: UserdataRepository): Promise<void> {
+    const current: Blob = userdata.currentSections();
     const next: Blob = {};
     const keys: string[] = JsonBlob.keys(current);
     for (let i = 0; i < keys.length; i++) {
@@ -125,10 +131,7 @@ export struct JwScreen {
     tt['ttUseMine'] = true;
     tt['ttLocal'] = raw;
     next['tt'] = tt;
-    await Services.userdata.updateCurrent(next);
-    const pushKeys: Set<string> = new Set<string>();
-    pushKeys.add('tt');
-    await Services.userdata.push(false, pushKeys);
+    await userdata.saveAndPush(next, 'tt');
   }
 
   private async load(): Promise<void> {

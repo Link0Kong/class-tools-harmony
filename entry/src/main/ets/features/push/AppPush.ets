@@ -6,6 +6,7 @@ import notificationManager from '@ohos.notificationManager';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
+import { UserdataRepository } from '../../data/sync/UserdataRepository';
 import { Log } from '../../common/Log';
 import { deviceInfo } from '@kit.BasicServicesKit';
 
@@ -77,8 +78,10 @@ export class AppPush {
 
   /** 启动时：只续订已授权用户的 token，不在启动阶段弹系统权限（权限由用户操作触发）。 */
   static async syncOnLaunch(): Promise<void> {
+    const userdata = Services.userdata;
     AppPush.detached = false;
     const allowed: boolean = await AppPush.systemEnabled();
+    if (userdata !== Services.userdata) return;
     if (!allowed) {
       Log.i('AppPush', '系统通知未授权，等待用户主动开启');
       return;
@@ -92,37 +95,39 @@ export class AppPush {
   /** 申请 token 并保存；返回是否注册成功。 */
   static async register(): Promise<boolean> {
     const sid = Services.currentSid;
+    const userdata = Services.userdata;
     const seq = AppPush.sequence;
     if (!sid || !AppPush.want() || !await AppPush.systemEnabled()) return false;
     return AppPush.queue.run<boolean>(async () => {
-      if (!AppPush.current(sid, seq)) return false;
+      if (!AppPush.current(userdata, seq)) return false;
       try {
         const token = await pushService.getToken();
-        const ok = await AppPush.install(token, sid, seq);
+        const ok = await AppPush.install(token, sid, seq, userdata);
         const ability = AppGlobal.ability;
         if (!AppPush.listening && ability) {
           pushService.on('tokenUpdate', ability, (updated: string) => {
             const owner = Services.currentSid;
             const generation = AppPush.sequence;
-            AppPush.queue.run<boolean>(() => AppPush.install(updated, owner, generation));
+            const active = Services.userdata;
+            AppPush.queue.run<boolean>(() => AppPush.install(updated, owner, generation, active));
           });
           AppPush.listening = true;
         }
         return ok;
       } catch (_) {
-        if (AppPush.current(sid, seq)) await AppPush.save('', false, true);
+        if (AppPush.current(userdata, seq)) await AppPush.save('', false, true);
         return false;
       }
     });
   }
 
-  private static current(sid: string, seq: number): boolean {
-    return !!sid && Services.currentSid === sid && !AppPush.detached && AppPush.sequence === seq && AppPush.want();
+  private static current(userdata: UserdataRepository, seq: number): boolean {
+    return userdata === Services.userdata && !AppPush.detached && AppPush.sequence === seq && AppPush.want();
   }
 
-  private static async install(token: string, sid: string, seq: number): Promise<boolean> {
+  private static async install(token: string, sid: string, seq: number, userdata: UserdataRepository): Promise<boolean> {
     const ctx = AppGlobal.context;
-    if (!ctx || !token || !AppPush.current(sid, seq)) return false;
+    if (!ctx || !token || !sid || !AppPush.current(userdata, seq)) return false;
     const store = preferences.getPreferencesSync(ctx, { name: 'push_device_registration' });
     const old = store.getSync(sid, '') as string;
     const body: Blob = { 'sid': sid, 'provider': 'harmony', 'token': token, 'device': deviceInfo.productModel,
@@ -132,19 +137,19 @@ export class AppPush {
     if (result.ok) {
       store.putSync(sid, token);
       await store.flush();
-      if (old && old !== token && Services.currentSid === sid) await AppPush.removeRegistration(sid, old);
+      if (old && old !== token && AppPush.current(userdata, seq)) await AppPush.removeRegistration(sid, old);
     }
-    if (!AppPush.current(sid, seq)) return false;
+    if (!AppPush.current(userdata, seq)) return false;
     await AppPush.save(result.ok ? token : '', result.ok, true);
     return result.ok;
   }
 
   static async enable(): Promise<boolean> {
-    const sid = Services.currentSid;
-    if (!sid || !await AppPush.ensurePermission() || Services.currentSid !== sid) return false;
+    const userdata = Services.userdata;
+    if (!Services.currentSid || !await AppPush.ensurePermission() || userdata !== Services.userdata) return false;
     AppPush.detached = false;
     await AppPush.save('', false, true);
-    return AppPush.register();
+    return userdata === Services.userdata && await AppPush.register();
   }
 
   private static async removeRegistration(sid: string, token: string): Promise<boolean> {
@@ -176,13 +181,14 @@ export class AppPush {
   }
 
   static async disable(): Promise<void> {
-    const sid = Services.currentSid;
+    const userdata = Services.userdata;
     await AppPush.endSession(true);
-    if (sid && Services.currentSid === sid) await AppPush.save('', false, false);
+    if (Services.currentSid && userdata === Services.userdata) await AppPush.save('', false, false);
   }
 
   private static async save(token: string, enabled: boolean, want: boolean): Promise<void> {
-    const current: Blob = Services.userdata.currentSections();
+    const userdata = Services.userdata;
+    const current: Blob = userdata.currentSections();
     const next: Blob = {};
     const keys: string[] = JsonBlob.keys(current);
     for (let i = 0; i < keys.length; i++) {
@@ -201,9 +207,6 @@ export class AppPush {
     push['want'] = want;
     push['at'] = Date.now();
     next['push'] = push;
-    await Services.userdata.updateCurrent(next);
-    const pushKeys: Set<string> = new Set<string>();
-    pushKeys.add('push');
-    await Services.userdata.push(false, pushKeys);
+    await userdata.saveAndPush(next, 'push');
   }
 }

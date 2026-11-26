@@ -1,5 +1,6 @@
 ﻿import { showFeedback } from '../components/AppFeedback';
 import { Services } from '../../app/Services';
+import { UserdataRepository } from '../../data/sync/UserdataRepository';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import {
   FIT_INPUT_FIELDS,
@@ -46,6 +47,7 @@ export struct FitScreen {
   @State private exportSpec: ExportCardSpec = new ExportCardSpec();
 
   private persistTimer: number = -1;
+  private userdata: UserdataRepository = Services.userdata;
 
   aboutToAppear(): void {
     this.restore();
@@ -61,7 +63,7 @@ export struct FitScreen {
   }
 
   private restore(): void {
-    const sections: Blob = Services.userdata.currentSections();
+    const sections: Blob = this.userdata.currentSections();
     this.input = FitCodec.inputFromJson(JsonBlob.get(sections, 'fit'));
     this.calc = FitScoring.calc(this.input);
   }
@@ -110,7 +112,7 @@ export struct FitScreen {
   }
 
   private async persist(): Promise<void> {
-    const current: Blob = Services.userdata.currentSections();
+    const current: Blob = this.userdata.currentSections();
     const next: Blob = {};
     const keys: string[] = JsonBlob.keys(current);
     for (let i = 0; i < keys.length; i++) {
@@ -118,7 +120,7 @@ export struct FitScreen {
     }
     const existing: Blob | undefined = JsonBlob.asBlob(JsonBlob.get(current, 'fit'));
     next['fit'] = FitCodec.toJson(this.input, existing);
-    await Services.userdata.updateCurrent(next);
+    await this.userdata.updateCurrent(next);
   }
 
   private scoreOfKey(key: string): number | undefined {
