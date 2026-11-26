@@ -299,6 +299,47 @@ export default function timetableTest() {
       expect(api.getPaths.length).assertEqual(0);
     });
 
+    it('old_flags_and_string_or_object_personal_snapshots_share_the_same_selection', 0, async () => {
+      const api = new FakeApi();
+      api.siteAssetsBody = '[{"body":{"c":[{"name":"公共课","day":0}]}}]';
+      const raw = bodyJson('{"n":"旧个人课","day":"0","start":"1","end":"2","weeks":"1-2","parity":"odd"}', TERM_START);
+      let section: Blob = {};
+      const repo = new TimetableRepository(api, () => section);
+      for (let index = 0; index < 3; index++) {
+        section = { 'ttLocal': index === 0 ? raw : JSON.parse(raw) as Blob };
+        if (index !== 2) section['ttUseMine'] = index === 1;
+        const result = await repo.load(true);
+        expect(result.source).assertEqual(TtSource.PERSONAL);
+        expect(repo.local()?.c[0].name).assertEqual('旧个人课');
+        const start = new Date(2026, 8, 7, 7, 30).getTime();
+        expect(TtCalendar.plan(result.snapshot!, start).today[0].name).assertEqual('旧个人课');
+        expect(TtCalendar.upcomingBells(result.snapshot!, start, 1)[0].name).assertEqual('旧个人课');
+      }
+      expect(api.getPaths.length).assertEqual(0);
+      section = { 'ttUseMine': true, 'ttLocal': null };
+      expect((await repo.load(true)).source).assertEqual(TtSource.PUBLIC);
+      api.failGets = true;
+      for (const invalid of ['bad json', '{"c":[]}', '{"c":[{},{"name":"无星期"}]}']) {
+        section['ttLocal'] = invalid;
+        expect((await repo.load(true)).source).assertEqual(TtSource.CACHE);
+        expect(repo.local()?.c[0].name).assertEqual('公共课');
+      }
+    });
+
+    it('personal_edit_and_clear_while_public_read_is_inflight_choose_current_source', 0, async () => {
+      const api = new FakeApi();
+      api.siteAssetsBody = '[{"body":{"c":[{"name":"公共课","day":0}]}}]';
+      let section: Blob = {};
+      const repo = new TimetableRepository(api, () => section);
+      const pendingPublic = repo.load(true);
+      section = { 'ttUseMine': false, 'ttLocal': '{"c":[{"name":"刚同步","day":3}]}' };
+      expect((await repo.load(false)).source).assertEqual(TtSource.PERSONAL);
+      expect((await pendingPublic).snapshot?.c[0].name).assertEqual('刚同步');
+      section = {};
+      expect((await repo.load(false)).snapshot?.c[0].name).assertEqual('公共课');
+      expect(api.getPaths.length).assertEqual(1);
+    });
+
     it('ttl_cache_and_fallback', 0, async () => {
       const api: FakeApi = new FakeApi();
       api.siteAssetsBody = '[{"id":"tt","body":"{\\"c\\":[{\\"name\\":\\"高数\\",\\"day\\":5,\\"start\\":1,\\"end\\":2}],'

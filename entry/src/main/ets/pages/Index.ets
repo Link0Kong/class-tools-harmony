@@ -55,6 +55,7 @@ struct Index {
   private session: Session | undefined = undefined;
   private homeMounted: boolean = false;
   private appReady: boolean = false;
+  private lastPersonalTable: string = 'null';
 
   aboutToAppear(): void {
     Services.api.setTokenInvalidHandler(() => {
@@ -157,6 +158,12 @@ struct Index {
   }
 
   private applySections(sections: Blob): void {
+    const tt = JsonBlob.asBlob(JsonBlob.get(sections, 'tt'));
+    const personal = JSON.stringify(JsonBlob.get(tt, 'ttLocal') ?? null);
+    if (personal !== this.lastPersonalTable) {
+      this.lastPersonalTable = personal;
+      this.contentEpoch++;
+    }
     const raw: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(sections, 'homeTools'));
     const ids: string[] = [];
     if (raw !== undefined) {

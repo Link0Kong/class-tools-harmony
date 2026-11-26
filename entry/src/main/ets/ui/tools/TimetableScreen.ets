@@ -59,7 +59,7 @@ class TtGroupItem {
  * 动效：周视图左右跟手滑动并飞出飞入切周、分段指示块滑动、日视图切换与列表项淡入上移、
  * 课程块/卡片按压回弹、全部课程展开收起。
  *
- * 数据：个人课表（`userdata.tt.ttUseMine + ttLocal`）优先，其次 `site_assets id=tt`；
+ * 数据：有效个人快照（`userdata.tt.ttLocal`）优先，其次 `site_assets id=tt`；
  * 周次/单双周/下一节全部由 `TtCalendar` 计算。
  */
 @Component
@@ -109,7 +109,7 @@ export struct TimetableScreen {
   private async reload(force: boolean): Promise<void> {
     this.loading = this.snapshot === undefined;
     this.errorMsg = '';
-    const result: TtResult = await Services.timetable.load(force);
+    const result: TtResult = await Services.loadTimetableForView(force);
     this.now = Date.now();
     this.snapshot = result.snapshot;
     this.plan = TtCalendar.plan(result.snapshot, this.now);

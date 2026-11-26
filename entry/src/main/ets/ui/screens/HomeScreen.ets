@@ -481,10 +481,8 @@ export struct HomeScreen {
 
   private applyLocal(): void {
     const tt = Services.timetable.local();
-    if (tt !== undefined) {
-      this.ttSnapshot = tt;
-      this.plan = TtCalendar.plan(tt, Date.now());
-    }
+    this.ttSnapshot = tt;
+    this.plan = TtCalendar.plan(tt, Date.now());
     this.applyAssignments(Services.homework.local());
     const entries: NoticeEntry[] = Services.notices.local();
     if (entries.length > 0) {
@@ -535,7 +533,7 @@ export struct HomeScreen {
     }
     // 各模块并行请求，互不阻塞（原来串行最坏要等 5 个 10s 超时）
     const marksPromise = Services.marks.refresh(false);
-    const ttPromise = Services.timetable.load(force);
+    const ttPromise = Services.loadTimetableForView(force);
     const hwPromise = Services.homework.load(force);
     const ntPromise = Services.notices.load(force);
     const prefs = PowerPrefs.read(Services.userdata.currentSections());

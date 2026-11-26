@@ -125,20 +125,27 @@ export class TtParser {
           continue;
         }
         const course: Course = new Course();
-        course.name = JsonBlob.asString(JsonBlob.get(obj, 'name'), '');
+        course.name = JsonBlob.asString(JsonBlob.get(obj, 'name') ?? JsonBlob.get(obj, 'n'), '').trim();
         course.teacher = JsonBlob.asString(JsonBlob.get(obj, 'teacher'), '');
         course.room = JsonBlob.asString(JsonBlob.get(obj, 'room'), '');
-        course.day = Math.round(JsonBlob.asNumber(JsonBlob.get(obj, 'day'), 0));
-        course.start = Math.round(JsonBlob.asNumber(JsonBlob.get(obj, 'start'), 1));
-        course.end = Math.round(JsonBlob.asNumber(JsonBlob.get(obj, 'end'), 1));
+        course.day = TtParser.courseNumber(obj, 'day', -1);
+        course.start = TtParser.courseNumber(obj, 'start', 1);
+        course.end = TtParser.courseNumber(obj, 'end', course.start);
         course.weeks = JsonBlob.asString(JsonBlob.get(obj, 'weeks'), '');
         course.parity = JsonBlob.asString(JsonBlob.get(obj, 'parity'), 'all');
-        if (course.day >= 0 && course.day <= 6 && course.start >= 1 && course.end >= course.start) {
+        if (course.name.length > 0 && course.day >= 0 && course.day <= 6 &&
+          course.start >= 1 && course.end >= course.start) {
           snapshot.c.push(course);
         }
       }
     }
     return snapshot;
+  }
+
+  private static courseNumber(row: Blob, key: string, fallback: number): number {
+    const value = JsonBlob.get(row, key);
+    const number = typeof value === 'string' && value.trim().length ? Number(value) : JsonBlob.asNumber(value, fallback);
+    return Number.isFinite(number) ? Math.round(number) : fallback;
   }
 
   /** `site_assets` 行的 body（jsonb 可能是对象，也可能是字符串）。 */

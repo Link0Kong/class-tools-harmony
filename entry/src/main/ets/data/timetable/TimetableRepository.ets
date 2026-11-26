@@ -31,7 +31,7 @@ export class TtResult {
 /**
  * 课表仓库（契约 ENDPOINTS E24）：
  *
- * 1. 个人课表优先：`userdata.tt.ttUseMine === true` 且 `ttLocal` 有课程 → 直接用（PERSONAL）；
+ * 1. 个人课表优先：`userdata.tt.ttLocal` 含有效课程即使用，兼容旧开关与字符串快照；
  * 2. 否则读公共快照 `site_assets?id=eq.tt`（body 可能是 jsonb 对象或 JSON 字符串）；
  * 3. 6 小时 TTL；网络失败回落缓存。
  */
@@ -56,13 +56,15 @@ export class TimetableRepository {
   }
 
   async load(force: boolean): Promise<TtResult> {
-    if (this.inflight !== undefined) {
-      return await this.inflight;
-    }
-    const pending: Promise<TtResult> = this.loadOnce(force);
+    const personal = this.personalSnapshot();
+    if (personal) return new TtResult(true, personal, true, TtSource.PERSONAL, '');
+    const pending = this.inflight ?? this.loadPublic(force);
     this.inflight = pending;
     try {
-      return await pending;
+      const result = await pending;
+      // 公共读取期间可能同步进了个人快照，界面和提醒都应选返回时的来源。
+      const latest = this.personalSnapshot();
+      return latest ? new TtResult(true, latest, true, TtSource.PERSONAL, '') : result;
     } finally {
       if (this.inflight === pending) {
         this.inflight = undefined;
@@ -70,12 +72,8 @@ export class TimetableRepository {
     }
   }
 
-  private async loadOnce(force: boolean): Promise<TtResult> {
+  private async loadPublic(force: boolean): Promise<TtResult> {
     const now: number = this.clock();
-    const personal: TtSnapshot | undefined = this.personalSnapshot();
-    if (personal !== undefined && personal.c.length > 0) {
-      return new TtResult(true, personal, true, TtSource.PERSONAL, '');
-    }
     if (!force && this.loaded && now - this.cachedAt < this.ttlMs && this.cache !== undefined) {
       return new TtResult(true, this.cache, true, TtSource.CACHE, '');
     }
@@ -128,13 +126,10 @@ export class TimetableRepository {
     return TtParser.parseSnapshot(body);
   }
 
-  /** 个人课表（`userdata.tt` 的 ttUseMine + ttLocal）。 */
+  /** 课表清空、损坏或没有可用课程时，继续读取公共来源。 */
   private personalSnapshot(): TtSnapshot | undefined {
     const tt: Blob | undefined = this.personalProvider();
     if (tt === undefined) {
-      return undefined;
-    }
-    if (!JsonBlob.asBoolean(JsonBlob.get(tt, 'ttUseMine'), false)) {
       return undefined;
     }
     const local = JsonBlob.get(tt, 'ttLocal');
@@ -142,6 +137,7 @@ export class TimetableRepository {
       return undefined;
     }
     const text: string = typeof local === 'string' ? local as string : JSON.stringify(local);
-    return TtParser.parseSnapshot(text);
+    const snapshot = TtParser.parseSnapshot(text);
+    return snapshot && snapshot.c.length > 0 ? snapshot : undefined;
   }
 }

@@ -12,7 +12,7 @@ import { VisitsRepository } from '../data/visits/VisitsRepository';
 import { FitRecsRepository } from '../data/fitrecs/FitRecsRepository';
 import { HomeworkRepository } from '../data/homework/HomeworkRepository';
 import { NoticesRepository } from '../data/notices/NoticesRepository';
-import { TimetableRepository } from '../data/timetable/TimetableRepository';
+import { TimetableRepository, TtResult, TtSource } from '../data/timetable/TimetableRepository';
 import { TimetableLoginRepository } from '../data/timetable/TimetableLoginRepository';
 import { PowerRepository } from '../data/power/PowerRepository';
 import { VoteRepository } from '../data/vote/VoteRepository';
@@ -112,6 +112,16 @@ export class Services {
   static readonly timetable: TimetableRepository = new TimetableRepository(
     Services.api,
     () => JsonBlob.asBlob(JsonBlob.get(Services.userdata.currentSections(), 'tt')));
+
+  /** 用户手动刷新工作台或课表时，先接收其他设备对个人课表的导入或清除。 */
+  static async loadTimetableForView(force: boolean): Promise<TtResult> {
+    if (force) {
+      const userdata = Services.userdata;
+      await userdata.pull(true);
+      if (userdata !== Services.userdata) return new TtResult(false, undefined, false, TtSource.PUBLIC, '身份已切换');
+    }
+    return Services.timetable.load(force);
+  }
 
   static readonly login: TimetableLoginRepository = new TimetableLoginRepository(Services.api);
 
