@@ -1,3 +1,4 @@
+import { USERDATA_CONTRACT } from './fixtures/UserdataContract';
 ﻿import { describe, it, expect } from '@ohos/hypium';
 import { Blob, JsonBlob, JsonValue } from '../main/ets/data/sync/JsonBlob';
 import { UserdataV6 } from '../main/ets/data/sync/UserdataV6';
@@ -28,7 +29,40 @@ function emptySet(): Set<string> {
   return new Set<string>();
 }
 
+function contractValue(blob: Blob, path: string): JsonValue | undefined {
+  let value: JsonValue | undefined = blob;
+  const parts: string[] = path.split('.');
+  for (let i = 0; i < parts.length; i++) {
+    value = JsonBlob.get(JsonBlob.asBlob(value), parts[i]);
+  }
+  return value;
+}
+
 export default function userdataMergeTest() {
+  describe('FrozenUserdataV6', () => {
+    const vectors = JsonBlob.asArray(blobOf(USERDATA_CONTRACT)['cases']) ?? [];
+    for (let i = 0; i < vectors.length; i++) {
+      const vector: Blob = vectors[i] as Blob;
+      it(JsonBlob.asString(vector['id'], ''), 0, () => {
+        const merged = UserdataMerge.merge(JsonBlob.asBlob(vector['remote']), JsonBlob.asBlob(vector['local']));
+        const expected: Blob = JsonBlob.asBlob(vector['expect']) ?? {};
+        const keys: string[] = Object.keys(expected);
+        for (let j = 0; j < keys.length; j++) {
+          expect(JsonBlob.deepEqual(contractValue(merged, keys[j]), expected[keys[j]])).assertTrue();
+        }
+        const absent = JsonBlob.asArray(vector['absent']) ?? [];
+        for (let j = 0; j < absent.length; j++) {
+          expect(contractValue(merged, String(absent[j])) === undefined).assertTrue();
+        }
+        if (JsonBlob.asBoolean(vector['legacyEmptyDraw'], false)) {
+          const empty: Blob = {};
+          const defaultDraw: Blob = { 'names': '' };
+          expect(JsonBlob.deepEqual(merged['draw'], empty) || JsonBlob.deepEqual(merged['draw'], defaultDraw)).assertTrue();
+        }
+      });
+    }
+  });
+
   describe('UserdataMergeOracle', () => {
     it('merge_remote_mp_local_web_matches_oracle', 0, () => {
       const merged: Blob = UserdataMerge.merge(blobOf(USERDATA_V6_MP), blobOf(USERDATA_V6_WEB));
