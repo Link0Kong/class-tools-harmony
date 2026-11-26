@@ -10,7 +10,7 @@ import {
 } from './DiagModels';
 
 const HEALTH_PATH: string = 'service_health?select=id,name,kind,status,detail,meta,checked_at&order=id.asc';
-const ANALYSIS_PATH: string = 'diag_analysis?select=*&order=ts.desc&limit=20';
+const ANALYSIS_PATH: string = 'diag_analysis?select=*&status=neq.ignored&order=ts.desc&limit=20';
 const REPAIRS_PATH: string = 'repair_tasks?select=*&order=created_at.desc&limit=20';
 const PROBE_PATH: string = 'service_health?select=id&limit=1';
 
