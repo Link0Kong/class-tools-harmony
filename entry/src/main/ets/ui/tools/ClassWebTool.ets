@@ -1,3 +1,4 @@
+import { EMBEDDED_FEEDBACK_SCRIPT, showFeedback } from '../components/AppFeedback';
 import { webview } from '@kit.ArkWeb';
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { Services } from '../../app/Services';
@@ -124,7 +125,7 @@ export struct ClassWebTool {
   }
 
   private toast(message: string): void {
-    if (this.active) this.getUIContext().getPromptAction().showToast({ message: message });
+    if (this.active) showFeedback(this.getUIContext(), message);
   }
 
   private bindDownloads(): void {
@@ -209,6 +210,11 @@ export struct ClassWebTool {
               .onControllerAttached(() => { this.bindDownloads(); })
               .onShowFileSelector((event: OnShowFileSelectorEvent) => { this.chooseFiles(event); return true; })
               .onLoadIntercept((event: OnLoadInterceptEvent) => this.allowNavigation(event))
+              .onPageEnd((event: OnPageEndEvent) => {
+                if (this.active && event.url.split('#')[0] === this.pageUrl()) {
+                  this.controller.runJavaScript(EMBEDDED_FEEDBACK_SCRIPT).catch(() => {});
+                }
+              })
               .onProgressChange((event: OnProgressChangeEvent) => { this.progress = event.newProgress; })
               .onHttpErrorReceive((event: OnHttpErrorReceiveEvent) => {
                 if (event.request.isMainFrame()) this.error = '工具暂时不可用';

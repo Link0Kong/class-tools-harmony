@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
 import { LengthMetrics } from '@kit.ArkUI';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -58,7 +59,6 @@ export struct HomeworkScreen {
   private refreshRunning: boolean = false;
   private refreshSeq: number = 0;
   @State private errorMsg: string = '';
-  @State private notice: string = '';
   @State private now: number = Date.now();
 
   @State private detailOpen: boolean = false;
@@ -79,12 +79,20 @@ export struct HomeworkScreen {
     return true;
   };
 
+  private active: boolean = false;
+
+  private notify(message: string): void {
+    if (this.active) showFeedback(this.getUIContext(), message);
+  }
+
   aboutToDisappear(): void {
+    this.active = false;
     if (AppGlobal.toolBack === this.backLayer) AppGlobal.toolBack = undefined;
     clearTimeout(this.refreshTimer);
   }
 
   aboutToAppear(): void {
+    this.active = true;
     AppGlobal.toolBack = this.backLayer;
     this.target = this.homeworkId;
     this.reload(false);
@@ -105,7 +113,7 @@ export struct HomeworkScreen {
 
   private async importTask(item: HomeworkItem): Promise<void> {
     const count = await TaskRepository.importHomework([item.row]);
-    this.notice = count ? '已加入个人任务' : '未加入，请检查任务列表';
+    this.notify(count ? '已加入个人任务' : '未加入，请检查任务列表');
     await this.loadImported();
   }
 
@@ -189,7 +197,7 @@ export struct HomeworkScreen {
       this.target = '';
       const item = this.items().find((i: HomeworkItem) => i.row.id === id);
       if (item) this.openDetail(item);
-      else this.getUIContext().getPromptAction().showToast({ message: '这项班级作业已不可见' });
+      else this.notify('这项班级作业已不可见');
     }
   }
 
@@ -247,7 +255,6 @@ export struct HomeworkScreen {
   }
 
   private openDetail(item: HomeworkItem): void {
-    this.notice = '';
     this.calendarFor = '';
     this.detail = item;
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
@@ -274,7 +281,7 @@ export struct HomeworkScreen {
     keys.add('hide');
     await Services.userdata.push(false, keys);
     this.hiddenCount = 0;
-    this.notice = '已恢复隐藏的作业';
+    this.notify('已恢复隐藏的作业');
     await this.reload(true);
   }
 
@@ -295,7 +302,7 @@ export struct HomeworkScreen {
     NotifyCenter.syncAll(true);
     TaskRepository.onChange();
     this.closeDetail();
-    this.notice = cancelled ? '已隐藏（仅你不可见）' : '已隐藏，系统未能取消原提醒';
+    this.notify(cancelled ? '已隐藏（仅你不可见）' : '已隐藏，系统未能取消原提醒');
     await this.reload(true);
   }
 
@@ -313,12 +320,11 @@ export struct HomeworkScreen {
       }
     }
     this.doneIds = this.doneIds.slice(0);
-    this.notice = '';
     const result: MarksUpdateResult = await Services.marks.setMark(MarkKind.HW, id, next);
     if (!result.ok) {
-      this.notice = '网络不佳：已在本机标记，稍后自动补发';
+      this.notify('网络不佳：已在本机标记，稍后自动补发');
     }
-    if (next && !(await HomeworkReminders.cancel(id))) this.notice = '已完成，系统未能取消原提醒';
+    if (next && !(await HomeworkReminders.cancel(id))) this.notify('已完成，系统未能取消原提醒');
     this.loadReminders();
     NotifyCenter.syncAll(true);
     TaskRepository.onChange();
@@ -340,18 +346,18 @@ export struct HomeworkScreen {
   private async setReminder(item: HomeworkItem): Promise<void> {
     const result = await HomeworkReminders.schedule(item.row, this.advance);
     this.calendarFor = result.code === 1700002 ? item.row.id : '';
-    this.notice = result.ok ? '已设置提醒：截止前 ' + this.advance + ' 分钟' : result.message;
+    this.notify(result.ok ? '已设置提醒：截止前 ' + this.advance + ' 分钟' : result.message);
     await this.loadReminders();
   }
 
   private async addCalendar(item: HomeworkItem): Promise<void> {
     const plan = ReminderPlanner.plan(item.row, Date.now(), this.advance);
-    this.notice = plan ? await ReminderAgent.calendar(plan) : '截止时间已过';
+    this.notify(plan ? await ReminderAgent.calendar(plan) : '截止时间已过');
   }
 
   private async cancelReminder(item: HomeworkItem): Promise<void> {
     const cancelled = await HomeworkReminders.cancel(item.row.id);
-    this.notice = cancelled ? '已取消提醒' : '系统未能取消提醒，请重试';
+    this.notify(cancelled ? '已取消提醒' : '系统未能取消提醒，请重试');
     await this.loadReminders();
   }
 
@@ -524,7 +530,7 @@ export struct HomeworkScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        this.notify(result.message);
       }
     });
   }
@@ -586,7 +592,6 @@ export struct HomeworkScreen {
                   .onClick(() => { this.addCalendar(item); })
               }
             }
-            if (this.notice.length > 0) { Text(this.notice).fontSize(14).fontColor($r('app.color.task_soon')) }
           }.width('100%').padding(16).alignItems(HorizontalAlign.Start)
         }.layoutWeight(1).width('100%').align(Alignment.Top)
         Row({ space: 8 }) {

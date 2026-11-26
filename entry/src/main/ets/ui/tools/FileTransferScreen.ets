@@ -1,4 +1,5 @@
-﻿import { Services } from '../../app/Services';
+﻿import { showFeedback } from '../components/AppFeedback';
+import { Services } from '../../app/Services';
 import { CloudSpaceFile, CloudSpaceSnapshot, CloudSpaceResult } from '../../data/cloudspace/CloudSpaceModels';
 import { CloudSpaceLogic } from '../../data/cloudspace/CloudSpaceLogic';
 import { CloudSpaceRepository, PickedFile } from '../../data/cloudspace/CloudSpaceRepository';
@@ -92,7 +93,7 @@ export struct FileTransferScreen {
       return;
     }
     if (picked.sizeBytes <= 0) {
-      this.errorMsg = '空文件无法上传（0 字节）';
+      showFeedback(this.getUIContext(), '空文件无法上传（0 字节）');
       return;
     }
     this.uploading = true;
@@ -108,10 +109,10 @@ export struct FileTransferScreen {
     if (result.ok) {
       this.uploadPercent = 100;
       this.uploadStateText = '已上传';
-      this.statusMsg = '已上传「' + CloudSpaceLogic.safeName(picked.name) + '」· 保留 72 小时';
+      showFeedback(this.getUIContext(), '已上传「' + CloudSpaceLogic.safeName(picked.name) + '」· 保留 72 小时');
       await this.refresh(true);
     } else {
-      this.errorMsg = result.error !== undefined ? result.error.displayMessage() : '上传失败，请重试';
+      showFeedback(this.getUIContext(), result.error !== undefined ? result.error.displayMessage() : '上传失败，请重试');
     }
   }
 
@@ -129,13 +130,14 @@ export struct FileTransferScreen {
     if (!result.ok || result.value === undefined) {
       this.downloadingId = '';
       this.statusMsg = '';
-      this.errorMsg = result.error !== undefined ? result.error.displayMessage() : '下载失败，请重试';
+      showFeedback(this.getUIContext(), result.error !== undefined ? result.error.displayMessage() : '下载失败，请重试');
       return;
     }
     const path: string = result.value;
     const openError: string = await this.repo().openLocalFile(path, file.mimeType);
     this.downloadingId = '';
-    this.statusMsg = openError.length > 0 ? openError : '已下载并打开「' + file.name + '」';
+    this.statusMsg = '';
+    showFeedback(this.getUIContext(), openError.length > 0 ? openError : '已下载并打开「' + file.name + '」');
   }
 
   private confirmDelete(file: CloudSpaceFile): void {
@@ -162,9 +164,9 @@ export struct FileTransferScreen {
     const result = await this.repo().delete(file.id);
     if (result.ok && result.value !== undefined) {
       this.applySnapshot(result.value);
-      this.statusMsg = '已删除「' + file.name + '」';
+      showFeedback(this.getUIContext(), '已删除「' + file.name + '」');
     } else {
-      this.errorMsg = result.error !== undefined ? result.error.displayMessage() : '删除失败，请重试';
+      showFeedback(this.getUIContext(), result.error !== undefined ? result.error.displayMessage() : '删除失败，请重试');
     }
   }
 
@@ -194,9 +196,9 @@ export struct FileTransferScreen {
     this.loading = false;
     if (result.ok && result.value !== undefined) {
       this.applySnapshot(result.value);
-      this.statusMsg = '已清空云空间';
+      showFeedback(this.getUIContext(), '已清空云空间');
     } else {
-      this.errorMsg = result.error !== undefined ? result.error.displayMessage() : '清空失败，请重试';
+      showFeedback(this.getUIContext(), result.error !== undefined ? result.error.displayMessage() : '清空失败，请重试');
     }
   }
 

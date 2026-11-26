@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import request from '@ohos.request';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
@@ -50,7 +51,6 @@ export struct PptScreen {
   @State private detail: PptDeckDetail = new PptDeckDetail();
   @State private detailError: string = '';
   private shareSpec: ExportCardSpec = new ExportCardSpec();
-  @State private notice: string = '';
   @State private downloading: string = '';
   @State private playerOpen: boolean = false;
   @State private playerSlide: number = 0;
@@ -64,11 +64,21 @@ export struct PptScreen {
   @State private lastSavedPath: string = '';
   @State private savingAs: boolean = false;
   @State private deleteConfirm: boolean = false;
-  @State private deleteNotice: string = '';
   @State private refreshing: boolean = false;
   private scroller: Scroller = new Scroller();
 
+  private active: boolean = false;
+
+  private notify(message: string): void {
+    if (this.active) showFeedback(this.getUIContext(), message);
+  }
+
+  aboutToDisappear(): void {
+    this.active = false;
+  }
+
   aboutToAppear(): void {
+    this.active = true;
     this.reload();
   }
 
@@ -103,7 +113,6 @@ export struct PptScreen {
     });
     this.detailLoading = true;
     this.detailError = '';
-    this.notice = '';
     this.loadDetail(deckId);
   }
 
@@ -202,7 +211,7 @@ export struct PptScreen {
     }
     if (!this.deleteConfirm) {
       this.deleteConfirm = true;
-      this.deleteNotice = '再点一次「删除演示」确认（仅对自己上传的演示生效）';
+      this.notify('请在 3 秒内点「确认删除？」');
       setTimeout(() => {
         this.deleteConfirm = false;
       }, 3000);
@@ -213,9 +222,9 @@ export struct PptScreen {
     if (ok) {
       this.closeDetail();
       await this.reload();
-      this.uploadNotice = '已删除该演示';
+      this.notify('已删除该演示');
     } else {
-      this.deleteNotice = '删除失败（只能删除本人上传的演示）';
+      this.notify('删除失败（只能删除本人上传的演示）');
     }
   }
 
@@ -233,7 +242,7 @@ export struct PptScreen {
     }
     const context = AppGlobal.context;
     if (context === undefined) {
-      this.notice = '应用上下文缺失';
+      this.notify('应用上下文缺失');
       return;
     }
     const slash: number = this.lastSavedPath.lastIndexOf('/');
@@ -245,7 +254,7 @@ export struct PptScreen {
       options.newFileNames = [name];
       const uris: string[] = await documentPicker.save(options);
       if (uris.length === 0) {
-        this.notice = '已取消保存';
+        this.notify('已取消保存');
         this.savingAs = false;
         return;
       }
@@ -257,9 +266,9 @@ export struct PptScreen {
       const dest: fs.File = fs.openSync(uris[0], fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
       fs.writeSync(dest.fd, buffer);
       fs.closeSync(dest);
-      this.notice = '已保存到文件：' + name;
+      this.notify('已保存到文件：' + name);
     } catch (e) {
-      this.notice = '保存到文件失败';
+      this.notify('保存到文件失败');
     }
     this.savingAs = false;
   }
@@ -270,7 +279,7 @@ export struct PptScreen {
     }
     const context = AppGlobal.context;
     if (context === undefined) {
-      this.uploadNotice = '无法打开文件选择器';
+      this.notify('无法打开文件选择器');
       return;
     }
     let uris: string[] = [];
@@ -281,7 +290,7 @@ export struct PptScreen {
       options.fileSuffixFilters = ['.pptx', '.ppt'];
       uris = await documentPicker.select(options);
     } catch (e) {
-      this.uploadNotice = '打开文件选择器失败';
+      this.notify('打开文件选择器失败');
       return;
     }
     if (uris.length === 0) {
@@ -307,26 +316,26 @@ export struct PptScreen {
     });
     this.uploading = false;
     if (error.length === 0) {
-      this.uploadNotice = '已上传并排队转换，完成后下拉刷新';
+      this.notify('已上传并排队转换，完成后下拉刷新');
       this.reload();
     } else {
-      this.uploadNotice = error;
+      this.notify(error);
     }
   }
 
   private async download(deck: PptDeck, file: PptFileInfo, kind: string): Promise<void> {
     const url: string = fileUrl(this.detail.base, file);
     if (url.length === 0) {
-      this.notice = '该文件暂无可下载地址';
+      this.notify('该文件暂无可下载地址');
       return;
     }
     const name: string = file.name.length > 0 ? file.name : downloadName(deck, file, kind);
     this.downloading = name;
-    this.notice = '开始下载 ' + name + '…';
+    this.notify('开始下载 ' + name + '…');
     try {
       const context = AppGlobal.context;
       if (context === undefined) {
-        this.notice = '应用上下文缺失，无法下载';
+        this.notify('应用上下文缺失，无法下载');
         this.downloading = '';
         return;
       }
@@ -345,9 +354,9 @@ export struct PptScreen {
         background: false
       });
       this.lastSavedPath = target;
-      this.notice = '已下载到应用目录，可点「保存到文件」导出';
+      this.notify('已下载到应用目录，可点「保存到文件」导出');
     } catch (e) {
-      this.notice = '下载失败，请稍后重试';
+      this.notify('下载失败，请稍后重试');
     }
     this.downloading = '';
   }
@@ -478,7 +487,7 @@ export struct PptScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        this.notify(result.message);
       }
     });
   }
@@ -646,13 +655,6 @@ export struct PptScreen {
                   this.softDeleteDeck();
                 })
             }
-            if (this.deleteNotice.length > 0) {
-              Text(this.deleteNotice)
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.WARM_SAND)
-                .width('100%')
-                .margin({ top: 6 })
-            }
 
             if (this.lastSavedPath.length > 0) {
               Button(this.savingAs ? '保存中…' : '保存到文件（导出到系统文件）')
@@ -666,13 +668,6 @@ export struct PptScreen {
                 .onClick(() => {
                   this.saveAs();
                 })
-            }
-            if (this.notice.length > 0) {
-              Text(this.notice)
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.MIST_TEAL)
-                .width('100%')
-                .margin({ top: 8 })
             }
           }
           .width('100%')
@@ -733,7 +728,7 @@ export struct PptScreen {
         .width('100%')
         .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
 
-        if (this.uploadNotice.length > 0) {
+        if (this.uploading && this.uploadNotice.length > 0) {
           Text(this.uploadNotice)
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.TEXT_TERTIARY)

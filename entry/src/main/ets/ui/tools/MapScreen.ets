@@ -3,9 +3,9 @@ import { webview } from '@kit.ArkWeb';
 import { AppGlobal } from '../../app/AppGlobal';
 import { MapLoadState, MapLogic } from '../../features/map/MapModels';
 import { Tokens } from '../theme/Tokens';
-import { Immersive } from '../theme/Immersive';
 import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
+import { EMBEDDED_FEEDBACK_SCRIPT, showFeedback } from '../components/AppFeedback';
 
 @Component
 export struct MapScreen {
@@ -76,6 +76,7 @@ export struct MapScreen {
         const ready: string = await this.controller.runJavaScript('window.zqMapReady === true');
         if (!this.checking(id)) return;
         if (ready === 'true') {
+          this.controller.runJavaScript(EMBEDDED_FEEDBACK_SCRIPT).catch(() => {});
           clearTimeout(this.timeout);
           this.state = MapLoadState.READY;
           this.progress = 100;
@@ -99,10 +100,7 @@ export struct MapScreen {
       });
     } catch (e) {
       const err: BusinessError = e as BusinessError;
-      this.getUIContext().getPromptAction().showToast({
-        message: '无法打开浏览器（' + err.code + '）',
-        systemMaterial: Immersive.dialogMaterial()
-      });
+      if (this.active) showFeedback(this.getUIContext(), '无法打开浏览器（' + err.code + '）');
     }
   }
 

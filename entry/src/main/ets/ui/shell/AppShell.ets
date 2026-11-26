@@ -7,6 +7,7 @@ import { HomeTools, HomeToolsToggleResult } from '../../data/home/HomeTools';
 import { HomeScreen } from '../screens/HomeScreen';
 import { AllScreen } from '../screens/AllScreen';
 import { MeScreen } from '../screens/MeScreen';
+import { showFeedback } from '../components/AppFeedback';
 import {
   BlurStrategy,
   hdsMaterial,
@@ -141,14 +142,7 @@ export struct AppShell {
   private toggleQuick(id: string): void {
     const result: HomeToolsToggleResult = HomeTools.toggle(this.quickIds, id);
     if (result.rejected === 'full') {
-      try {
-        this.getUIContext().getPromptAction().showToast({
-          message: '首页最多 4 个',
-          systemMaterial: Immersive.dialogMaterial()
-        });
-      } catch (e) {
-        // toast 失败不影响主流程
-      }
+      showFeedback(this.getUIContext(), '首页最多 4 个');
       return;
     }
     if (result.changed) {

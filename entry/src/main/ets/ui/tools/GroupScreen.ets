@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { RosterPicker } from '../components/RosterPicker';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
 import { Services } from '../../app/Services';
@@ -242,9 +243,9 @@ export struct GroupScreen {
       const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN,
         this.groups.copyText());
       await pasteboard.getSystemPasteboard().setData(data);
-      this.getUIContext().getPromptAction().showToast({ message: '已复制分组结果' });
+      showFeedback(this.getUIContext(), '已复制分组结果');
     } catch (e) {
-      this.getUIContext().getPromptAction().showToast({ message: '复制失败，请改用导出图片' });
+      showFeedback(this.getUIContext(), '复制失败，请改用导出图片');
     }
   }
 

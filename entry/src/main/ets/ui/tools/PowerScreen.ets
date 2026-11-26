@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { Services } from '../../app/Services';
 import { Blob } from '../../data/sync/JsonBlob';
 import {
@@ -814,7 +815,7 @@ export struct PowerScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        showFeedback(this.getUIContext(), result.message);
       }
     });
   }

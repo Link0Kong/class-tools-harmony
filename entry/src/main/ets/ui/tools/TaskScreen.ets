@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { LengthMetrics } from '@kit.ArkUI';
 import { AppGlobal } from '../../app/AppGlobal';
 import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
@@ -91,7 +92,7 @@ export struct TaskScreen {
   private valid(): boolean { return this.active && this.owner === Services.currentSid; }
 
   private message(message: string): void {
-    if (this.valid()) this.getUIContext().getPromptAction().showToast({ message: message });
+    if (this.valid()) showFeedback(this.getUIContext(), message);
   }
 
   private updateBrief(): void {
@@ -444,8 +445,11 @@ export struct TaskScreen {
         }
       }
       if (this.linkInput) {
-        TextInput({ placeholder: '粘贴任务分享链接', text: this.link }).maxLength(8192).onChange((s: string) => { this.link = s; })
-        this.action('预览任务', () => this.preview(this.link))
+        Row({ space: 6 }) {
+          TextInput({ placeholder: '粘贴任务分享链接', text: this.link }).maxLength(8192).layoutWeight(1)
+            .onChange((s: string) => { this.link = s; }).onSubmit(() => { this.preview(this.link); })
+          this.action('预览任务', () => this.preview(this.link))
+        }.width('100%')
       }
     }.alignItems(HorizontalAlign.Start).width('100%').padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }

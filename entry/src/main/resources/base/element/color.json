@@ -3,6 +3,14 @@
     {
       "name": "start_window_background",
       "value": "#F7F8F8"
+    },
+    {
+      "name": "feedback_surface",
+      "value": "#1C2629"
+    },
+    {
+      "name": "feedback_text",
+      "value": "#F4F6F6"
     }
   ]
 }

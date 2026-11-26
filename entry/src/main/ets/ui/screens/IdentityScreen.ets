@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { VerifyResult } from '../../data/auth/AuthRepository';
 import { Session } from '../../data/session/Session';
 import { Services } from '../../app/Services';
@@ -77,7 +78,7 @@ export struct IdentityScreen {
 
   private toast(message: string): void {
     try {
-      this.getUIContext().getPromptAction().showToast({ message: message });
+      showFeedback(this.getUIContext(), message);
     } catch (e) {
       // toast 失败不影响主流程
     }

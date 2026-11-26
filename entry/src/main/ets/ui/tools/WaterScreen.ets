@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { PowerRooms, RoomInfo } from '../../data/power/PowerModels';
@@ -37,7 +38,6 @@ export struct WaterScreen {
   @State private monthText: string = '';
   @State private readingText: string = '';
   @State private errorMsg: string = '';
-  @State private notice: string = '';
   @State private confirmReplace: boolean = false;
   @State private picking: boolean = true;
   @State private pickBuilding: string = '13号楼';
@@ -92,7 +92,6 @@ export struct WaterScreen {
     this.persons = this.state.roomOrDefault(rv).persons;
     this.confirmReplace = false;
     this.errorMsg = '';
-    this.notice = '';
     this.monthText = WaterMonth.current(this.now);
   }
 
@@ -117,7 +116,7 @@ export struct WaterScreen {
     }
     if (review.replaceExisting && !this.confirmReplace) {
       this.confirmReplace = true;
-      this.notice = '该月已有记录，再点一次「保存」覆盖';
+      showFeedback(this.getUIContext(), '该月已有记录，请点「确认覆盖」');
       return;
     }
     const record: WaterRecord = review.record as WaterRecord;
@@ -125,13 +124,13 @@ export struct WaterScreen {
     await this.persist();
     this.confirmReplace = false;
     this.readingText = '';
-    this.notice = record.month + ' 已保存（' + record.reading.toFixed(2) + ' 吨）';
+    showFeedback(this.getUIContext(), record.month + ' 已保存（' + record.reading.toFixed(2) + ' 吨）');
   }
 
   private async deleteRecord(month: string): Promise<void> {
     this.state = WaterMutator.delete(this.state, this.sel, month);
     await this.persist();
-    this.notice = month + ' 记录已删除';
+    showFeedback(this.getUIContext(), month + ' 记录已删除');
     this.confirmReplace = false;
   }
 
@@ -360,13 +359,6 @@ export struct WaterScreen {
           .width('100%')
           .margin({ top: 6 })
       }
-      if (this.notice.length > 0) {
-        Text(this.notice)
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor(this.confirmReplace ? Tokens.WARM_SAND : Tokens.MIST_TEAL)
-          .width('100%')
-          .margin({ top: 6 })
-      }
 
       Button(this.confirmReplace ? '确认覆盖' : '保存')
         .width('100%')
@@ -535,7 +527,7 @@ export struct WaterScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        showFeedback(this.getUIContext(), result.message);
       }
     });
   }

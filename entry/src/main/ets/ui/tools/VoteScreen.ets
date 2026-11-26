@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { systemDateTime } from '@kit.BasicServicesKit';
 import { LiveActivity } from '../../data/notify/LiveActivity';
 import { RosterPicker } from '../components/RosterPicker';
@@ -735,7 +736,7 @@ export struct VoteScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        showFeedback(this.getUIContext(), result.message);
       }
     });
   }

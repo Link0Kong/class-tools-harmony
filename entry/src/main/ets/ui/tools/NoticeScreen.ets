@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
@@ -79,7 +80,6 @@ export struct NoticeScreen {
   @State private refreshing: boolean = false;
   private scroller: Scroller = new Scroller();
   @State private errorMsg: string = '';
-  @State private notice: string = '';
   @State private now: number = Date.now();
   @State private entered: boolean = false;
   @State private previewOpen: boolean = false;
@@ -90,6 +90,7 @@ export struct NoticeScreen {
   @State private rawBlocks: NoticeItemMeta[] = [];
   private shareSpec: ExportCardSpec = new ExportCardSpec();
   private reloadTimer: number = -1;
+  private active: boolean = false;
   /** 正在按需拉取完整 body 的通知行 id（防重复请求）。 */
   private detailLoadingIds: string[] = [];
 
@@ -101,10 +102,12 @@ export struct NoticeScreen {
   };
 
   aboutToDisappear(): void {
+    this.active = false;
     if (AppGlobal.toolBack === this.sourceBack) AppGlobal.toolBack = undefined;
   }
 
   aboutToAppear(): void {
+    this.active = true;
     if (this.noticeId) AppGlobal.toolBack = this.sourceBack;
     HomeNtBadge.markOpened(Services.currentSid);
     // 先回放本机缓存（冷启动/弱网秒开），再后台刷新
@@ -170,7 +173,7 @@ export struct NoticeScreen {
         this.expandedKeys = [target.key];
         this.loadDetailForCard(target);
       } else if (ok) {
-        this.notice = '这条通知已移除或当前账号不可见';
+        this.notify('这条通知已移除或当前账号不可见');
       }
     }
     this.refreshDigest();
@@ -357,8 +360,7 @@ export struct NoticeScreen {
 
   private async addTask(card: NoticeCard): Promise<void> {
     const ok = await TaskRepository.importNotice(card.key, card.title, card.summary, card.whenAt, card.cat);
-    this.notice = ok ? '已加入任务' : '请在任务中查看，或刷新后重试';
-    this.getUIContext().getPromptAction().showToast({ message: this.notice });
+    this.notify(ok ? '已加入任务' : '请在任务中查看，或刷新后重试');
   }
 
   private async toggleDone(card: NoticeCard): Promise<void> {
@@ -376,11 +378,10 @@ export struct NoticeScreen {
       }
     }
     this.doneKeys = copy;
-    this.notice = '';
     this.refreshDigest();
     const result: MarksUpdateResult = await Services.marks.setMark(MarkKind.NT_DONE, key, next);
     if (!result.ok) {
-      this.notice = '网络不佳：已在本机标记，稍后自动补发';
+      this.notify('网络不佳：已在本机标记，稍后自动补发');
     }
   }
 
@@ -396,7 +397,7 @@ export struct NoticeScreen {
     const keys: Set<string> = new Set<string>();
     keys.add('hide');
     await Services.userdata.push(false, keys);
-    this.notice = '已隐藏该通知（仅自己不可见，可在「已隐藏」恢复）';
+    this.notify('已隐藏该通知（仅自己不可见，可在「已隐藏」恢复）');
     await this.reload(true);
   }
 
@@ -412,7 +413,7 @@ export struct NoticeScreen {
     const keys: Set<string> = new Set<string>();
     keys.add('hide');
     await Services.userdata.push(false, keys);
-    this.notice = '已恢复该通知';
+    this.notify('已恢复该通知');
     await this.reload(true);
   }
 
@@ -427,7 +428,7 @@ export struct NoticeScreen {
     const keys: Set<string> = new Set<string>();
     keys.add('hide');
     await Services.userdata.push(false, keys);
-    this.notice = '已恢复全部隐藏通知';
+    this.notify('已恢复全部隐藏通知');
     await this.reload(true);
   }
 
@@ -477,12 +478,11 @@ export struct NoticeScreen {
     try {
       const result: NoticeDetailResult = await Services.notices.loadDetail(rowId);
       if (!result.ok || result.entry === undefined) {
-        this.notice = result.message;
+        this.notify(result.message);
         return false;
       }
       Services.notices.applyDetail(result.entry);
       this.applyEntries(Services.notices.local(), true);
-      this.notice = '';
       return true;
     } finally {
       const index: number = this.detailLoadingIds.indexOf(rowId);
@@ -556,12 +556,12 @@ export struct NoticeScreen {
       return;
     }
     if (url.indexOf('http') !== 0) {
-      this.notice = '该附件仅有内嵌数据，当前设备无法直接打开';
+      this.notify('该附件仅有内嵌数据，当前设备无法直接打开');
       return;
     }
     const context = AppGlobal.context;
     if (context === undefined) {
-      this.notice = '无法打开链接';
+      this.notify('无法打开链接');
       return;
     }
     try {
@@ -570,10 +570,10 @@ export struct NoticeScreen {
         entities: ['entity.system.browsable'],
         uri: url
       }).catch(() => {
-        this.notice = '无法打开该链接';
+        this.notify('无法打开该链接');
       });
     } catch (e) {
-      this.notice = '无法打开该链接';
+      this.notify('无法打开该链接');
     }
   }
 
@@ -1414,7 +1414,7 @@ export struct NoticeScreen {
   }
 
   private notify(message: string): void {
-    this.getUIContext().getPromptAction().showToast({ message: message });
+    if (this.active) showFeedback(this.getUIContext(), message);
   }
 
   /** 通知统一生成分享卡图片，再走系统图片分享。 */
@@ -1613,13 +1613,6 @@ export struct NoticeScreen {
               } else {
               this.briefCard()
 
-              if (this.notice.length > 0) {
-                Text(this.notice)
-                  .fontSize(10)
-                  .fontColor(NT_SD_INK)
-                  .width('100%')
-                  .margin({ top: 6 })
-              }
               if (this.errorMsg.length > 0) {
                 Text(this.errorMsg)
                   .fontSize(10)

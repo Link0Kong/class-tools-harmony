@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { RosterPicker } from '../components/RosterPicker';
 import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
@@ -30,7 +31,6 @@ export struct RollScreen {
   @State private scope: RollScope = RollScope.ALL;
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
-  @State private notice: string = '';
   @State private showExport: boolean = false;
   @State private selSeats: number[] = [];
   @State private draftSeats: number[] = [];
@@ -125,14 +125,13 @@ export struct RollScreen {
 
   private mark(seat: number, status: string): void {
     this.statuses = RollLogic.toggle(this.statuses, seat, status);
-    this.notice = '';
     this.schedulePersist();
   }
 
   private reset(): void {
     this.resetConfirm = false;
     this.statuses = RollLogic.clear(this.statuses, this.scopeSeats());
-    this.notice = '已重置' + this.scope;
+    showFeedback(this.getUIContext(), '已重置' + this.scope);
     this.schedulePersist();
   }
 
@@ -214,7 +213,6 @@ export struct RollScreen {
       .margin({ right: 8 })
       .onClick(() => {
         this.scope = scope;
-        this.notice = '';
       })
   }
 
@@ -367,11 +365,6 @@ export struct RollScreen {
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.TEXT_TERTIARY)
           Blank()
-          if (this.notice.length > 0) {
-            Text(this.notice)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.MIST_TEAL)
-          }
         }
         .width('100%')
         .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })

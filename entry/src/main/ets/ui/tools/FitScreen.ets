@@ -1,4 +1,5 @@
-﻿import { Services } from '../../app/Services';
+﻿import { showFeedback } from '../components/AppFeedback';
+import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import {
   FIT_INPUT_FIELDS,
@@ -173,7 +174,7 @@ export struct FitScreen {
     }
     this.records = saved.records;
     this.errorMsg = '';
-    this.historyMsg = write.ok ? '已保存到历史（云端）' : '已保存到本机（云端同步失败，稍后重试）';
+    showFeedback(this.getUIContext(), write.ok ? '已保存到历史（云端）' : '已保存到本机（云端同步失败，稍后重试）');
   }
 
   private async deleteRecord(index: number): Promise<void> {
@@ -183,7 +184,7 @@ export struct FitScreen {
     const id: string = this.records[index].id;
     this.records = FitHistory.deleteAt(this.records, index);
     await Services.fitRecs.archive(id);
-    this.historyMsg = '已删除';
+    showFeedback(this.getUIContext(), '已删除');
   }
 
   private async saveRename(): Promise<void> {
@@ -197,7 +198,7 @@ export struct FitScreen {
     }
     const result = await Services.fitRecs.rename(target, this.renameText);
     if (!result.ok) {
-      this.historyMsg = '改名失败，请稍后重试';
+      showFeedback(this.getUIContext(), '改名失败，请稍后重试');
       return;
     }
     const next: FitRecord[] = [];
@@ -222,7 +223,7 @@ export struct FitScreen {
     }
     this.records = next;
     this.renameId = '';
-    this.historyMsg = '已改名';
+    showFeedback(this.getUIContext(), '已改名');
   }
 
   private restoreRecord(index: number): void {
@@ -232,7 +233,7 @@ export struct FitScreen {
     }
     this.input = restored;
     this.calc = FitScoring.calc(restored);
-    this.historyMsg = '已回填该记录';
+    showFeedback(this.getUIContext(), '已回填该记录');
     this.persist();
   }
 

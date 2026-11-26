@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 import { LiveActivity } from '../../data/notify/LiveActivity';
 import notificationManager from '@ohos.notificationManager';
 import { formProvider } from '@kit.FormKit';
@@ -39,7 +40,6 @@ export struct MeScreen {
   @State private nick: string = '';
   @State private nickEditing: boolean = false;
   @State private nickDraft: string = '';
-  @State private nickNotice: string = '';
   @State private pushOn: boolean = false;
   @State private pushSysOn: boolean = false;
   @State private pushBusy: boolean = false;
@@ -48,13 +48,10 @@ export struct MeScreen {
   @State private notifySettings: NotifySettings = new NotifySettings();
   @State private testBusy: boolean = false;
   @State private liveEnabled: boolean = false;
-  @State private testNotice: string = '';
   private settingsTouched: boolean = false;
   @State private hwItems: BindItem[] = [];
   @State private hwBusy: boolean = false;
-  @State private hwNotice: string = '';
   @State private updateBusy: boolean = false;
-  @State private updateNotice: string = '';
   @State private legalOpen: boolean = false;
   @State private legalInfo: LegalInfo = LegalTexts.info(LegalTexts.PRIVACY);
   @State private legalDoc: LegalDoc = LegalTexts.fallback(LegalTexts.info(LegalTexts.PRIVACY));
@@ -68,10 +65,9 @@ export struct MeScreen {
       return;
     }
     this.updateBusy = true;
-    this.updateNotice = '正在检查…';
     const result: UpdateCheckResult = await AppUpdate.check(true);
     this.updateBusy = false;
-    this.updateNotice = result.message;
+    showFeedback(this.getUIContext(), result.message);
   }
 
   /** 打开端内法律文本：优先 rawfile 正文，读取失败用要点摘要兜底。 */
@@ -146,15 +142,14 @@ export struct MeScreen {
       return;
     }
     this.hwBusy = true;
-    this.hwNotice = '';
     try {
       const context = this.getUIContext().getHostContext() as common.Context;
       const openId: string = await HuaweiAccount.openId(context);
       const err: string = await AccountBindingRepository.bind(openId, 'phone');
-      this.hwNotice = err.length > 0 ? err : '已绑定当前华为账号';
+      showFeedback(this.getUIContext(), err.length > 0 ? err : '已绑定当前华为账号');
       await this.loadBindings();
     } catch (e) {
-      this.hwNotice = HuaweiAccount.message(e as Object);
+      showFeedback(this.getUIContext(), HuaweiAccount.message(e as Object));
     }
     this.hwBusy = false;
   }
@@ -188,9 +183,8 @@ export struct MeScreen {
       return;
     }
     this.hwBusy = true;
-    this.hwNotice = '';
     const ok: boolean = await AccountBindingRepository.unbind(openId);
-    this.hwNotice = ok ? '已解绑，可重新绑定当前华为账号' : '解绑失败，请稍后重试';
+    showFeedback(this.getUIContext(), ok ? '已解绑，可重新绑定当前华为账号' : '解绑失败，请稍后重试');
     await this.loadBindings();
     this.hwBusy = false;
   }
@@ -320,16 +314,15 @@ export struct MeScreen {
       return;
     }
     this.testBusy = true;
-    this.testNotice = '';
     const allowed: boolean = await NotifyCenter.ensurePermission();
     this.pushSysOn = allowed;
     if (!allowed) {
-      this.testNotice = '请先在系统设置中允许通知，再发送测试';
+      showFeedback(this.getUIContext(), '请先在系统设置中允许通知，再发送测试');
       this.testBusy = false;
       return;
     }
     const ok: boolean = await NotifyCenter.sendTest();
-    this.testNotice = ok ? '测试通知已发送，请下拉通知中心查看' : '发送失败，请稍后重试';
+    showFeedback(this.getUIContext(), ok ? '测试通知已发送，请下拉通知中心查看' : '发送失败，请稍后重试');
     this.testBusy = false;
   }
 
@@ -360,7 +353,7 @@ export struct MeScreen {
     const result = await Services.userdata.push(false, keys);
     this.nick = next;
     this.nickEditing = false;
-    this.nickNotice = result.ok() ? '昵称已保存并同步' : '已保存到本机，稍后自动同步';
+    showFeedback(this.getUIContext(), result.ok() ? '昵称已保存并同步' : '已保存到本机，稍后自动同步');
   }
 
   @Builder
@@ -680,7 +673,7 @@ export struct MeScreen {
                   this.liveEnabled = await LiveActivity.available();
                   await NotifyCenter.syncAll(true);
                 } catch (e) {
-                  this.testNotice = '请在系统设置的通知管理中打开枫丹工具箱';
+                  showFeedback(this.getUIContext(), '请在系统设置的通知管理中打开枫丹工具箱');
                 }
               })
             Button(this.testBusy ? '正在发送…' : '发送测试通知')
@@ -699,16 +692,9 @@ export struct MeScreen {
               .fontColor(Tokens.SLATE_BLUE).enabled(!this.testBusy)
               .onClick(async () => {
                 this.testBusy = true;
-                this.testNotice = await NotifyCenter.testScheduled();
+                showFeedback(this.getUIContext(), await NotifyCenter.testScheduled());
                 this.testBusy = false;
               })
-            if (this.testNotice.length > 0) {
-              Text(this.testNotice)
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(this.testNotice.indexOf('已发送') >= 0 ? Tokens.MIST_TEAL : '#9C5147')
-                .width('100%')
-                .margin({ top: 8 })
-            }
             Text('立即发出一条本地通知，用于检查系统权限和通知样式。')
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.TEXT_TERTIARY)
@@ -983,13 +969,6 @@ export struct MeScreen {
             .width('100%')
             .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_12 })
           }
-          if (this.nickNotice.length > 0) {
-            Text(this.nickNotice)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.MIST_TEAL)
-              .width('100%')
-              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
-          }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.row('通知与提醒', '「通知」工具', false)
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
@@ -1033,7 +1012,7 @@ export struct MeScreen {
                   'ohos.extra.param.key.module_name': 'entry' }
               });
             } catch (_) {
-              this.getUIContext().getPromptAction().showToast({ message: '请在桌面长按应用图标，选择服务卡片' });
+              showFeedback(this.getUIContext(), '请在桌面长按应用图标，选择服务卡片');
             }
           })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
@@ -1105,13 +1084,6 @@ export struct MeScreen {
             .height(48)
             .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16 })
           }, (item: BindItem) => item.openId)
-          if (this.hwNotice.length > 0) {
-            Text(this.hwNotice)
-              .fontSize(Tokens.F_CAPTION)
-              .fontColor(Tokens.MIST_TEAL)
-              .width('100%')
-              .padding({ left: Tokens.SPACE_16, right: Tokens.SPACE_16, bottom: Tokens.SPACE_10 })
-          }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           if (this.isAdmin) {
             this.linkRow('统计', '访问次数 · 登录端 · 设备', () => {
@@ -1140,7 +1112,7 @@ export struct MeScreen {
           })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.linkRow(this.updateBusy ? '检查更新中…' : '检查更新',
-            this.updateNotice.length > 0 ? this.updateNotice : 'v' + CloudConfig.APP_VERSION, () => {
+            'v' + CloudConfig.APP_VERSION, () => {
               this.checkUpdate();
             })
         }

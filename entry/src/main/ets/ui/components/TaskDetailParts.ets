@@ -1,3 +1,4 @@
+import { showFeedback } from './AppFeedback';
 import { AppGlobal } from '../../app/AppGlobal';
 import { util } from '@kit.ArkTS';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
@@ -41,7 +42,7 @@ export struct TaskAttachmentRow {
     const ctx = AppGlobal.context;
     if (!ctx || this.saving) return;
     const src = this.data();
-    const toast = (message: string): void => { this.getUIContext().getPromptAction().showToast({ message: message }); };
+    const toast = (message: string): void => { showFeedback(this.getUIContext(), message); };
     if (this.meta.isImage() && src) {
       this.onImage(src);
     } else if (/^https?:\/\//i.test(src)) {

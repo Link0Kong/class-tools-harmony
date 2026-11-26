@@ -1,4 +1,5 @@
-﻿import { Services } from '../../app/Services';
+﻿import { showFeedback } from '../components/AppFeedback';
+import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { HomeworkBrief, PersonalTask } from '../../data/tasks/TaskModels';
@@ -282,7 +283,7 @@ export struct HomeScreen {
       return;
     }
     if (id === 'weather') {
-      this.getUIContext().getPromptAction().showToast({ message: '当前设备暂未提供天气数据' });
+      showFeedback(this.getUIContext(), '当前设备暂未提供天气数据');
       return;
     }
     if (id === 'clock') {

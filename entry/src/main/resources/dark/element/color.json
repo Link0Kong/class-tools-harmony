@@ -1,0 +1,12 @@
+{
+  "color": [
+    {
+      "name": "feedback_surface",
+      "value": "#ECF1F6"
+    },
+    {
+      "name": "feedback_text",
+      "value": "#18212C"
+    }
+  ]
+}

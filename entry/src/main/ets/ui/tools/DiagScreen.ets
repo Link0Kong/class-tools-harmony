@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { Services } from '../../app/Services';
 import {
   DiagAnalysis,
@@ -41,7 +42,6 @@ export struct DiagScreen {
   @State private repairs: RepairTask[] = [];
   @State private loading: boolean = true;
   @State private errorMsg: string = '';
-  @State private reportNotice: string = '';
   @State private refreshing: boolean = false;
   private scroller: Scroller = new Scroller();
   private shareSpec: ExportCardSpec = new ExportCardSpec();
@@ -70,20 +70,20 @@ export struct DiagScreen {
     const now: number = Date.now();
     const last: number = await DiagReportStore.lastReportAt();
     if (!DiagThrottle.canReport(last, now)) {
-      this.reportNotice = '10 分钟内已上报过，请稍后再试';
+      showFeedback(this.getUIContext(), '10 分钟内已上报过，请稍后再试');
       return;
     }
     const row: Blob | undefined = DiagReport.buildAll(this.summary.checks, this.health, now);
     if (row === undefined) {
-      this.reportNotice = '当前没有需要上报的异常';
+      showFeedback(this.getUIContext(), '当前没有需要上报的异常');
       return;
     }
     const ok: boolean = await Services.diag.report(row);
     if (ok) {
       await DiagReportStore.markReported(now);
-      this.reportNotice = '已上报，本机代理会尽快处理';
+      showFeedback(this.getUIContext(), '已上报，本机代理会尽快处理');
     } else {
-      this.reportNotice = '上报失败，请稍后重试';
+      showFeedback(this.getUIContext(), '上报失败，请稍后重试');
     }
   }
 
@@ -116,7 +116,7 @@ export struct DiagScreen {
     NativeShare.shareCard(this.getUIContext(), builder, this.shareSpec.fileName,
       this.shareSpec.title, this.shareSpec.subtitle).then((result: ShareResult) => {
       if (!result.ok) {
-        this.getUIContext().getPromptAction().showToast({ message: result.message });
+        showFeedback(this.getUIContext(), result.message);
       }
     });
   }
@@ -237,13 +237,6 @@ export struct DiagScreen {
             .border({ width: 0.5, color: Tokens.CARD_EDGE })
             .borderRadius(Tokens.RADIUS_CARD)
 
-            if (this.reportNotice.length > 0) {
-              Text(this.reportNotice)
-                .fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.MIST_TEAL)
-                .width('100%')
-                .margin({ top: 8 })
-            }
 
             if (this.errorMsg.length > 0) {
               Text(this.errorMsg)

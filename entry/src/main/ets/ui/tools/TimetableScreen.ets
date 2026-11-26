@@ -1,3 +1,4 @@
+import { showFeedback } from '../components/AppFeedback';
 ﻿import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import {
@@ -1086,7 +1087,7 @@ export struct TimetableScreen {
   }
 
   private notify(message: string): void {
-    this.getUIContext().getPromptAction().showToast({ message: message });
+    showFeedback(this.getUIContext(), message);
   }
 
   /** 分享当前视图（日 / 周）：先渲染分享卡图片，再走系统图片分享。 */
