@@ -1,7 +1,7 @@
 /**
  * 法律文本（隐私政策 / 用户协议）的端内副本。
  *
- * 文本来源：`web/legal/harmony/{privacy,terms}.html`（2026-11-17 V1.0 正式文本），
+ * 文本来源：`web/legal/harmony/{privacy,terms}.html`（2026-11-26 V1.1 正式文本），
  * 由构建时脚本提取正文并压缩为 `resources/rawfile/legal/*.txt`；端内只读本机资源，
  * 不请求网络。资源缺失/损坏时用 `fallback()` 的关键要点兜底，并保留在线正式文本入口。
  *
@@ -12,9 +12,9 @@ export class LegalInfo {
   kind: string = '';
   title: string = '';
   scope: string = '';
-  version: string = 'V1.0';
-  effectiveDate: string = '2026年11月17日';
-  lastUpdated: string = '2026年11月17日';
+  version: string = 'V1.1';
+  effectiveDate: string = '2026年11月26日';
+  lastUpdated: string = '2026年11月26日';
   operator: string = '陈子麒（个人开发者）';
   email: string = 'Ko_Link@outlook.com';
   /** rawfile 相对路径（不带前导斜杠）。 */
@@ -173,7 +173,8 @@ export class LegalTexts {
         + '不做广告画像、不出售个人信息。', 1),
       new LegalSection('第三方与跨境', '云端使用腾讯云 CloudBase（上海）；PPT 源文件与转换产物存放于阿里云 OSS 香港'
         + '（公共读），属于跨境存储，首次使用前会单独告知并征得同意；华为账号/Push Kit 由华为提供。'
-        + '体测健康数据、教务密码、华为账号标识按敏感个人信息规则处理。', 1),
+        + '体测健康数据、教务密码、华为账号标识按敏感个人信息规则处理。'
+        + '使用任务 AI 整理时，您主动发送的文字和设备本地日期经阿里云 ECS 交给深度求索（DeepSeek）API 生成草稿。', 1),
       new LegalSection('保存期限与你的权利', '登录会话约 30 天（Windows 约 29 天）；通知等本机缓存有期限；'
         + '你可以查阅、更正、删除、撤回同意、注销或导出数据，也可退出登录并清除本机数据。'
         + '云端物理删除需邮件申请（15 个工作日内）。', 1),

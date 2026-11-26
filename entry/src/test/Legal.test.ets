@@ -2,16 +2,16 @@ import { describe, it, expect } from '@ohos/hypium';
 import { LegalDoc, LegalTexts } from '../main/ets/data/legal/LegalTexts';
 
 /**
- * 法律文本端内副本：元信息必须与 `web/legal/manifest.json`（V1.0 / 2026-11-17）一致，
+ * 法律文本端内副本：元信息必须与 `web/legal/manifest.json`（V1.1 / 2026-11-26）一致，
  * 解析器要能承载完整正文，资源缺失时必须回落到可读要点摘要。
  */
 export default function legalTest() {
   describe('LegalTexts', () => {
-    it('metadata_matches_official_v1', 0, () => {
+    it('metadata_matches_official_document', 0, () => {
       const info = LegalTexts.info(LegalTexts.PRIVACY);
-      expect(info.version).assertEqual('V1.0');
-      expect(info.effectiveDate).assertEqual('2026年11月17日');
-      expect(info.lastUpdated).assertEqual('2026年11月17日');
+      expect(info.version).assertEqual('V1.1');
+      expect(info.effectiveDate).assertEqual('2026年11月26日');
+      expect(info.lastUpdated).assertEqual('2026年11月26日');
       expect(info.operator.indexOf('个人开发者') >= 0).assertTrue();
       expect(info.email.indexOf('@') > 0).assertTrue();
       expect(info.rawPath).assertEqual('legal/privacy.txt');

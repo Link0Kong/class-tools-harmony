@@ -4,7 +4,7 @@ import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { HomeworkAttachments, HomeworkRow } from '../homework/HomeworkModels';
 import { Blob, JsonBlob } from '../sync/JsonBlob';
-import { PersonalTask, TaskShare, TaskView, field, numberField, taskDay, taskObjects } from './TaskModels';
+import { PersonalTask, TaskCreateDraft, TaskDraftStep, TaskShare, TaskView, field, numberField, taskDay, taskObjects } from './TaskModels';
 import { completeTask, emptyTasks, firstOrder, mergeTaskEdits, TaskWire } from './TaskMerge';
 
 class TaskAccount {
@@ -155,21 +155,32 @@ export class TaskRepository {
 
   static async add(title: string, share?: TaskShare, due: string = '', starred: boolean = false,
     view: string = 'all'): Promise<boolean> {
-    if (!title.trim() || !PersonalTask.validDue(due, '')) return false;
+    const draft = new TaskCreateDraft();
+    draft.title = title;
+    draft.due = due || (view === 'planned' ? taskDay(new Date()) : '');
+    draft.starred = starred || view === 'important';
+    if (share) {
+      draft.notes = share.notes;
+      draft.steps = share.steps.map((s: string) => new TaskDraftStep(s));
+    }
+    return TaskRepository.addDraft(draft, view);
+  }
+
+  static async addDraft(draft: TaskCreateDraft, view: string): Promise<boolean> {
+    if (!draft.title.trim() || !PersonalTask.validDue(draft.due, draft.dueTime)) return false;
     return TaskRepository.edit((items: Blob[], now: number) => {
       if (items.length >= 2000) return false;
-      const row = TaskRepository.draft(title, now, items);
-      const today = taskDay(new Date(now));
-      if (due || view === 'planned') row['due'] = due || today;
-      if (starred || view === 'important') row['starred'] = true;
-      if (view === 'myday') row['myDay'] = today;
+      const row = TaskRepository.draft(draft.title, now, items);
+      if (draft.due) row['due'] = draft.due;
+      if (draft.dueTime) row['dueTime'] = draft.dueTime;
+      if (draft.starred) row['starred'] = true;
+      if (view === 'myday') row['myDay'] = taskDay(new Date(now));
       if (view.startsWith('group-') && TaskRepository.categories().some((v: TaskView) => v.key === view)) {
         row['list'] = view.slice(6);
       }
-      if (share) {
-        row['notes'] = share.notes;
-        row['steps'] = share.steps.map((s: string): Blob => { return { 'text': s, 'done': false }; });
-      }
+      if (draft.notes) row['notes'] = draft.notes.slice(0, 5000);
+      const steps = draft.stepRows();
+      if (steps.length) row['steps'] = steps;
       items.push(row);
       return true;
     });

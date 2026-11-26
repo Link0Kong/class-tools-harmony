@@ -12,8 +12,9 @@ import { ReminderPlan, ReminderPlanner } from '../../features/reminder/ReminderM
 import { HomeworkReminders } from '../../data/reminder/HomeworkReminders';
 import { ReminderStore } from '../../data/reminder/ReminderStore';
 import { NotifyCenter } from '../../data/notify/NotifyCenter';
+import { TaskAi } from '../../data/tasks/TaskAi';
 import { TaskRepository } from '../../data/tasks/TaskRepository';
-import { HomeworkBrief, PersonalTask, TaskShare, TaskView, taskDay } from '../../data/tasks/TaskModels';
+import { HomeworkBrief, PersonalTask, TaskCreateDraft, TaskDraftStep, TaskShare, TaskView, taskDay } from '../../data/tasks/TaskModels';
 import { NativeShare } from '../../features/share/NativeShare';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
@@ -46,6 +47,14 @@ export struct TaskScreen {
   @State private editDue: string = '';
   @State private editTime: string = '';
   @State private editStar: boolean = false;
+  @State private editSteps: TaskDraftStep[] = [];
+  @State private aiOpen: boolean = false;
+  @State private aiText: string = '';
+  @State private aiBusy: boolean = false;
+  @State private aiError: string = '';
+  @State private aiDrafts: TaskCreateDraft[] = [];
+  @State private aiDraftIndex: number = -1;
+  @State private aiSaving: boolean = false;
   @State private refreshing: boolean = false;
   @State private syncLabel: string = '';
   @State private hwStatus: string = '加载中';
@@ -54,7 +63,8 @@ export struct TaskScreen {
   @State private imagePreview: string = '';
   private backLayer = (): boolean => {
     if (this.imagePreview) this.imagePreview = '';
-    else if (this.editing) this.editing = undefined;
+    else if (this.editing || this.aiDraftIndex >= 0) this.closeEditor();
+    else if (this.aiOpen) this.closeAi();
     else if (this.shared) this.shared = undefined;
     else if (this.selected) this.selected = undefined;
     else if (this.linkInput) this.linkInput = false;
@@ -69,6 +79,9 @@ export struct TaskScreen {
   private tick: number = -1;
   private initialId: string = '';
   private owner: string = '';
+  private aiView: string = 'all';
+  private aiRequest: number = 0;
+  private nextStep: number = 0;
 
   aboutToAppear(): void {
     AppGlobal.toolBack = this.backLayer;
@@ -86,6 +99,7 @@ export struct TaskScreen {
   aboutToDisappear(): void {
     if (AppGlobal.toolBack === this.backLayer) AppGlobal.toolBack = undefined;
     this.active = false;
+    this.closeAi();
     clearInterval(this.tick);
   }
 
@@ -218,6 +232,103 @@ export struct TaskScreen {
     this.editTime = task.dueTime;
     this.editStar = task.starred;
     this.editing = task;
+  }
+
+  private openAi(): void {
+    this.aiView = this.activeView;
+    this.aiOpen = true;
+  }
+
+  private closeAi(): void {
+    this.aiRequest++;
+    this.aiOpen = false;
+    this.aiText = '';
+    this.aiBusy = false;
+    this.aiError = '';
+    this.aiDrafts = [];
+    this.aiDraftIndex = -1;
+    this.editSteps = [];
+  }
+
+  private async suggestTasks(): Promise<void> {
+    if (!this.valid() || this.aiBusy || !this.aiText.trim()) return;
+    const request = ++this.aiRequest;
+    const token = Services.currentToken;
+    this.aiBusy = true;
+    this.aiError = '';
+    const result = await TaskAi.suggest(this.aiText, token);
+    if (!this.valid() || !this.aiOpen || this.aiRequest !== request) return;
+    this.aiBusy = false;
+    if (Services.currentToken !== token) {
+      this.aiError = '班级会话已更新，请重新整理';
+      return;
+    }
+    if (result.error) {
+      this.aiError = result.error;
+      return;
+    }
+    result.drafts.forEach((draft: TaskCreateDraft) => { draft.starred = this.aiView === 'important'; });
+    this.aiDrafts = result.drafts;
+    if (this.aiDrafts.length === 1) this.editAiDraft(0);
+  }
+
+  private editAiDraft(index: number): void {
+    const draft = this.aiDrafts[index];
+    this.editTitle = draft.title;
+    this.editNotes = draft.notes;
+    this.editDue = draft.due;
+    this.editTime = draft.dueTime;
+    this.editStar = draft.starred;
+    this.nextStep = 0;
+    this.editSteps = draft.steps.map((step: TaskDraftStep) => new TaskDraftStep(step.text, step.note, this.nextStep++));
+    this.aiDraftIndex = index;
+  }
+
+  private currentDraft(): TaskCreateDraft {
+    const draft = new TaskCreateDraft();
+    draft.title = this.editTitle;
+    draft.notes = this.editNotes;
+    draft.due = this.editDue.trim();
+    draft.dueTime = this.editTime.trim();
+    draft.starred = this.editStar;
+    draft.steps = this.editSteps;
+    return draft;
+  }
+
+  private closeEditor(): void {
+    if (this.aiSaving) return;
+    if (this.aiDraftIndex >= 0) {
+      const draft = this.currentDraft();
+      this.aiDrafts = this.aiDrafts.map((item: TaskCreateDraft, index: number) => index === this.aiDraftIndex ? draft : item);
+      this.aiDraftIndex = -1;
+      this.editSteps = [];
+    } else {
+      this.editing = undefined;
+    }
+  }
+
+  private async saveAiDraft(): Promise<void> {
+    if (!this.valid() || this.aiDraftIndex < 0 || this.aiSaving) return;
+    const draft = this.currentDraft();
+    if (!draft.title.trim()) { this.message('请输入任务标题'); return; }
+    if (!PersonalTask.validDue(draft.due, draft.dueTime)) {
+      this.message('请填写有效的截止日期和时间，全天任务可留空时间');
+      return;
+    }
+    this.aiSaving = true;
+    const saved = await TaskRepository.addDraft(draft, this.aiView);
+    this.aiSaving = false;
+    if (!this.valid()) return;
+    if (!saved) { this.message('未能保存任务，请检查任务数量后重试'); return; }
+    this.aiDrafts = this.aiDrafts.filter((_item: TaskCreateDraft, index: number) => index !== this.aiDraftIndex);
+    this.aiDraftIndex = -1;
+    this.editSteps = [];
+    this.query = '';
+    if (this.activeView === 'done' || (this.activeView === 'planned' && !draft.due) ||
+      (this.activeView === 'important' && !draft.starred)) this.activeView = 'all';
+    if (!this.aiDrafts.length) this.closeAi();
+    this.message('已保存任务');
+    await this.afterEdit();
   }
 
   private async saveEdit(): Promise<void> {
@@ -390,11 +501,17 @@ export struct TaskScreen {
                 ForEach(task.steps, (step: string, i: number) => {
                   Row({ space: 10 }) {
                     Text(task.stepsDone[i] ? '☑' : '☐').fontSize(22).fontColor($r('app.color.task_accent'))
-                    Text(step).layoutWeight(1).fontSize(16).lineHeight(24)
-                      .fontColor(task.stepsDone[i] ? $r('app.color.task_muted') : $r('app.color.task_text'))
-                  }.width('100%').constraintSize({ minHeight: 44 }).accessibilityText((task.stepsDone[i] ? '已完成，' : '未完成，') + step)
+                    Column({ space: 3 }) {
+                      Text(step).fontSize(16).lineHeight(24)
+                        .fontColor(task.stepsDone[i] ? $r('app.color.task_muted') : $r('app.color.task_text'))
+                      if (task.stepNotes[i]) {
+                        Text(task.stepNotes[i]).fontSize(14).fontColor($r('app.color.task_muted'))
+                      }
+                    }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+                  }.width('100%').constraintSize({ minHeight: 44 }).accessibilityText(
+                    (task.stepsDone[i] ? '已完成，' : '未完成，') + step + (task.stepNotes[i] ? '，' + task.stepNotes[i] : ''))
                     .onClick(async () => { await TaskRepository.toggleStep(task.id, i); await this.afterEdit(); })
-                }, (step: string, i: number) => i + step + task.stepsDone[i])
+                }, (step: string, i: number) => i + step + task.stepNotes[i] + task.stepsDone[i])
               }
             }
             if (task.attachments.length) {
@@ -432,6 +549,7 @@ export struct TaskScreen {
         TextInput({ placeholder: '添加个人任务', text: this.title }).maxLength(200).layoutWeight(1).height(38)
           .onChange((value: string) => { this.title = value; }).onSubmit(() => { this.addQuickTask(); })
         this.action('添加', () => { this.addQuickTask(); })
+        this.action('AI 整理', () => { this.openAi(); })
       }
       if (this.title.trim().length) {
         Row({ space: 5 }) {
@@ -452,6 +570,82 @@ export struct TaskScreen {
         }.width('100%')
       }
     }.alignItems(HorizontalAlign.Start).width('100%').padding({ left: 14, right: 14, top: 6, bottom: 6 })
+  }
+
+  @Builder
+  aiIntake() {
+    PageHeader({ taskColors: true, title: 'AI 整理任务', onBack: () => { this.closeAi(); } }) {
+      Scroll() {
+        Column({ space: 12 }) {
+          TextArea({ text: this.aiText, placeholder: '粘贴或输入要整理的任务文字' })
+            .height(156).maxLength(TaskAi.MAX_TEXT).enabled(!this.aiBusy).width('100%')
+            .onChange((value: string) => { this.aiText = value; this.aiError = ''; })
+          Text('提交的文字和本地日期将发送给深度求索（DeepSeek）API，用于生成任务草稿。')
+            .fontSize(13).fontColor($r('app.color.task_muted'))
+          Button(this.aiBusy ? '正在整理…' : '发送给云端 AI').enabled(!this.aiBusy && !!this.aiText.trim())
+            .onClick(() => { this.suggestTasks(); })
+          if (this.aiError) {
+            Text(this.aiError).fontSize(14).fontColor($r('app.color.task_urgent'))
+          }
+          if (this.aiDrafts.length && !this.aiBusy) {
+            Text('任务草稿').fontSize(18).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
+            ForEach(this.aiDrafts, (draft: TaskCreateDraft, index: number) => {
+              Row({ space: 10 }) {
+                Text(draft.title.trim() || '未填写标题').fontSize(16).maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor($r('app.color.task_text')).layoutWeight(1)
+                this.action('编辑草稿', () => { this.editAiDraft(index); })
+              }.width('100%').padding(12).borderRadius(12).backgroundColor($r('app.color.task_card'))
+            }, (draft: TaskCreateDraft, index: number) => index + ':' + draft.title)
+          }
+        }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+      }.width('100%').height('100%').align(Alignment.Top)
+    }
+  }
+
+  @Builder
+  taskEditor() {
+    PageHeader({ taskColors: true, title: this.aiDraftIndex >= 0 ? '新建任务' : '编辑任务',
+      onBack: () => { this.closeEditor(); } }) {
+      Scroll() {
+        Column({ space: 12 }) {
+          Text('任务名称').fontColor($r('app.color.task_text'))
+          TextInput({ text: this.editTitle }).maxLength(200).onChange((s: string) => { this.editTitle = s; })
+          Text('备注').fontColor($r('app.color.task_text'))
+          TextArea({ text: this.editNotes, placeholder: '添加备注' }).height(100).maxLength(5000)
+            .onChange((s: string) => { this.editNotes = s; })
+          Text('截止日期与时间').fontColor($r('app.color.task_text'))
+          Row({ space: 6 }) {
+            TextInput({ text: this.editDue, placeholder: 'YYYY-MM-DD' }).layoutWeight(3).maxLength(10)
+              .onChange((s: string) => { this.editDue = s; if (!s) this.editTime = ''; })
+            TextInput({ text: this.editTime, placeholder: 'HH:MM' }).layoutWeight(2).maxLength(5)
+              .onChange((s: string) => { this.editTime = s; })
+          }
+          this.action(this.editStar ? '★ 重要' : '☆ 标为重要', () => { this.editStar = !this.editStar; })
+          if (this.aiDraftIndex >= 0) {
+            Text('步骤').fontColor($r('app.color.task_text'))
+            ForEach(this.editSteps, (step: TaskDraftStep) => {
+              Column({ space: 6 }) {
+                Row({ space: 6 }) {
+                  TextInput({ text: step.text, placeholder: '步骤名称' }).maxLength(120).layoutWeight(1)
+                    .onChange((value: string) => { step.text = value; })
+                  this.action('删除步骤', () => {
+                    this.editSteps = this.editSteps.filter((item: TaskDraftStep) => item.key !== step.key);
+                  })
+                }.width('100%')
+                TextArea({ text: step.note, placeholder: '步骤备注' }).height(76).maxLength(500)
+                  .onChange((value: string) => { step.note = value; })
+              }.width('100%')
+            }, (step: TaskDraftStep) => step.key.toString())
+            if (this.editSteps.length < 50) {
+              this.action('添加步骤', () => { this.editSteps = this.editSteps.concat(new TaskDraftStep('', '', this.nextStep++)); })
+            }
+            Button('保存任务').enabled(!this.aiSaving).onClick(() => { this.saveAiDraft(); })
+          } else {
+            this.action('保存任务', () => { this.saveEdit(); })
+          }
+        }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
+      }.width('100%').height('100%').align(Alignment.Top)
+    }
   }
 
   @Builder
@@ -497,27 +691,10 @@ export struct TaskScreen {
           }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
         }.height('100%').align(Alignment.Top)
       }
-    } else if (this.editing) {
-      PageHeader({ taskColors: true, title: '编辑任务', onBack: () => { this.editing = undefined; } }) {
-        Scroll() {
-          Column({ space: 12 }) {
-            Text('任务名称').fontColor($r('app.color.task_text'))
-            TextInput({ text: this.editTitle }).maxLength(200).onChange((s: string) => { this.editTitle = s; })
-            Text('备注').fontColor($r('app.color.task_text'))
-            TextArea({ text: this.editNotes, placeholder: '添加备注' }).height(100).maxLength(5000)
-              .onChange((s: string) => { this.editNotes = s; })
-            Text('截止日期与时间').fontColor($r('app.color.task_text'))
-            Row({ space: 6 }) {
-              TextInput({ text: this.editDue, placeholder: 'YYYY-MM-DD' }).layoutWeight(3).maxLength(10)
-                .onChange((s: string) => { this.editDue = s; if (!s) this.editTime = ''; })
-              TextInput({ text: this.editTime, placeholder: 'HH:MM' }).layoutWeight(2).maxLength(5)
-                .onChange((s: string) => { this.editTime = s; })
-            }
-            this.action(this.editStar ? '★ 重要' : '☆ 标为重要', () => { this.editStar = !this.editStar; })
-            this.action('保存任务', () => { this.saveEdit(); })
-          }.alignItems(HorizontalAlign.Start).width('100%').padding(18)
-        }.width('100%').height('100%').align(Alignment.Top)
-      }
+    } else if (this.editing || this.aiDraftIndex >= 0) {
+      this.taskEditor()
+    } else if (this.aiOpen) {
+      this.aiIntake()
     } else if (this.selected) {
       this.detail(this.selected)
     } else {

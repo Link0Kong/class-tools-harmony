@@ -19,6 +19,36 @@ export function taskDay(date: Date): string {
 
 const REPEAT_LABELS: Record<string, string> = { 'daily': '每天', 'weekday': '工作日', 'weekly': '每周', 'monthly': '每月', 'yearly': '每年' };
 
+export class TaskDraftStep {
+  text: string;
+  note: string;
+  readonly key: number;
+
+  constructor(text: string = '', note: string = '', key: number = 0) {
+    this.text = text;
+    this.note = note;
+    this.key = key;
+  }
+}
+
+export class TaskCreateDraft {
+  title: string = '';
+  notes: string = '';
+  due: string = '';
+  dueTime: string = '';
+  starred: boolean = false;
+  steps: TaskDraftStep[] = [];
+
+  stepRows(): Blob[] {
+    return this.steps.filter((step: TaskDraftStep) => !!step.text.trim()).slice(0, 50)
+      .map((step: TaskDraftStep): Blob => {
+        const row: Blob = { 'text': step.text.trim().slice(0, 120), 'done': false };
+        if (step.note.trim()) row['note'] = step.note.trim().slice(0, 500);
+        return row;
+      });
+  }
+}
+
 export class PersonalTask {
   id: string = '';
   title: string = '';
@@ -40,6 +70,7 @@ export class PersonalTask {
   tags: string[] = [];
   doneAt: number = 0;
   steps: string[] = [];
+  stepNotes: string[] = [];
   stepsDone: boolean[] = [];
   attachments: HomeworkAttachmentMeta[] = [];
   repeatLabel: string = '';
@@ -94,6 +125,7 @@ export class PersonalTask {
       item.tags = (JsonBlob.asArray(row['tags']) || []).map((tag: Object) => JsonBlob.asString(tag, ''));
       const steps = taskObjects(row, 'steps');
       item.steps = steps.map((s: Blob) => field(s, 'text'));
+      item.stepNotes = steps.map((s: Blob) => field(s, 'note'));
       item.stepsDone = steps.map((s: Blob) => s['done'] === true);
       return item;
     }).filter((t: PersonalTask) => t.id.length > 0 && t.title.length > 0);

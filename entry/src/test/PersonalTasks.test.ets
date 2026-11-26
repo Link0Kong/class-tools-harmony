@@ -2,7 +2,8 @@ import { ScanPayload } from '../main/ets/data/scan/ScanPayload';
 import { describe, expect, it } from '@ohos/hypium';
 import { HomeworkRow } from '../main/ets/data/homework/HomeworkModels';
 import { Blob, JsonBlob } from '../main/ets/data/sync/JsonBlob';
-import { HomeworkBrief, PersonalTask, TaskShare, TaskView, field, taskObjects } from '../main/ets/data/tasks/TaskModels';
+import { TaskAi } from '../main/ets/data/tasks/TaskAi';
+import { HomeworkBrief, PersonalTask, TaskDraftStep, TaskShare, TaskView, field, taskObjects } from '../main/ets/data/tasks/TaskModels';
 import { completeTask, mergeTaskEdits, TaskWire } from '../main/ets/data/tasks/TaskMerge';
 
 function document(raw: string): Blob { return JsonBlob.parse(raw) as Blob; }
@@ -89,6 +90,38 @@ export default function personalTaskTest() {
       expect(PersonalTask.validDue('2026-02-29', '18:30')).assertFalse();
       expect(PersonalTask.validDue('', '08:00')).assertFalse();
       expect(PersonalTask.validDue('2026-11-25', '24:05')).assertFalse();
+    });
+
+    it('ai_prefills_separate_drafts_with_editable_notes_and_step_text', 0, () => {
+      const response = TaskAi.parseResponse(200, '{"drafts":[{"title":" 演讲 ","notes":"三分钟",' +
+        '"due":"2026-11-27","dueTime":"17:00","steps":[{"text":"做提纲","note":"列三点"}],"suggestions":["计时试讲"]},' +
+        '{"title":"读材料","due":"2026-02-29","dueTime":"12:30"},{"title":" "}]}');
+      expect(response.error).assertEqual('');
+      expect(response.drafts.length).assertEqual(2);
+      expect(response.drafts[0].title).assertEqual('演讲');
+      expect(response.drafts[0].notes).assertEqual('三分钟\n\n完成建议\n• 计时试讲');
+      expect(response.drafts[0].due).assertEqual('2026-11-27');
+      expect(response.drafts[0].dueTime).assertEqual('17:00');
+      expect(response.drafts[1].due).assertEqual('');
+      expect(response.drafts[1].dueTime).assertEqual('');
+      const draft = response.drafts[0];
+      draft.steps[0].text = '先做提纲';
+      draft.steps.push(new TaskDraftStep(' ', '没有步骤标题'));
+      const steps = draft.stepRows();
+      expect(steps.length).assertEqual(1);
+      expect(field(steps[0], 'text')).assertEqual('先做提纲');
+      expect(field(steps[0], 'note')).assertEqual('列三点');
+      expect(steps[0]['done']).assertFalse();
+    });
+
+    it('ai_distinguishes_empty_malformed_and_rejected_responses', 0, () => {
+      expect(TaskAi.parseResponse(200, '{"drafts":[]}').error.includes('没有整理出任务')).assertTrue();
+      expect(TaskAi.parseResponse(200, '<html>').error.includes('未能读取')).assertTrue();
+      expect(TaskAi.parseResponse(401, '').error.includes('身份')).assertTrue();
+      expect(TaskAi.parseResponse(429, '').error.includes('次数')).assertTrue();
+      expect(TaskAi.parseResponse(503, '').drafts.length).assertEqual(0);
+      const drafts = TaskAi.parseResponse(200, '{"drafts":[' + new Array<string>(9).fill('{"title":"阅读"}').join(',') + ']}');
+      expect(drafts.drafts.length).assertEqual(8);
     });
 
     it('share_interoperable_and_omits_personal_metadata', 0, () => {
