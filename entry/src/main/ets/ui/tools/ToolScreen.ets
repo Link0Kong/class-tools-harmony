@@ -34,14 +34,13 @@ import { AppGlobal } from '../../app/AppGlobal';
 export struct ToolScreen {
   @Prop launch: ToolLaunch = new ToolLaunch('');
   @Prop toolId: string = '';
-  @Prop mapRoom: string = '';
+  @State private mapRoom: string = '';
   @State private topInset: number = 0;
   @State private layoutWidth: number = 0;
   private scroller: Scroller = new Scroller();
   onReminderSettings: () => void = () => {};
   onClose: () => void = () => {
   };
-  onOpenMap: (room: string) => void = () => {};
   onOpenClassDecks: () => void = () => {};
 
   aboutToAppear(): void {
@@ -102,12 +101,18 @@ export struct ToolScreen {
         }
       })
     } else if (this.toolId === 'tt') {
-      TimetableScreen({
-        onOpenMap: this.onOpenMap,
-        onClose: () => {
-          this.onClose();
+      Stack() {
+        TimetableScreen({
+          onOpenMap: (room: string) => { this.mapRoom = room.trim(); },
+          onClose: this.onClose
+        })
+          .visibility(this.mapRoom.length === 0 ? Visibility.Visible : Visibility.Hidden)
+        if (this.mapRoom.length > 0) {
+          MapScreen({ room: this.mapRoom, onClose: () => { this.mapRoom = ''; } })
         }
-      })
+      }
+      .width('100%')
+      .height('100%')
     } else if (this.toolId === 'power') {
       PowerScreen({
         onClose: () => {
@@ -158,7 +163,6 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'map') {
       MapScreen({
-        room: this.mapRoom,
         onClose: () => {
           this.onClose();
         }

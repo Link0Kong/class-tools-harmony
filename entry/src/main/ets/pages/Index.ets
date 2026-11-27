@@ -224,7 +224,7 @@ struct Index {
       AppGlobal.openToolId = '';
       this.homeRequest++;
     } else {
-      this.openTool(launch.toolId, '', launch);
+      this.openTool(launch.toolId, launch);
     }
   }
 
@@ -286,9 +286,7 @@ struct Index {
     });
   }
 
-  @State private mapRoom: string = '';
-
-  private openTool(id: string, room: string = '', launch: ToolLaunch = new ToolLaunch('')): void {
+  private openTool(id: string, launch: ToolLaunch = new ToolLaunch('')): void {
     if (this.wearable) {
       return;
     }
@@ -296,7 +294,6 @@ struct Index {
     this.launchEpoch++;
     AppGlobal.openToolId = id;
     this.getUIContext().animateTo({ duration: Tokens.DUR_NORMAL, curve: Curve.FastOutSlowIn }, () => {
-      this.mapRoom = room.trim();
       this.openToolId = id;
     });
   }
@@ -309,11 +306,6 @@ struct Index {
     }
     if (this.openToolId === 'ppt') {
       this.openTool('file');
-      return;
-    }
-    if (this.openToolId === 'map' && this.mapRoom.length > 0) {
-      this.mapRoom = '';
-      this.openTool('tt');
       return;
     }
     AppGlobal.openToolId = '';
@@ -412,10 +404,6 @@ struct Index {
           },
           toolId: this.openToolId,
           onOpenClassDecks: () => this.openTool('ppt'),
-          mapRoom: this.mapRoom,
-          onOpenMap: (room: string) => {
-            this.openTool('map', room);
-          },
           onClose: () => {
             this.closeTool();
           }

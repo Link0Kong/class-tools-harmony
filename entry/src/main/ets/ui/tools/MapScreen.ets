@@ -20,15 +20,45 @@ export struct MapScreen {
   private active: boolean = false;
   private loadId: number = 0;
   private timeout: number = -1;
+  private backing: boolean = false;
 
   aboutToAppear(): void {
     this.active = true;
+    AppGlobal.toolBack = this.handleBack;
     this.beginLoad();
   }
 
   aboutToDisappear(): void {
     this.active = false;
+    if (AppGlobal.toolBack === this.handleBack) AppGlobal.toolBack = undefined;
     clearTimeout(this.timeout);
+  }
+
+  private handleBack = (): boolean => {
+    if (!this.active) return false;
+    if (this.backing) return true;
+    if (this.state !== MapLoadState.READY) {
+      this.onClose();
+      return true;
+    }
+    this.dismissMap();
+    return true;
+  };
+
+  private async dismissMap(): Promise<void> {
+    this.backing = true;
+    const id: number = this.loadId;
+    let dismissed: boolean = false;
+    try {
+      const result: string = await this.controller.runJavaScript(
+        "typeof window.zqMapDismiss === 'function' && window.zqMapDismiss()");
+      dismissed = result === 'true';
+    } catch (_) {
+      // ArkWeb can exit between a back press and the script callback.
+    } finally {
+      this.backing = false;
+    }
+    if (this.active && id === this.loadId && !dismissed) this.onClose();
   }
 
   private beginLoad(): void {
@@ -111,7 +141,7 @@ export struct MapScreen {
         title: '校内地图',
         actionText: '重载',
         actionText2: '浏览器',
-        onBack: () => { this.onClose(); },
+        onBack: () => { this.handleBack(); },
         onAction: () => { this.reload(false); },
         onAction2: () => { this.openBrowser(MapLogic.pageUrl(this.room, false)); }
       }) {
