@@ -1,300 +1,428 @@
-import { BusinessError, systemDateTime } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { liveViewManager } from '@kit.LiveViewKit';
 import notificationManager from '@ohos.notificationManager';
 import { Services } from '../../app/Services';
+import { ToolLaunch } from '../../app/ToolLaunch';
 import { AppPush } from '../../features/push/AppPush';
 import { NotifyStore } from './NotifyStore';
 import { NotificationDelivery } from './NotificationDelivery';
-import { NotifySettings } from '../../features/notify/NotifySettings';
 import { SessionInfo } from '../timetable/TimetableModels';
+import { TimetableFocus } from '../timetable/TimetableFocus';
 import { CourseWindow } from '../../features/notify/NotifyPlanner';
-import { PptRepository } from '../ppt/PptRepository';
-import { pptStatusLabel } from '../ppt/PptModels';
+import { LiveRecord, LiveRecords } from './LiveRecord';
+import { PollSummary } from '../vote/VoteModels';
 import { VoteLogic } from '../vote/VoteLogic';
 import { Log } from '../../common/Log';
 
-const COURSE_ID: number = 7240001;
-const VOTE_ID: number = 7240002;
-
+/** Local activity changes are serialized. Receivers/timers re-read the owning identity and absolute deadline. */
 export class LiveActivity {
   private static queue: Promise<void> = Promise.resolve();
-  private static live: Map<number, string> = new Map();
-  private static lastUploadAt: Map<number, number> = new Map();
-  private static ordinary: Set<number> = new Set();
-  private static last: Map<number, string> = new Map();
-  private static fallback: Set<number> = new Set();
-  private static foreground: boolean = false;
   private static timer: number = -1;
-  private static courseSid: string = '';
+  private static foreground: boolean = false;
+  private static owner: string = '';
   private static classes: SessionInfo[] = [];
-  private static clockOffset: number = 0;
-  private static voteExpiry: number = 0;
   private static lead: number = 0;
   private static breakLead: number = 3;
-  private static courseNotice: number = 0;
-  private static uploads: Set<number> = new Set();
+  private static polling: Set<number> = new Set();
+  private static uploading: Set<number> = new Set();
 
   private static run(work: () => Promise<void>): Promise<void> {
-    LiveActivity.queue = LiveActivity.queue.then(work).catch(() => {
-      Log.w('LiveActivity', '实时通知暂不可用');
-    });
+    LiveActivity.queue = LiveActivity.queue.then(work).catch(() => { Log.w('LiveActivity', '更新当前活动失败'); });
     return LiveActivity.queue;
   }
 
   static async available(): Promise<boolean> {
     try {
       return canIUse('SystemCapability.LiveView.LiveViewService') && await liveViewManager.isLiveViewEnabled();
-    } catch (e) {
-      return false;
-    }
+    } catch (_) { return false; }
+  }
+
+  static items(sid: string): LiveRecord[] {
+    return LiveRecords.all(sid).filter((item: LiveRecord) => !item.endedAt && item.until > Date.now())
+      .sort((a: LiveRecord, b: LiveRecord) => a.until - b.until);
+  }
+
+  private static get(sid: string, id: number): LiveRecord | undefined {
+    return LiveRecords.all(sid).find((row: LiveRecord) => row.id === id);
+  }
+
+  static courseId(sid: string, cls: SessionInfo): number {
+    return NotificationDelivery.id('schedule:' + sid + ':' + JSON.stringify(TimetableFocus.fromSession(cls)));
+  }
+
+  static async refreshBackground(context: common.Context): Promise<void> {
+    await LiveRecords.refreshBackground(context);
+  }
+
+  static ownsCourse(sid: string, cls: SessionInfo, context?: common.Context): boolean {
+    const id = LiveActivity.courseId(sid, cls);
+    if (context) return LiveRecords.presentInBackground(sid, id, context);
+    const row = LiveActivity.get(sid, id);
+    return !!row && (row.endedAt > 0 || row.hidden || row.surface === 'native');
   }
 
   static foregroundChanged(value: boolean): void {
     LiveActivity.foreground = value;
-    LiveActivity.updateCourse();
+    LiveActivity.reconcile();
   }
 
   static releasePage(): void {
     LiveActivity.foreground = false;
-    LiveActivity.coursePlan('', [], 0);
-    LiveActivity.endVote();
+    LiveActivity.reconcile();
   }
 
-  static coursePlan(sid: string, classes: SessionInfo[], lead: number, breakLead: number = 3): void {
-    LiveActivity.courseSid = sid;
+  static coursePlan(sid: string, classes: SessionInfo[], lead: number, breakLead: number = 3): Promise<void> {
+    LiveActivity.owner = sid;
     LiveActivity.classes = classes;
     LiveActivity.lead = lead;
     LiveActivity.breakLead = breakLead;
-    LiveActivity.updateCourse();
+    return LiveActivity.reconcile();
   }
 
-  private static updateCourse(): void {
-    clearTimeout(LiveActivity.timer);
-    const sid: string = LiveActivity.courseSid;
-    if (!sid || sid !== Services.currentSid || LiveActivity.lead === 0) {
-      LiveActivity.stop(COURSE_ID);
-      return;
-    }
-    if (!LiveActivity.foreground) {
-      return;
-    }
-    const now: number = Date.now();
-    const offset = now - systemDateTime.getUptime(systemDateTime.TimeType.STARTUP);
-    if (Math.abs(offset - LiveActivity.clockOffset) > 1000) {
-      LiveActivity.last.delete(COURSE_ID);
-      LiveActivity.clockOffset = offset;
-    }
-    const window: CourseWindow = CourseWindow.select(LiveActivity.classes, LiveActivity.lead, now, LiveActivity.breakLead);
-    const cls = window.session;
-    if (cls) {
-      const room = cls.fullRoom || cls.room;
-      const msg = cls.startText + (cls.endText ? '–' + cls.endText : '') + (room ? ' · ' + room : '');
-      LiveActivity.run(async () => {
-        const left: number = cls.startAt - Date.now();
-        if (left <= 0 || !await LiveActivity.allowed(sid)) return;
-        const noteId = NotificationDelivery.id('cls:' + cls.startAt + ':' + cls.name);
-        const key = String(cls.startAt) + cls.name + msg;
-        if (!canIUse('SystemCapability.LiveView.LiveViewService')) {
-          await LiveActivity.publishFallback(COURSE_ID, noteId, cls.name, msg, 'tt', key, cls.startAt);
-          return;
+  static reconcile(): Promise<void> {
+    return LiveActivity.run(async () => {
+      const sid = Services.currentSid;
+      if (!sid) return;
+      clearTimeout(LiveActivity.timer);
+      const now = Date.now();
+      const window = CourseWindow.select(LiveActivity.owner === sid && LiveActivity.lead ? LiveActivity.classes : [],
+        LiveActivity.lead, now, LiveActivity.breakLead);
+      const cls = window.session;
+      const id = cls ? LiveActivity.courseId(sid, cls) : 0;
+      for (const item of LiveRecords.all(sid).slice()) {
+        if (item.endedAt) {
+          if (now - item.endedAt > 7 * 86400000) LiveRecords.remove(item);
+        } else if (item.until <= now || (item.kind === 'tt' && LiveActivity.owner === sid && item.id !== id)) {
+          await LiveActivity.end(item);
+        } else if (item.conversion && !LiveActivity.polling.has(item.id)) {
+          LiveActivity.poll(item);
+        } else if ((item.kind === 'file' || item.kind === 'ppt') && !item.conversion && !LiveActivity.uploading.has(item.id)) {
+          await LiveActivity.end(item);
         }
-        const timer: liveViewManager.TimerCapsule = {
-          type: liveViewManager.CapsuleType.CAPSULE_TYPE_TIMER, status: 1, icon: 'live_icon.png',
-          content: '上课', time: left, isCountdown: true
-        };
-        const view: liveViewManager.LiveView = {
-          id: COURSE_ID, event: 'SCHEDULE', timer: { time: left, isCountdown: true },
-          lifeCycleMode: liveViewManager.LifeCycleMode.AUTO_STOP_WHEN_APP_TERMINATE,
-          liveViewData: { primary: { title: cls.name, content: [{ text: msg }],
-            aliveTime: Math.ceil(left / 1000) }, capsule: timer }
-        };
-        await LiveActivity.display(view, 'tt', msg, key, cls.startAt, noteId);
-      });
-    } else {
-      LiveActivity.stop(COURSE_ID);
-    }
-    if (window.nextAt > now) {
-      LiveActivity.timer = setTimeout(() => LiveActivity.updateCourse(), Math.min(60000, window.nextAt - now + 25));
-    }
-  }
-
-  static upload(id: number, sid: string, name: string, percent: number, stage: string): void {
-    LiveActivity.uploads.add(id);
-    const determinate = (stage === '上传中' || stage === '转换中') && Number.isFinite(percent) && percent >= 0;
-    const completed: number = Math.max(0, Math.min(100, Math.floor(percent)));
-    const text = stage + (determinate ? ' ' + completed + '%' : '');
-    LiveActivity.run(async () => {
-      if (!LiveActivity.uploads.has(id) || !await LiveActivity.allowed(sid)) {
-        return;
       }
-      const time: number = Date.now();
-      const last: number = LiveActivity.lastUploadAt.get(id) || 0;
-      if (stage === '上传中' && completed > 0 && completed < 100 && time - last < 1500) return;
-      LiveActivity.lastUploadAt.set(id, time);
-      if (!canIUse('SystemCapability.LiveView.LiveViewService')) {
-        await LiveActivity.publishFallback(id, id, name, text, 'ppt', text, time + 1800000);
-        return;
+      if (cls && !LiveActivity.get(sid, id)?.endedAt && (LiveActivity.foreground || LiveActivity.get(sid, id))) {
+        const launch = new ToolLaunch('tt');
+        launch.owner = sid;
+        launch.timetableFocus = TimetableFocus.fromSession(cls);
+        const row = LiveActivity.get(sid, id) ?? LiveActivity.create(id, launch, cls.name, cls.startAt);
+        row.noticeId = NotificationDelivery.id(sid + ':' + TimetableFocus.reminderKey(cls));
+        const room = cls.fullRoom || cls.room;
+        const lines = [cls.startText + (cls.endText ? '–' + cls.endText : '') + (cls.span ? ' · 第 ' + cls.span : '')];
+        if (room) lines.unshift(room);
+        if (cls.teacher) lines.push(cls.teacher);
+        if (cls.dateText) lines.push(cls.dateText + (cls.week ? ' · 第 ' + cls.week + ' 周' : ''));
+        await LiveActivity.show(row, lines.join(' · '), -1);
       }
-      const progress: liveViewManager.ProgressCapsule = { type: liveViewManager.CapsuleType.CAPSULE_TYPE_PROGRESS,
-        status: 1, icon: 'live_icon.png', max: 100, progress: completed, indeterminate: true, content: stage };
-      const phase: liveViewManager.TextCapsule = { type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT,
-        status: 1, icon: 'live_icon.png', title: name, content: stage };
-      const primary: liveViewManager.PrimaryData = { title: name, content: [{ text: text }], aliveTime: 1800 };
-      if (determinate) {
-        const layout: liveViewManager.ProgressLayout = {
-          layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PROGRESS, progress: completed
-        };
-        primary.layoutData = layout;
-      }
-      const view: liveViewManager.LiveView = {
-        id: id, event: 'PROGRESS', subEvent: 'UPLOAD', lifeCycleMode: liveViewManager.LifeCycleMode.AUTO_STOP_WHEN_APP_TERMINATE,
-        liveViewData: { primary: primary, capsule: determinate ? progress : phase }
-      };
-      await LiveActivity.display(view, 'ppt', text, text, Date.now() + 1800000);
-    });
-  }
-
-  static async followConversion(sid: string, deckId: string, name: string, id: number): Promise<void> {
-    if (!await LiveActivity.allowed(sid)) {
-      await LiveActivity.stop(id);
-      return;
-    }
-    const started = systemDateTime.getUptime(systemDateTime.TimeType.STARTUP);
-    LiveActivity.upload(id, sid, name, -1, '排队中');
-    const repo: PptRepository = new PptRepository(Services.api);
-    while (LiveActivity.uploads.has(id) && Services.currentSid === sid && systemDateTime.getUptime(systemDateTime.TimeType.STARTUP) - started < 1800000) {
-      await new Promise<void>((resolve) => { setTimeout(resolve, 10000); });
-      if (!LiveActivity.uploads.has(id) || sid !== Services.currentSid) {
-        return;
-      }
-      const deck = await repo.conversionStatus(deckId);
-      if (!deck || !LiveActivity.uploads.has(id) || sid !== Services.currentSid) {
-        continue;
-      }
-      if (deck.status === 'failed' || deck.status === 'ready') {
-        await LiveActivity.finishUpload(id, sid, name, deck.status === 'ready' ? '转换完成' : '转换失败');
-        return;
-      }
-      LiveActivity.upload(id, sid, name, deck.progressKnown ? deck.progress : -1, pptStatusLabel(deck.status));
-    }
-    await LiveActivity.stop(id);
-  }
-
-  static async finishUpload(id: number, sid: string, name: string, result: string): Promise<void> {
-    await LiveActivity.stop(id);
-    if (await LiveActivity.allowed(sid)) {
-      await NotificationDelivery.publish(id, result, name, NotificationDelivery.route('ppt'));
-    }
-  }
-
-  static vote(sid: string, title: string, deadline: number, now: number): void {
-    const minutes: number = Math.ceil((deadline - now) / 60000);
-    if (minutes <= 0) {
-      LiveActivity.stop(VOTE_ID);
-      return;
-    }
-    const expires = Date.now() + deadline - now;
-    const message = title + ' · 剩余 ' + minutes + ' 分钟 · ' + VoteLogic.deadlineText(deadline);
-    LiveActivity.run(async () => {
-      if ((LiveActivity.last.get(VOTE_ID) === message && Math.abs(expires - LiveActivity.voteExpiry) <= 1000)
-        || !await LiveActivity.allowed(sid)) {
-        return;
-      }
-      if (await NotificationDelivery.publish(VOTE_ID, '限时投票', message, NotificationDelivery.route('vote'), expires)) {
-        LiveActivity.voteExpiry = expires;
-        LiveActivity.ordinary.add(VOTE_ID);
-        LiveActivity.last.set(VOTE_ID, message);
+      if (sid !== Services.currentSid) return;
+      const deadlines = LiveRecords.all(sid).filter((row: LiveRecord) => !row.endedAt).map((item: LiveRecord) => item.until);
+      if (window.nextAt > now && LiveActivity.foreground) deadlines.push(window.nextAt);
+      if (deadlines.length > 0) {
+        const wait = Math.min(...deadlines) - Date.now();
+        LiveActivity.timer = setTimeout(() => { LiveActivity.reconcile(); }, Math.max(1, Math.min(wait, LiveActivity.foreground ? 60000 : 2147483647)));
       }
     });
   }
 
-  static endVote(): void {
-    LiveActivity.stop(VOTE_ID);
+  private static create(id: number, launch: ToolLaunch, title: string, until: number): LiveRecord {
+    const row = new LiveRecord();
+    row.id = id;
+    row.noticeId = id;
+    row.owner = launch.owner;
+    row.kind = launch.toolId;
+    row.parameters = launch.parameters();
+    row.title = title;
+    row.until = until;
+    LiveRecords.save(row);
+    return row;
   }
 
   private static async allowed(sid: string): Promise<boolean> {
-    if (!sid || Services.currentSid !== sid || !await AppPush.systemEnabled()) {
-      return false;
-    }
-    const prefs: NotifySettings = await NotifyStore.loadSettings(sid);
-    return Services.currentSid === sid && prefs.master && prefs.liveActivities;
+    if (sid !== Services.currentSid || !await AppPush.systemEnabled()) return false;
+    const settings = await NotifyStore.loadSettings(sid);
+    return sid === Services.currentSid && settings.master && settings.liveActivities;
   }
 
-  private static async display(view: liveViewManager.LiveView, toolId: string, text: string, key: string,
-    until: number, fallbackId: number = view.id): Promise<void> {
-    const id: number = view.id;
-    if (LiveActivity.last.get(id) === key) {
+  private static async show(row: LiveRecord, text: string, percent: number): Promise<void> {
+    if (row.endedAt || row.owner !== Services.currentSid || row.until <= Date.now()) return;
+    const unchanged = row.text === text;
+    if (!unchanged) {
+      row.text = text;
+      row.updated = Date.now();
+      LiveRecords.save(row);
+    }
+    if (row.hidden || (unchanged && row.surface) || !await LiveActivity.allowed(row.owner)) return;
+    if (row.until <= Date.now()) return;
+    if (row.surface === 'ordinary' && await LiveActivity.removed(row)) {
+      row.hidden = true;
+      LiveRecords.save(row);
       return;
     }
-    if (!LiveActivity.fallback.has(id) && await LiveActivity.available()) {
+    const left = row.until - Date.now();
+    const native = row.kind !== 'vote' && row.surface !== 'ordinary' && left >= 15000 && await LiveActivity.available();
+    if (native) {
+      const course = row.kind === 'tt';
+      const detail = course ? '距上课 ' + '${placeholder.timer}' + ' · ' + text : text;
+      const primary: liveViewManager.PrimaryData = { title: row.title.slice(0, 120), content: [{ text: detail.slice(0, 124) }],
+        aliveTime: Math.floor(left / 1000), clickAction: await NotificationDelivery.action(row.id, row.parameters) };
+      const view: liveViewManager.LiveView = { id: row.id, event: course ? 'SCHEDULE' : 'PROGRESS',
+        isMute: true, lifeCycleMode: liveViewManager.LifeCycleMode.AUTO_STOP_WHEN_APP_TERMINATE,
+        liveViewData: { primary: primary } };
+      if (course) {
+        view.timer = { time: left, isCountdown: true };
+        view.liveViewData.capsule = { type: liveViewManager.CapsuleType.CAPSULE_TYPE_TIMER, status: 1, icon: 'live_icon.png',
+          content: row.title.slice(0, 32), time: left, isCountdown: true } as liveViewManager.TimerCapsule;
+      } else {
+        view.subEvent = 'UPLOAD';
+        if (percent >= 0) {
+          primary.layoutData = { layoutType: liveViewManager.LayoutType.LAYOUT_TYPE_PROGRESS, progress: percent } as liveViewManager.ProgressLayout;
+          view.liveViewData.capsule = { type: liveViewManager.CapsuleType.CAPSULE_TYPE_PROGRESS, status: 1,
+            max: 100, progress: percent, indeterminate: false, icon: 'live_icon.png', content: text.slice(0, 32) } as liveViewManager.ProgressCapsule;
+        } else {
+          view.liveViewData.capsule = { type: liveViewManager.CapsuleType.CAPSULE_TYPE_TEXT, status: 1,
+            icon: 'live_icon.png', title: row.title.slice(0, 32), content: text.slice(0, 32) } as liveViewManager.TextCapsule;
+        }
+      }
+      if (row.owner !== Services.currentSid || row.until <= Date.now()) return;
       try {
-        view.liveViewData.primary.clickAction = await NotificationDelivery.action(id, NotificationDelivery.route(toolId));
-        const result = LiveActivity.live.has(id) ? await liveViewManager.updateLiveView(view)
-          : await liveViewManager.startLiveView(view);
-        // 部分区域显示失败时，系统仍可能保留实况卡片，需先撤回再降级。
-        LiveActivity.live.set(id, view.event);
+        const result = row.surface === 'native' ? await liveViewManager.updateLiveView(view) : await liveViewManager.startLiveView(view);
         if (result.resultCode === 0) {
-          LiveActivity.last.set(id, key);
+          if (row.noticeId !== row.id && !row.surface) {
+            try { await notificationManager.cancel(row.noticeId); } catch (_) {}
+          }
+          row.surface = 'native';
+          LiveRecords.save(row);
           return;
         }
-      } catch (e) {
-        Log.i('LiveActivity', view.event + ' 实况窗返回 ' + (e as BusinessError).code);
-      }
-      await LiveActivity.endNative(id);
-      LiveActivity.fallback.add(id);
-    }
-    await LiveActivity.publishFallback(id, fallbackId, view.liveViewData.primary.title || '进度', text, toolId, key, until);
-  }
-
-  private static async publishFallback(id: number, fallbackId: number, title: string, text: string, toolId: string,
-    key: string, until: number): Promise<void> {
-    if (LiveActivity.last.get(id) === key) return;
-    if (await NotificationDelivery.publish(fallbackId, title, text, NotificationDelivery.route(toolId), until)) {
-      if (id === COURSE_ID) LiveActivity.courseNotice = fallbackId;
-      LiveActivity.ordinary.add(fallbackId);
-      LiveActivity.last.set(id, key);
-    }
-  }
-
-  private static async endNative(id: number): Promise<void> {
-    const event: string | undefined = LiveActivity.live.get(id);
-    if (event) {
-      try {
-        await liveViewManager.stopLiveView({ id: id, event: event, liveViewData: { primary: { keepTime: 0 } } });
-      } catch (e) {
-        Log.i('LiveActivity', '实况窗已结束或服务不可用');
-      }
-      LiveActivity.live.delete(id);
-    }
-  }
-
-  private static stop(id: number): Promise<void> {
-    LiveActivity.uploads.delete(id);
-    LiveActivity.lastUploadAt.delete(id);
-    return LiveActivity.run(async () => {
-      await LiveActivity.endNative(id);
-      const ordinaryId: number = id === COURSE_ID ? LiveActivity.courseNotice : id;
-      if (LiveActivity.ordinary.delete(ordinaryId)) {
-        try {
-          await notificationManager.cancel(ordinaryId);
-        } catch (e) {
-          Log.i('LiveActivity', '通知已撤除');
+      } catch (err) { Log.i('LiveActivity', view.event + ' 系统返回 ' + (err as BusinessError).code); }
+      if (row.surface === 'native') {
+        if (await LiveActivity.removed(row)) {
+          row.hidden = true;
+          LiveRecords.save(row);
         }
+        return;
       }
-      LiveActivity.last.delete(id);
-      LiveActivity.fallback.delete(id);
+      try {
+        await liveViewManager.stopLiveView({ id: row.id, event: view.event, liveViewData: { primary: { keepTime: 0 } } });
+      } catch (_) {}
+    } else if (row.surface === 'native') return;
+    if (row.owner !== Services.currentSid || row.until <= Date.now()) return;
+    if (await NotificationDelivery.publish(row.noticeId, row.title, text, row.parameters, row.until)) {
+      row.surface = 'ordinary';
+      LiveRecords.save(row);
+    }
+  }
+
+  private static async removed(row: LiveRecord): Promise<boolean> {
+    if (row.surface === 'ordinary') {
+      try {
+        const posted = await notificationManager.getActiveNotifications();
+        return !posted.some((n: notificationManager.NotificationRequest) => n.id === row.noticeId);
+      } catch (_) { return false; }
+    }
+    if (row.surface === 'native') {
+      try { await liveViewManager.getActiveLiveView(row.id); }
+      catch (err) { return (err as BusinessError).code === 1003500009; }
+    }
+    return false;
+  }
+
+  private static async withdraw(row: LiveRecord): Promise<void> {
+    if (row.surface === 'native') {
+      try { await liveViewManager.stopLiveView({ id: row.id, event: row.kind === 'tt' ? 'SCHEDULE' : 'PROGRESS',
+        liveViewData: { primary: { keepTime: 0 } } }); } catch (_) {}
+    } else if (row.surface === 'ordinary') {
+      try { await notificationManager.cancel(row.noticeId); } catch (_) {}
+    }
+    row.surface = '';
+  }
+
+  private static async end(row: LiveRecord): Promise<void> {
+    await LiveActivity.withdraw(row);
+    if (row.kind === 'tt') {
+      row.endedAt = Date.now();
+      LiveRecords.save(row);
+    } else LiveRecords.remove(row);
+  }
+
+  static hide(id: number): Promise<void> {
+    const sid = Services.currentSid;
+    return LiveActivity.run(async () => {
+      if (sid !== Services.currentSid) return;
+      const row = LiveActivity.get(sid, id);
+      if (!row) return;
+      row.hidden = true;
+      await LiveActivity.withdraw(row);
+      LiveRecords.save(row);
     });
   }
 
-  static async clear(): Promise<void> {
-    LiveActivity.courseSid = '';
-    LiveActivity.classes = [];
+  static followed(sid: string, pollId: string): boolean {
+    return !!LiveActivity.get(sid, NotificationDelivery.id('vote:' + sid + ':' + pollId));
+  }
+
+  static vote(sid: string, pollId: string, title: string, deadline: number, now: number, follow: boolean): Promise<void> {
+    return LiveActivity.run(async () => {
+      if (sid !== Services.currentSid) return;
+      const id = NotificationDelivery.id('vote:' + sid + ':' + pollId);
+      const previous = LiveActivity.get(sid, id);
+      if (!follow || deadline <= now) {
+        if (previous) await LiveActivity.end(previous);
+        return;
+      }
+      const launch = new ToolLaunch('vote');
+      launch.owner = sid;
+      launch.objectId = pollId;
+      const row = previous ?? LiveActivity.create(id, launch, title, Date.now() + deadline - now);
+      if (!previous) LiveActivity.reconcile();
+      const expires = Date.now() + deadline - now;
+      if (Math.abs(expires - row.until) > 1000 || row.title !== title) {
+        row.until = expires;
+        row.title = title;
+        row.text = '';
+      }
+      await LiveActivity.show(row, '关注的投票 · ' + VoteLogic.deadlineText(deadline), -1);
+    });
+  }
+
+  static reconcileVotes(sid: string, polls: PollSummary[]): Promise<void> {
+    return LiveActivity.run(async () => {
+      if (sid !== Services.currentSid) return;
+      for (const row of LiveRecords.all(sid).filter((r: LiveRecord) => r.kind === 'vote')) {
+        const poll = polls.find((p: PollSummary) => p.id === row.launch()?.objectId);
+        if (!poll || poll.closed || poll.status === 'closed' || row.until <= Date.now()) {
+          await LiveActivity.end(row);
+        } else if (poll.deadline > 0 && (row.title !== poll.title || row.text.indexOf(VoteLogic.deadlineText(poll.deadline)) < 0)) {
+          row.until = poll.deadline;
+          row.title = poll.title;
+          await LiveActivity.show(row, '关注的投票 · ' + VoteLogic.deadlineText(poll.deadline), -1);
+        }
+      }
+    });
+  }
+
+  static upload(id: number, sid: string, name: string, percent: number, stage: string,
+    tool: string = 'ppt', objectId: string = ''): void {
+    if (sid !== Services.currentSid) return;
+    LiveActivity.uploading.add(id);
+    LiveActivity.run(async () => {
+      if (sid !== Services.currentSid) return;
+      const existing = LiveActivity.get(sid, id);
+      if (existing && percent > 0 && percent < 100 && Date.now() - existing.updated < 1500) return;
+      const launch = new ToolLaunch(tool);
+      launch.owner = sid;
+      launch.objectId = objectId;
+      const row = existing ?? LiveActivity.create(id, launch, name, Date.now() + 1800000);
+      if (objectId) row.parameters = launch.parameters();
+      const value = percent < 0 ? -1 : Math.min(100, Math.max(0, Math.floor(percent)));
+      await LiveActivity.show(row, stage + (value >= 0 ? ' ' + value + '%' : ''), value);
+    });
+  }
+
+  static followConversion(sid: string, objectId: string, name: string, id: number, tool: string = 'ppt'): void {
+    LiveActivity.run(async () => {
+      if (sid !== Services.currentSid) return;
+      LiveActivity.uploading.delete(id);
+      const launch = new ToolLaunch(tool);
+      launch.owner = sid;
+      launch.objectId = objectId;
+      const row = LiveActivity.get(sid, id) ?? LiveActivity.create(id, launch, name, Date.now() + 1800000);
+      row.parameters = launch.parameters();
+      row.conversion = true;
+      row.until = Date.now() + 1800000;
+      LiveRecords.save(row);
+      await LiveActivity.show(row, '等待转换', -1);
+      LiveActivity.poll(row);
+    });
+  }
+
+  private static async poll(row: LiveRecord): Promise<void> {
+    if (LiveActivity.polling.has(row.id)) return;
+    LiveActivity.polling.add(row.id);
+    const id = row.launch()?.objectId ?? '';
+    let delay = 5000;
+    try {
+      while (row.owner === Services.currentSid && LiveActivity.get(row.owner, row.id) === row && row.until > Date.now()) {
+        await new Promise<void>((resolve) => { setTimeout(resolve, delay); });
+        if (row.owner !== Services.currentSid || LiveActivity.get(row.owner, row.id) !== row) return;
+        let status = '';
+        let error = '';
+        let percent = -1;
+        try {
+          if (row.kind === 'file') {
+            const reply = await Services.cloudspace.conversionStatus(id);
+            if (reply.value) {
+              status = reply.value.status;
+              error = reply.value.error;
+              if (reply.value.progressKnown) percent = reply.value.progress;
+            } else if (reply.error?.status === 404 || reply.error?.status === 410) {
+              status = 'failed';
+              error = '文件已移除或到期';
+            }
+          } else {
+            const deck = await Services.ppt.conversionStatus(id);
+            if (deck) {
+              status = deck.status;
+              error = deck.error;
+              if (deck.progressKnown) percent = deck.progress;
+            }
+          }
+        } catch (_) {}
+        if (row.owner !== Services.currentSid || LiveActivity.get(row.owner, row.id) !== row) return;
+        if (status === 'ready' || status === 'failed') {
+          await LiveActivity.finishUpload(row.id, row.owner, row.title, status === 'ready' ? '转换完成，可下载' : '转换失败' + (error ? ' · ' + error.slice(0, 80) : ''));
+          return;
+        }
+        delay = status ? 10000 : Math.min(60000, delay * 2);
+        if (status) await LiveActivity.run(async () => {
+          if (row.owner === Services.currentSid && LiveActivity.get(row.owner, row.id) === row) {
+            const processing = status === 'processing' || status === 'converting';
+            const value = processing ? percent : -1;
+            await LiveActivity.show(row, processing ? '转换中' + (value >= 0 ? ' ' + value + '%' : '') : '等待转换', value);
+          }
+        });
+      }
+      if (row.owner === Services.currentSid && LiveActivity.get(row.owner, row.id) === row) {
+        await LiveActivity.finishUpload(row.id, row.owner, row.title, '状态查询超时，进入任务查看进度');
+      }
+    } finally { LiveActivity.polling.delete(row.id); }
+  }
+
+  static finishUpload(id: number, sid: string, name: string, result: string, objectId: string = ''): Promise<void> {
+    return LiveActivity.run(async () => {
+      LiveActivity.uploading.delete(id);
+      if (sid !== Services.currentSid) return;
+      const row = LiveActivity.get(sid, id);
+      if (!row) return;
+      const dismissed = row.hidden || (row.until > Date.now() && await LiveActivity.removed(row));
+      const route = row.parameters;
+      if (objectId) route['objectId'] = objectId;
+      await LiveActivity.end(row);
+      if (!dismissed && await LiveActivity.allowed(sid)) await NotificationDelivery.publish(id, result, name, route);
+    });
+  }
+
+  static suspendDisplays(sid: string): Promise<void> {
+    return LiveActivity.run(async () => {
+      if (!sid || sid !== Services.currentSid) return;
+      for (const row of LiveRecords.all(sid)) {
+        if (!row.surface) continue;
+        await LiveActivity.withdraw(row);
+        LiveRecords.save(row);
+      }
+    });
+  }
+
+  static clear(sid: string = Services.currentSid): Promise<void> {
     clearTimeout(LiveActivity.timer);
-    const ids: number[] = Array.from(LiveActivity.uploads);
-    ids.push(VOTE_ID, COURSE_ID);
-    for (const id of ids) {
-      await LiveActivity.stop(id);
-    }
+    LiveActivity.owner = '';
+    LiveActivity.classes = [];
+    return LiveActivity.run(async () => {
+      if (!sid) return;
+      for (const row of LiveRecords.all(sid).slice()) {
+        await LiveActivity.withdraw(row);
+        LiveRecords.remove(row);
+      }
+    });
   }
 }
-

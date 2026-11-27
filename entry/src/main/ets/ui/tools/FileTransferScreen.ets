@@ -1,3 +1,5 @@
+import { LiveActivity } from '../../data/notify/LiveActivity';
+import { NotificationDelivery } from '../../data/notify/NotificationDelivery';
 ﻿import { showFeedback } from '../components/AppFeedback';
 import { Services } from '../../app/Services';
 import { DropAsset, CloudSpaceFile, CloudSpaceSnapshot, CloudSpaceResult } from '../../data/cloudspace/CloudSpaceModels';
@@ -19,6 +21,9 @@ import { PageHeader } from '../components/PageHeader';
  */
 @Component
 export struct FileTransferScreen {
+  @Prop targetId: string = '';
+  private targetApplied: boolean = false;
+  @State private targetFile: string = '';
   onOpenClassDecks: () => void = () => {};
   onClose: () => void = () => {
   };
@@ -66,7 +71,8 @@ export struct FileTransferScreen {
 
   private applySnapshot(snapshot: CloudSpaceSnapshot): void {
     this.connected = snapshot.connected();
-    this.files = snapshot.files;
+    const target = snapshot.files.find((item: CloudSpaceFile) => item.id === this.targetFile);
+    this.files = target ? [target].concat(snapshot.files.filter((item: CloudSpaceFile) => item.id !== target.id)) : snapshot.files;
     this.pptConversion = snapshot.pptConversion;
     if (!this.files.some((f: CloudSpaceFile) => f.id === this.selectedFile && f.conversion?.status === 'ready')) {
       this.assets = [];
@@ -88,6 +94,19 @@ export struct FileTransferScreen {
     if (!this.visible || owner !== this.repo()) return;
     if (result.ok && result.value !== undefined) {
       this.applySnapshot(result.value);
+      if (this.targetId && !this.targetApplied) {
+        this.targetApplied = true;
+        const file = this.files.find((item: CloudSpaceFile) => item.id === this.targetId);
+        if (file) {
+          this.targetFile = file.id;
+          this.files = [file].concat(this.files.filter((item: CloudSpaceFile) => item.id !== file.id));
+          if (file.conversion?.status === 'ready') this.openConversion(file);
+        } else if (this.targetId.startsWith('upload-') && LiveActivity.items(Services.currentSid).some((row) => row.launch()?.objectId === this.targetId)) {
+          this.statusMsg = '文件正在上传，完成后可在此查看';
+        } else {
+          this.statusMsg = '目标文件已到期或已被移除';
+        }
+      }
       if (force) {
         this.errorMsg = '';
       }
@@ -114,11 +133,22 @@ export struct FileTransferScreen {
     this.uploadName = picked.name;
     this.uploadPercent = 0;
     this.uploadStateText = '准备上传…';
-    const result: CloudSpaceResult<CloudSpaceFile> = await this.repo().upload(picked,
+    const owner = this.repo();
+    const sid = Services.currentSid;
+    const job = 'upload-' + Date.now() + '-' + picked.sizeBytes;
+    const activity = NotificationDelivery.id('drop:' + sid + ':' + job);
+    LiveActivity.upload(activity, sid, picked.name, -1, '准备文件', 'file', job);
+    const result: CloudSpaceResult<CloudSpaceFile> = await owner.upload(picked,
       (progress) => {
-        this.uploadPercent = CloudSpaceLogic.uploadPercent(progress.sentBytes, progress.totalBytes);
+        const percent = CloudSpaceLogic.uploadPercent(progress.sentBytes, progress.totalBytes);
+        LiveActivity.upload(activity, sid, picked.name, progress.totalBytes > 0 ? percent : -1, '上传中', 'file', job);
+        if (!this.visible || sid !== Services.currentSid) return;
+        this.uploadPercent = percent;
         this.uploadStateText = CloudSpaceLogic.uploadStateText(progress.state, progress.message);
       });
+    await LiveActivity.finishUpload(activity, sid, picked.name, result.ok ? '上传完成' :
+      (result.error?.displayMessage() ?? '上传失败'), result.value?.id ?? '');
+    if (!this.visible || sid !== Services.currentSid) return;
     this.uploading = false;
     if (result.ok) {
       this.uploadPercent = 100;
@@ -165,7 +195,12 @@ export struct FileTransferScreen {
       this.assets = result.value ?? [];
       this.statusMsg = result.error?.displayMessage() ?? (this.assets.length > 0 ? '' : '没有可下载的产物');
     } else {
+      const sid = Services.currentSid;
       const result = await owner.convert(file);
+      if (result.ok && sid === Services.currentSid) {
+        LiveActivity.followConversion(sid, file.id, file.name,
+          NotificationDelivery.id('conversion:' + sid + ':' + file.id + ':' + (file.conversion?.attempt ?? -1)), 'file');
+      }
       if (!this.visible || owner !== this.repo()) return;
       if (result.value) this.applySnapshot(result.value);
       this.statusMsg = result.error?.displayMessage() ?? '';
@@ -351,6 +386,9 @@ export struct FileTransferScreen {
       .borderRadius(12)
 
       Column() {
+        if (this.targetFile === file.id) {
+          Text('当前文件').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
+        }
         Text(file.name)
           .fontSize(Tokens.F_BODY)
           .fontColor(Tokens.TEXT_PRIMARY)

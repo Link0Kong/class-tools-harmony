@@ -1,3 +1,4 @@
+import { TimetableFocus } from '../../data/timetable/TimetableFocus';
 import { PersonalTask } from '../../data/tasks/TaskModels';
 import { HomeworkDueCalculator, HomeworkRow } from '../../data/homework/HomeworkModels';
 import { NoticeEntry } from '../../data/notices/NoticesRepository';
@@ -123,7 +124,8 @@ export class NotifyPlanner {
       }
       const fireAt: number = cls.startAt - (cls.afterShortBreak ? breakLead : lead) * 60000;
       const event: NotifyEvent = new NotifyEvent();
-      event.key = 'cls:' + cls.startAt + ':' + cls.name;
+      event.course = cls;
+      event.key = TimetableFocus.reminderKey(cls);
       event.kind = 'class_remind';
       event.title = '上课提醒 · ' + cls.name;
       const timeText: string = cls.endText.length > 0

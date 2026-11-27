@@ -2,7 +2,7 @@
 
 面向班级日常事务的 HarmonyOS 原生客户端：用 ArkTS + ArkUI 编写，与网页、微信小程序、Android、Windows 四端共用同一套云端数据契约。
 
-![version](https://img.shields.io/badge/version-1.0.19-4E9082)
+![version](https://img.shields.io/badge/version-1.0.20-4E9082)
 ![license](https://img.shields.io/badge/license-MIT-2EA44F)
 ![platform](https://img.shields.io/badge/platform-HarmonyOS-000000)
 ![stack](https://img.shields.io/badge/ArkTS-ArkUI-6E8CA8)

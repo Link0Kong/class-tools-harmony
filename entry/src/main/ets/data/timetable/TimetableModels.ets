@@ -69,6 +69,9 @@ export enum TodayState {
 
 /** 一次课程占用（今日课程/下一节/日视图）。 */
 export class SessionInfo {
+  teacher: string = '';
+  period: number = 0;
+  week: number = 0;
   name: string = '';
   room: string = '';
   fullRoom: string = '';

@@ -45,6 +45,7 @@ export class NotifySnapshot {
 
 /** 一条待发送通知：fireAt=0 立即发送，>0 由系统提醒定时触发。 */
 export class NotifyEvent {
+  course?: SessionInfo;
   key: string = '';
   title: string = '';
   text: string = '';

@@ -27,6 +27,15 @@ function fileOf(id: string, name: string, size: number, uploadedAt: number, url:
 
 export default function cloudSpaceTest() {
   describe('CloudSpaceDefaults', () => {
+    it('unknown_conversion_progress_is_stage_only', 0, () => {
+      const data: Blob = {};
+      data['status'] = 'processing';
+      expect(CloudSpaceApi.conversion(data)!.label()).assertEqual('转换中');
+      data['progress'] = 0;
+      expect(CloudSpaceApi.conversion(data)!.label()).assertEqual('转换中 0%');
+      data['progress'] = 81;
+      expect(CloudSpaceApi.conversion(data)!.label()).assertEqual('转换中 81%');
+    });
     it('full_listing_capability_attempt_and_private_manifest', 0, () => {
       const api = new CloudSpaceApi('https://qa.invalid/drop');
       expect(api.stateSpec('s1', 500).path.indexOf('&all=1&ppt=1') >= 0).assertTrue();

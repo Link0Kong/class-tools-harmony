@@ -122,6 +122,7 @@ export class CloudSpaceApi {
     result.status = JsonBlob.asString(blob['status'], '');
     if (['queued', 'processing', 'ready', 'failed'].indexOf(result.status) < 0) return undefined;
     result.attempt = JsonBlob.asNumber(blob['attempt'], 0);
+    result.progressKnown = typeof blob['progress'] === 'number' && Number(blob['progress']) >= 0 && Number(blob['progress']) <= 100;
     result.progress = Math.min(100, Math.max(0, JsonBlob.asNumber(blob['progress'], 0)));
     result.error = JsonBlob.asString(blob['error'], '');
     return result;

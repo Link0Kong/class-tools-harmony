@@ -8,6 +8,8 @@ export class ReminderPrefs {
 }
 
 export class ReminderPlan {
+  expiresAt: number = 0;
+  launchParameters?: Record<string, Object>;
   notificationId: number = 0;
   homeworkId: string = '';
   taskId: string = '';

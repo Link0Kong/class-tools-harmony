@@ -11,6 +11,7 @@ import { CloudSpaceApi, CloudSpaceRequestSpec } from './CloudSpaceApi';
 import {
   DropAsset,
   CloudSpaceDefaults,
+  DropConversion,
   CloudSpaceError,
   CloudSpaceErrors,
   CloudSpaceFile,
@@ -149,6 +150,17 @@ export class CloudSpaceRepository {
     const reply = await this.request(this.api.conversionSpec(sid, file.id, true, seen?.attempt));
     if (!reply.ok) return CloudSpaceResult.failure<CloudSpaceSnapshot>(reply.error ?? CloudSpaceErrors.parse());
     return this.refresh(true);
+  }
+
+  /** A status check must not overwrite the open file list or create a missing space. */
+  async conversionStatus(id: string): Promise<CloudSpaceResult<DropConversion>> {
+    const space = await this.resolveSession(false);
+    if (!space.value) return CloudSpaceResult.failure<DropConversion>(space.error ?? CloudSpaceErrors.parse());
+    const reply = await this.request(this.api.conversionSpec(space.value.id, id, false));
+    if (!reply.value) return CloudSpaceResult.failure<DropConversion>(reply.error ?? CloudSpaceErrors.parse());
+    const status = CloudSpaceApi.conversion(requireBlob(reply.value, 'conversion'));
+    if (!status) return CloudSpaceResult.failure<DropConversion>(CloudSpaceErrors.parse());
+    return CloudSpaceResult.success<DropConversion>(status);
   }
 
   async assets(id: string): Promise<CloudSpaceResult<DropAsset[]>> {
@@ -540,7 +552,7 @@ export class CloudSpaceRepository {
   // ---- 内部实现 -----------------------------------------------------------
 
   /** 解析本账号会话：`/mine` → 无会话则 `/open`。 */
-  private async resolveSession(): Promise<CloudSpaceResult<CloudSpaceSession>> {
+  private async resolveSession(openMissing: boolean = true): Promise<CloudSpaceResult<CloudSpaceSession>> {
     if (this.session !== undefined) {
       return CloudSpaceResult.success<CloudSpaceSession>(this.session);
     }
@@ -556,6 +568,7 @@ export class CloudSpaceRepository {
     if (existing !== undefined) {
       return CloudSpaceResult.success<CloudSpaceSession>(existing);
     }
+    if (!openMissing) return CloudSpaceResult.failure<CloudSpaceSession>(CloudSpaceErrors.http(404, '云空间已到期'));
     const openResult: CloudSpaceResult<Blob> =
       await this.request(this.api.openSpec());
     if (!openResult.ok) {

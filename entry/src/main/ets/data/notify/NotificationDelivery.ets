@@ -1,3 +1,4 @@
+import { BusinessError } from '@kit.BasicServicesKit';
 import notificationManager from '@ohos.notificationManager';
 import { WantAgent, wantAgent } from '@kit.AbilityKit';
 import { Log } from '../../common/Log';
@@ -31,9 +32,20 @@ export class NotificationDelivery {
     });
   }
 
+  static async ordinaryEnabled(): Promise<boolean> {
+    try {
+      const slot = await notificationManager.getSlot(notificationManager.SlotType.OTHER_TYPES);
+      return slot.enabled !== false;
+    } catch (_) {
+      // A slot can be absent before this app's first ordinary notification.
+      return true;
+    }
+  }
+
   static async publish(id: number, title: string, message: string, parameters: Record<string, Object>,
     until: number = 0): Promise<boolean> {
     try {
+      if (!await NotificationDelivery.ordinaryEnabled()) return false;
       const request: notificationManager.NotificationRequest = {
         id: id,
         isAlertOnce: true,
@@ -44,10 +56,15 @@ export class NotificationDelivery {
           normal: { title: title, text: message }
         }
       };
+      if (until && until <= Date.now()) return false;
       await notificationManager.publish(request);
+      if (until && until <= Date.now()) {
+        await notificationManager.cancel(id);
+        return false;
+      }
       return true;
     } catch (error) {
-      Log.w('NotificationDelivery', '发布系统通知失败');
+      Log.w('NotificationDelivery', '发布系统通知失败，系统返回 ' + (error as BusinessError).code);
       return false;
     }
   }

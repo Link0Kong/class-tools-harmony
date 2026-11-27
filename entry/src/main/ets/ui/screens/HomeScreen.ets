@@ -1,3 +1,5 @@
+import { LiveActivity } from '../../data/notify/LiveActivity';
+import { LiveRecord } from '../../data/notify/LiveRecord';
 ﻿import { showFeedback } from '../components/AppFeedback';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
@@ -62,6 +64,14 @@ export struct HomeScreen {
   @State private homeBatch: HomePhraseBatch | undefined = undefined;
   @State private homeTimetableState: HomeTimetableState = HomeTimetableState.Loading;
   private settingsRevision: number = -1;
+  @StorageProp('activityRevision') @Watch('refreshActivities') activityRevision: number = 0;
+  @State private currentActivities: LiveRecord[] = [];
+  @State private activitiesExpanded: boolean = false;
+
+  private refreshActivities(): void {
+    this.currentActivities = LiveActivity.items(Services.currentSid);
+  }
+
   @Prop @Watch('syncQuickOrder') quickIds: string[] = [];
   @State private quickOrder: string[] = [];
   @Prop @Watch('onEpochChanged') epoch: number = 0;
@@ -160,6 +170,7 @@ export struct HomeScreen {
   }
 
   aboutToAppear(): void {
+    this.refreshActivities();
     this.syncQuickOrder();
     this.startedAt = Date.now();
     this.applyLocal();
@@ -1872,6 +1883,26 @@ export struct HomeScreen {
                 batch: this.homeBatch,
                 onOpenCourse: (focus: TimetableFocus) => { this.openContextCourse(focus); }
               })
+              if (this.currentActivities.length > 0) {
+                Column({ space: 6 }) {
+                  Button('当前活动 · ' + this.currentActivities.length)
+                    .onClick(() => { this.activitiesExpanded = !this.activitiesExpanded; })
+                  if (this.activitiesExpanded) {
+                    ForEach(this.currentActivities, (item: LiveRecord) => {
+                      Row({ space: 8 }) {
+                        Column({ space: 2 }) {
+                          Text(item.title).fontColor(Tokens.TEXT_PRIMARY).maxLines(2)
+                          Text(item.text).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).maxLines(2)
+                        }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+                        .onClick(() => { AppGlobal.requestTool(item.launch()); })
+                        if (!item.hidden) {
+                          Button('隐藏展示').fontSize(Tokens.F_CAPTION).onClick(() => { LiveActivity.hide(item.id); })
+                        }
+                      }.width('100%')
+                    }, (item: LiveRecord) => item.id + item.text + item.hidden)
+                  }
+                }.width('100%').padding(12)
+              }
 
               if (this.editing) {
                 this.editHint()

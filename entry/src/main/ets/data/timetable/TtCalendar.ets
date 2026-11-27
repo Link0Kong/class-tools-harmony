@@ -155,6 +155,8 @@ export class TtCalendar {
     session.name = course.name.trim() || '课程';
     session.fullRoom = course.room.trim();
     session.room = TtCalendar.roomShort(session.fullRoom);
+    session.teacher = course.teacher.trim();
+    session.period = start;
     session.start = course.start;
     session.end = course.end;
     session.startText = TtPeriods.startText(start);
@@ -213,6 +215,7 @@ export class TtCalendar {
             bell.afterShortBreak = gap > 0 && gap <= 10 * 60000 &&
               courses.some((c: Course) => c.start <= period - 1 && c.end >= period - 1);
           }
+          bell.week = TtCalendar.weekOf(term, date) ?? 0;
           TtCalendar.describeDay(bell, date, offset);
           bells.push(bell);
         }

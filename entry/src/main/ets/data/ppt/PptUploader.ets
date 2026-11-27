@@ -25,6 +25,7 @@ export class PptUploader {
   async upload(uri: string, name: string, onProgress: (done: number, total: number) => void): Promise<string> {
     let activityId: number = 0;
     let queuedForConversion: boolean = false;
+    let failure: string = '上传失败';
     let file: fs.File | undefined = undefined;
     try {
       file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
@@ -36,12 +37,13 @@ export class PptUploader {
       if (this.ownerSid !== Services.currentSid) return '登录账号已切换，上传已停止';
       const deckId: string = PptUploadPlanner.deckId(Date.now(), size + name.length);
       activityId = NotificationDelivery.id('ppt:' + this.ownerSid + ':' + deckId);
-      LiveActivity.upload(activityId, this.ownerSid, name, -1, '准备文件');
+      LiveActivity.upload(activityId, this.ownerSid, name, -1, '准备文件', 'ppt', deckId);
       const created: boolean = await this.repo.createDeck(deckId,
         PptUploadPlanner.titleOf(name), size, PptUploadPlanner.extOf(name), name,
         this.ownerSid, this.ownerName, Date.now());
       if (!created) {
-        return '创建上传记录失败（登录或权限问题）';
+        failure = '创建上传记录失败（登录或权限问题）';
+        return failure;
       }
       const total: number = PptUploadPlanner.chunkCount(size);
       LiveActivity.upload(activityId, this.ownerSid, name, 0, '上传中');
@@ -63,16 +65,18 @@ export class PptUploader {
         const base64: string = helper.encodeToStringSync(bytes);
         const ok: boolean = await this.repo.putChunk(deckId, this.ownerSid, i, base64, Date.now());
         if (!ok) {
-          return '分片上传失败（' + i + '/' + total + '）';
+          failure = '分片上传失败（' + i + '/' + total + '）';
+          return failure;
         }
         onProgress(i + 1, total);
-        LiveActivity.upload(activityId, this.ownerSid, name, (i + 1) * 100 / total, '上传中');
+        LiveActivity.upload(activityId, this.ownerSid, name, (range[0] + read) * 100 / size, '上传中');
       }
       if (this.ownerSid !== Services.currentSid) return '登录账号已切换，上传已停止';
       LiveActivity.upload(activityId, this.ownerSid, name, -1, '提交转换');
       const queued: boolean = await this.repo.queue(deckId, total, size, Date.now());
       if (!queued) {
-        return '上传完成但排队失败，请重试';
+        failure = '上传完成但排队失败，请重试';
+        return failure;
       }
       queuedForConversion = true;
       LiveActivity.followConversion(this.ownerSid, deckId, name, activityId);
@@ -82,7 +86,7 @@ export class PptUploader {
       return '上传异常，请稍后重试';
     } finally {
       if (activityId && !queuedForConversion) {
-        await LiveActivity.finishUpload(activityId, this.ownerSid, name, '上传失败');
+        await LiveActivity.finishUpload(activityId, this.ownerSid, name, failure);
       }
       if (file !== undefined) {
         try {

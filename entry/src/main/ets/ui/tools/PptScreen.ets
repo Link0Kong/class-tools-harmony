@@ -38,6 +38,7 @@ import { PageHeader } from '../components/PageHeader';
  */
 @Component
 export struct PptScreen {
+  @Prop targetId: string = '';
   onClose: () => void = () => {
   };
 
@@ -74,12 +75,23 @@ export struct PptScreen {
   }
 
   aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.detailBack) AppGlobal.toolBack = undefined;
     this.active = false;
   }
 
+  private detailBack: () => boolean = () => {
+    if (this.videoOpen) this.closeVideo();
+    else if (this.playerOpen) this.closePlayer();
+    else if (this.detailOpen) this.closeDetail();
+    else return false;
+    return true;
+  };
+
   aboutToAppear(): void {
+    AppGlobal.toolBack = this.detailBack;
     this.active = true;
     this.reload();
+    if (this.targetId) this.openDetail(this.targetId);
   }
 
   private async reload(): Promise<void> {
@@ -120,6 +132,7 @@ export struct PptScreen {
     const result: PptDetailResult = await Services.ppt.detail(deckId);
     this.detailLoading = false;
     if (!result.ok) {
+      this.detail = new PptDeckDetail();
       this.detailError = result.message;
       return;
     }

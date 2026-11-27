@@ -1,3 +1,4 @@
+import { AppGlobal } from '../../app/AppGlobal';
 import { showFeedback } from '../components/AppFeedback';
 import { systemDateTime } from '@kit.BasicServicesKit';
 import { LiveActivity } from '../../data/notify/LiveActivity';
@@ -44,6 +45,8 @@ import { PageHeader } from '../components/PageHeader';
  */
 @Component
 export struct VoteScreen {
+  @Prop targetId: string = '';
+  @State private followed: boolean = false;
   onClose: () => void = () => {
   };
 
@@ -89,9 +92,19 @@ export struct VoteScreen {
   private lastLiveMinute: number = -1;
   private tickCount: number = 0;
 
+  private detailBack: () => boolean = () => {
+    if (this.extendOpen) this.extendOpen = false;
+    else if (this.createOpen) this.closeCreate();
+    else if (this.detailOpen) this.closeDetail();
+    else return false;
+    return true;
+  };
+
   aboutToAppear(): void {
+    AppGlobal.toolBack = this.detailBack;
     this.reload();
     this.loadMembers();
+    if (this.targetId) this.openDetail(this.targetId);
     this.timerId = setInterval(() => {
       this.tickCount += 1;
       this.now = this.clockNow();
@@ -103,8 +116,8 @@ export struct VoteScreen {
   }
 
   aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.detailBack) AppGlobal.toolBack = undefined;
     this.activePoll = '';
-    LiveActivity.endVote();
     if (this.timerId >= 0) {
       clearInterval(this.timerId);
       this.timerId = -1;
@@ -155,7 +168,6 @@ export struct VoteScreen {
 
   private closeDetail(): void {
     this.activePoll = '';
-    LiveActivity.endVote();
     this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => {
       this.detailOpen = false;
     });
@@ -171,11 +183,13 @@ export struct VoteScreen {
 
   private openDetail(pollId: string): void {
     this.activePoll = pollId;
+    this.followed = LiveActivity.followed(Services.currentSid, pollId);
     this.lastLiveMinute = -1;
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
       this.detailOpen = true;
     });
     this.detailLoading = true;
+    this.detail = new PollDetail();
     this.detailError = '';
     this.chosen = [];
     this.loadDetail(pollId);
@@ -223,10 +237,9 @@ export struct VoteScreen {
     if (minute !== this.lastLiveMinute || Math.abs(offset - this.liveClockOffset) > 1000) {
       this.liveClockOffset = offset;
       this.lastLiveMinute = minute;
-      if (minute > 0) {
-        LiveActivity.vote(Services.currentSid, poll.title, poll.deadline, this.now);
-      } else {
-        LiveActivity.endVote();
+      if (this.followed) {
+        LiveActivity.vote(Services.currentSid, poll.id, poll.title, poll.deadline, this.now, minute > 0);
+        if (minute <= 0) this.followed = false;
       }
     }
   }
@@ -355,6 +368,7 @@ export struct VoteScreen {
       return;
     }
     if (action === 'delete') {
+      await LiveActivity.vote(Services.currentSid, this.detail.poll.id, this.detail.poll.title, 0, Date.now(), false);
       this.closeDetail();
     } else {
       await this.loadDetail(this.detail.poll.id);
@@ -808,6 +822,15 @@ export struct VoteScreen {
             .width('100%')
             .margin({ top: 6 })
 
+            if (this.detail.poll.deadline > this.now && !this.detailClosed()) {
+              Button(this.followed ? '取消关注' : '关注并提醒我')
+                .fontSize(Tokens.F_CAPTION)
+                .onClick(async () => {
+                  const poll = this.detail.poll;
+                  await LiveActivity.vote(Services.currentSid, poll.id, poll.title, poll.deadline, this.now, !this.followed);
+                  this.followed = LiveActivity.followed(Services.currentSid, poll.id);
+                })
+            }
             if (this.detail.poll.description.length > 0) {
               Text(this.detail.poll.description)
                 .fontSize(Tokens.F_CAPTION)

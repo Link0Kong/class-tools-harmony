@@ -1,3 +1,5 @@
+import { TimetableFocus } from '../main/ets/data/timetable/TimetableFocus';
+import { ToolLaunch } from '../main/ets/app/ToolLaunch';
 import { describe, it, expect } from '@ohos/hypium';
 import {
   Course,
@@ -41,6 +43,42 @@ function bodyJson(courses: string, termStart: string): string {
 
 export default function timetableTest() {
   describe('TtCalendarBasics', () => {
+    it('notification_reopens_exact_bell_across_week_boundary', 0, () => {
+      const original = course('周一实验', 0, 1, 3, '2', 'all');
+      original.teacher = '张老师';
+      const table = snapshotWith([original], TERM_START);
+      const sunday = new Date(2026, 8, 13, 23, 59).getTime();
+      const bell = TtCalendar.upcomingBells(table, sunday, 2)[1];
+      expect(bell.week).assertEqual(2);
+      expect(bell.span).assertEqual('2 节');
+      expect(bell.period).assertEqual(2);
+      expect(bell.start).assertEqual(1);
+      expect(bell.end).assertEqual(3);
+      const link = new ToolLaunch('tt');
+      link.owner = '3260799999';
+      link.timetableFocus = TimetableFocus.fromSession(bell);
+      const target = ToolLaunch.parse(link.parameters())!;
+      expect(target.owner).assertEqual(link.owner);
+      expect(target.timetableFocus!.time).assertEqual(bell.startAt);
+      expect(TimetableFocus.matches(target.timetableFocus!, original)).assertTrue();
+      original.teacher = '另一位老师';
+      expect(TimetableFocus.matches(target.timetableFocus!, original)).assertFalse();
+      expect(bell.fullRoom).assertEqual('综合楼(教室01105)');
+    });
+
+    it('activity_routes_preserve_objects_and_legacy_wants', 0, () => {
+      for (const tool of ['file', 'ppt', 'vote']) {
+        const launch = new ToolLaunch(tool);
+        launch.owner = '3260799999';
+        launch.objectId = 'item:42';
+        const restored = ToolLaunch.parse(launch.parameters())!;
+        expect(restored.objectId).assertEqual('item:42');
+        expect(restored.toolId).assertEqual(tool);
+      }
+      const old = new ToolLaunch('tt');
+      expect(ToolLaunch.parse(old.parameters())!.timetableFocus === undefined).assertTrue();
+    });
+
     it('workbench_tracks_each_bell_and_recognizes_short_breaks', 0, () => {
       const table = snapshotWith([course('数学', 0, 1, 2, '1', 'all'), course('物理', 0, 3, 3, '1', 'all'),
         course('实验', 0, 6, 6, '1', 'all')], TERM_START);

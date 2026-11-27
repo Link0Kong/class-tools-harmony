@@ -56,6 +56,7 @@ export class CloudSpaceSession {
  * 下载前先刷新一次列表，遇到 403「下载链接已过期」再刷新重试。
  */
 export class DropConversion {
+  progressKnown: boolean = false;
   status: string = '';
   attempt: number = 0;
   progress: number = 0;
@@ -63,7 +64,7 @@ export class DropConversion {
 
   label(): string {
     if (this.status === 'queued') return '等待转换';
-    if (this.status === 'processing') return '转换中 ' + this.progress + '%';
+    if (this.status === 'processing') return this.progressKnown ? '转换中 ' + this.progress + '%' : '转换中';
     if (this.status === 'ready') return '查看转换结果';
     return this.error ? '转换失败，重试 · ' + this.error : '转换失败，重试';
   }

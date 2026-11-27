@@ -1,12 +1,33 @@
 import { TimetableFocus } from '../data/timetable/TimetableFocus';
 
 export class ToolLaunch {
+  owner: string = '';
+  objectId: string = '';
+  timetableFocus?: TimetableFocus;
+
+  parameters(): Record<string, Object> {
+    const out: Record<string, Object> = {};
+    out['toolId'] = this.toolId;
+    if (this.owner) out['owner'] = this.owner;
+    if (this.objectId) out['objectId'] = this.objectId;
+    if (this.timetableFocus) {
+      const focus = this.timetableFocus;
+      out['courseAt'] = focus.time;
+      out['courseName'] = focus.name;
+      out['room'] = focus.room;
+      out['period'] = focus.period;
+      out['start'] = focus.start;
+      out['end'] = focus.end;
+      out['teacher'] = focus.teacher;
+    }
+    return out;
+  }
+
   toolId: string;
   homeworkId: string = '';
   taskId: string = '';
   noticeId: string = '';
   taskShareUrl: string = '';
-  timetableFocus?: TimetableFocus;
 
   constructor(toolId: string) {
     this.toolId = toolId;
@@ -29,8 +50,16 @@ export class ToolLaunch {
     }
     if (typeof parameters['toolId'] !== 'string') return undefined;
     const tool = parameters['toolId'] as string;
-    if (['home', 'hw', 'nt', 'tt', 'vote', 'water', 'power', 'ppt'].indexOf(tool) < 0) return undefined;
+    if (['home', 'hw', 'nt', 'tt', 'vote', 'water', 'power', 'ppt', 'file'].indexOf(tool) < 0) return undefined;
     const launch = new ToolLaunch(tool);
+    launch.owner = ToolLaunch.id(parameters['owner']);
+    launch.objectId = ToolLaunch.id(parameters['objectId']);
+    const time = Number(parameters['courseAt']);
+    if (tool === 'tt' && Number.isFinite(time) && time > 0 && time <= 8640000000000000) {
+      launch.timetableFocus = new TimetableFocus(time, ToolLaunch.id(parameters['courseName']), ToolLaunch.id(parameters['room']),
+        Number(parameters['period']) || 0, Number(parameters['start']) || 0, Number(parameters['end']) || 0,
+        ToolLaunch.id(parameters['teacher']));
+    }
     if (tool === 'hw') {
       launch.homeworkId = ToolLaunch.id(parameters['homeworkId']);
       launch.taskId = ToolLaunch.id(parameters['taskId']);

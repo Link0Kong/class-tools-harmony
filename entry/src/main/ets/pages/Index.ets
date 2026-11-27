@@ -1,3 +1,4 @@
+import { showFeedback } from '../ui/components/AppFeedback';
 import { HomeTools } from '../data/home/HomeTools';
 ﻿import { Services } from '../app/Services';
 import { NotifyWork } from '../data/notify/NotifyWork';
@@ -223,6 +224,11 @@ struct Index {
     const launch = AppGlobal.pendingLaunch;
     if (!launch || !this.session || !this.appReady || this.wearable) return;
     AppGlobal.pendingLaunch = undefined;
+    if (launch.owner && launch.owner !== Services.currentSid) {
+      showFeedback(this.getUIContext(), '活动属于其他账号，已打开当前账号的功能页');
+      this.openTool(launch.toolId);
+      return;
+    }
     if (launch.toolId === 'home') {
       this.openToolId = '';
       AppGlobal.openToolId = '';

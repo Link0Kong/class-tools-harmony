@@ -128,12 +128,14 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'vote') {
       VoteScreen({
+          targetId: this.launch.objectId,
         onClose: () => {
           this.onClose();
         }
       })
     } else if (this.toolId === 'ppt') {
       PptScreen({
+          targetId: this.launch.objectId,
         onClose: () => {
           this.onClose();
         }
@@ -170,6 +172,7 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'file') {
       FileTransferScreen({
+          targetId: this.launch.objectId,
         onOpenClassDecks: this.onOpenClassDecks,
         onClose: () => {
           this.onClose();

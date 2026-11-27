@@ -42,11 +42,12 @@ export class ReminderAgent {
         expiredContent: plan.content,
         ringDuration: 3,
         snoozeTimes: 0,
+        autoDeletedTime: plan.expiresAt || undefined,
         notificationId: plan.notificationId || NotificationDelivery.id('reminder:' + plan.toolId + ':' + (plan.taskId || plan.homeworkId || plan.noticeId || plan.title) + ':' + plan.triggerAt),
         wantAgent: {
           pkgName: APP_BUNDLE,
           abilityName: 'EntryAbility',
-          parameters: NotificationDelivery.route(plan.toolId, plan.homeworkId, plan.taskId, plan.noticeId)
+          parameters: plan.launchParameters ?? NotificationDelivery.route(plan.toolId, plan.homeworkId, plan.taskId, plan.noticeId)
         }
       };
       const id: number = await reminderAgentManager.publishReminder(request);

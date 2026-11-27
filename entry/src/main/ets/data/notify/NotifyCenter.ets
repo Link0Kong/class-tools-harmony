@@ -1,3 +1,5 @@
+import { TimetableFocus } from '../timetable/TimetableFocus';
+import { ToolLaunch } from '../../app/ToolLaunch';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -109,7 +111,7 @@ export class NotifyCenter {
       if (sid !== Services.currentSid) return;
       await NotifyStore.saveSettings(sid, settings);
       if (settings.master) await NotifyWork.configure(true);
-      if (!settings.master || !settings.liveActivities) await LiveActivity.clear();
+      if (!settings.master || !settings.liveActivities) await LiveActivity.suspendDisplays(sid);
       if (!settings.active()) {
         await NotifyCenter.reconcile(sid, [], [], '_sched');
         if (!settings.master) {
@@ -125,6 +127,7 @@ export class NotifyCenter {
   static syncAll(force: boolean = false): Promise<void> {
     const sid: string = Services.currentSid;
     const gen: number = NotifyCenter.generation;
+    LiveActivity.reconcile();
     if (!sid || NotifyCenter.ending) return Promise.resolve();
     return NotifyCenter.enqueue(async () => {
       if (sid !== Services.currentSid || gen !== NotifyCenter.generation) return;
@@ -132,7 +135,7 @@ export class NotifyCenter {
       const settings = await NotifyStore.loadSettings(sid);
       const enabled: boolean = await AppPush.systemEnabled();
       if (!enabled) {
-        await LiveActivity.clear();
+        await LiveActivity.suspendDisplays(sid);
         return;
       }
       if (!settings.master) return;
@@ -147,12 +150,13 @@ export class NotifyCenter {
 
       if (settings.classRemind && settings.liveActivities) {
         if (!input.unavailable.includes('cls')) {
-          LiveActivity.coursePlan(sid, input.classes, NotifySettings.normalizeClassLead(settings.classLeadMinutes),
+          await LiveActivity.coursePlan(sid, input.classes, NotifySettings.normalizeClassLead(settings.classLeadMinutes),
             NotifySettings.normalizeBreakLead(settings.breakLeadMinutes));
         }
       } else {
-        LiveActivity.coursePlan(sid, [], 0);
+        await LiveActivity.coursePlan(sid, [], 0);
       }
+      if (!input.unavailable.includes('vres')) await LiveActivity.reconcileVotes(sid, input.polls);
       await NotifyCenter.deliver(sid, input, settings,
         async () => sid === Services.currentSid && gen === NotifyCenter.generation && !NotifyCenter.ending);
       NotifyCenter.lastSid = sid;
@@ -179,14 +183,16 @@ export class NotifyCenter {
   private static async deliver(sid: string, input: NotifyInput, settings: NotifySettings,
     stillOwner: () => Promise<boolean>, context?: common.Context): Promise<boolean> {
     if (!await stillOwner()) return false;
+    if (context) await LiveActivity.refreshBackground(context);
     const snapshot = await NotifyStore.loadSnapshot(sid, context);
     const events = NotifyPlanner.plan(input, settings, snapshot);
-    const timed = events.filter((event: NotifyEvent) => event.fireAt > 0);
+    const timed = events.filter((event: NotifyEvent) => event.fireAt > 0 &&
+      !(event.course && LiveActivity.ownsCourse(sid, event.course, context)));
     let pending = events.filter((event: NotifyEvent) => event.fireAt <= 0);
     // A WorkScheduler run may be stopped between any two notifications.
     for (const event of pending.slice()) {
       if (!await stillOwner()) return false;
-      if (await NotifyCenter.publishNow(event, stillOwner)) {
+      if (await NotifyCenter.publishNow(event, sid, stillOwner)) {
         pending = pending.filter((item: NotifyEvent) => item.key !== event.key);
         if (!await stillOwner()) return false;
         await NotifyStore.saveSnapshot(sid, NotifyPlanner.nextSnapshot(input, snapshot, pending), context);
@@ -233,7 +239,7 @@ export class NotifyCenter {
     NotifyCenter.generation++;
     NotifyCenter.lastSid = '';
     try {
-      await LiveActivity.clear();
+      await LiveActivity.clear(sid);
       await NotifyCenter.enqueue(async () => {
         await NotifyCenter.reconcile(sid, [], [], '_sched');
         await NotifyCenter.reconcile(sid, [], [], '_tasks');
@@ -296,14 +302,14 @@ export class NotifyCenter {
       if (blocked.has(event.key)) continue;
       // 消息键包含原定触发时刻，已进入提前窗口时只补发一次。
       if (event.fireAt <= Date.now()) {
-        if (!await NotifyCenter.publishNow(event, stillOwner)) {
+        if (!await NotifyCenter.publishNow(event, sid, stillOwner)) {
           complete = false;
           continue;
         }
         records.set(key, -1);
       } else {
         if (quotaExhausted) continue;
-        const result = await ReminderAgent.publish(NotifyCenter.planOf(event), false);
+        const result = await ReminderAgent.publish(NotifyCenter.planOf(event, sid), false);
         if (!result.ok) {
           complete = false;
           quotaExhausted = result.code === 1700002;
@@ -401,7 +407,7 @@ export class NotifyCenter {
     return input;
   }
 
-  private static planOf(event: NotifyEvent): ReminderPlan {
+  private static planOf(event: NotifyEvent, sid: string): ReminderPlan {
     const plan: ReminderPlan = new ReminderPlan();
     const ref: string = event.key.substring(event.key.indexOf(':') + 1);
     if (event.kind === 'task') {
@@ -414,7 +420,23 @@ export class NotifyCenter {
     } else {
       plan.toolId = event.kind.startsWith('vote') ? 'vote' : (event.kind === 'class_remind' ? 'tt' : 'water');
     }
-    plan.notificationId = NotificationDelivery.id(event.key);
+    if (event.course) {
+      const launch = new ToolLaunch('tt');
+      launch.owner = sid;
+      launch.timetableFocus = TimetableFocus.fromSession(event.course);
+      plan.launchParameters = launch.parameters();
+      plan.expiresAt = event.course.startAt;
+    } else if (plan.toolId === 'vote') {
+      const launch = new ToolLaunch('vote');
+      launch.owner = sid;
+      launch.objectId = ref;
+      plan.launchParameters = launch.parameters();
+    } else {
+      const parameters = NotificationDelivery.route(plan.toolId, plan.homeworkId, plan.taskId, plan.noticeId);
+      parameters['owner'] = sid;
+      plan.launchParameters = parameters;
+    }
+    plan.notificationId = NotificationDelivery.id(event.course ? sid + ':' + event.key : event.key);
     plan.title = event.title;
     plan.content = event.text;
     plan.triggerAt = event.fireAt;
@@ -422,11 +444,12 @@ export class NotifyCenter {
     return plan;
   }
 
-  private static async publishNow(event: NotifyEvent, stillOwner?: () => Promise<boolean>): Promise<boolean> {
-    const plan = NotifyCenter.planOf(event);
-    const id = NotificationDelivery.id(event.key);
+  private static async publishNow(event: NotifyEvent, sid: string, stillOwner?: () => Promise<boolean>): Promise<boolean> {
+    const plan = NotifyCenter.planOf(event, sid);
+    if (plan.expiresAt && plan.expiresAt <= Date.now()) return true;
+    const id = plan.notificationId;
     const ok = await NotificationDelivery.publish(id, event.title, event.text,
-      NotificationDelivery.route(plan.toolId, plan.homeworkId, plan.taskId, plan.noticeId));
+      plan.launchParameters ?? NotificationDelivery.route(plan.toolId), plan.expiresAt);
     if (ok && stillOwner && !await stillOwner()) {
       try { await notificationManager.cancel(id); } catch (_) {}
       return false;

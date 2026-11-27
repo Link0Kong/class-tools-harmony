@@ -66,6 +66,13 @@ class TtGroupItem {
 @Component
 export struct TimetableScreen {
   @Prop focus: TimetableFocus | undefined = undefined;
+  private focusApplied: boolean = false;
+  private detailBack: () => boolean = () => {
+    if (!this.detailOpen) return false;
+    this.closeCourse();
+    return true;
+  };
+
   onClose: () => void = () => {
   };
   onOpenMap: (room: string) => void = () => {};
@@ -93,14 +100,15 @@ export struct TimetableScreen {
   private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   private clockTimer: number = -1;
-  private focusApplied: boolean = false;
   private currentSession(): SessionInfo | undefined {
     return this.plan.today.find((s: SessionInfo) => s.state === SessionState.ONGOING) ?? this.plan.next;
   }
   aboutToDisappear(): void {
+    if (AppGlobal.toolBack === this.detailBack) AppGlobal.toolBack = undefined;
     clearInterval(this.clockTimer);
   }
   aboutToAppear(): void {
+    AppGlobal.toolBack = this.detailBack;
     this.clockTimer = setInterval(() => {
       this.now = Date.now();
       this.plan = TtCalendar.plan(this.snapshot, this.now);
@@ -131,18 +139,22 @@ export struct TimetableScreen {
   private applyFocus(): void {
     const focus = this.focus;
     if (this.focusApplied || !focus || !Number.isFinite(focus.time) || focus.time <= 0) return;
+    if (!this.snapshot && focus.name) return;
+    this.focusApplied = true;
     const date = new Date(focus.time);
     const week = TtCalendar.weekOf(this.termStart(), date);
-    if (week !== undefined) this.weekOffset = week - this.baseWeek();
-    else if (this.termStart() !== undefined) return;
-    this.dayIdx = TtCalendar.dayIndex(date);
-    this.viewMode = 'day';
-    this.focusApplied = true;
-    if (focus.name.length === 0) return;
-    const course = this.coursesOf(this.dayIdx).find((row: Course) =>
-      row.name.trim() === focus.name && row.room.trim() === focus.room &&
-      focus.period >= row.start && focus.period <= row.end);
-    if (course) this.openCourse(course, this.dayIdx);
+    if (week !== undefined || !this.termStart()) {
+      if (week !== undefined) this.weekOffset = week - this.baseWeek();
+      this.dayIdx = TtCalendar.dayIndex(date);
+      this.viewMode = 'day';
+      if (!focus.name) return;
+      const course = this.coursesOf(this.dayIdx).find((row: Course) => TimetableFocus.matches(focus, row));
+      if (course) {
+        this.openCourse(course, this.dayIdx);
+        return;
+      }
+    }
+    showFeedback(this.getUIContext(), '这节课已变更，已打开课表');
   }
 
   private async pullRefresh(): Promise<void> {
