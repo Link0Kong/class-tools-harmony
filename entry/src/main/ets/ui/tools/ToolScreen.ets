@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { ToolLaunch } from '../../app/ToolLaunch';
 import { ToolCatalog, ToolDef } from '../../data/tool/ToolCatalog';
 import { Tokens } from '../theme/Tokens';
@@ -44,7 +45,7 @@ export struct ToolScreen {
   onOpenClassDecks: () => void = () => {};
 
   aboutToAppear(): void {
-    this.topInset = px2vp(AppGlobal.statusBarPx);
+    this.topInset = Math.max(Breakpoints.PAGE_TOP, px2vp(AppGlobal.statusBarPx));
   }
 
   private tool(): ToolDef | undefined {
@@ -257,7 +258,7 @@ export struct ToolScreen {
           }
           .width('100%')
           .constraintSize({ maxWidth: 720 })
-          .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth), bottom: Tokens.GAP_XL })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: Tokens.GAP_XL })
         }
         .layoutWeight(1)
         .align(Alignment.Top)

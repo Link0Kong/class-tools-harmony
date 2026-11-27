@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { image } from '@kit.ImageKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { ExportCardSpec } from '../../features/export/ExportCard';
@@ -234,7 +235,7 @@ export struct ExportPreview {
           .margin({ top: 8 })
       }
       .width('100%')
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 18, top: 8 })
+      .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: 18, top: 8 })
       .backgroundColor(Tokens.ACTION_BAR)
       .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
       .border({ width: 0.5, color: Tokens.CARD_EDGE })

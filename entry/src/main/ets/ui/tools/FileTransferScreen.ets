@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { LiveActivity } from '../../data/notify/LiveActivity';
 import { NotificationDelivery } from '../../data/notify/NotificationDelivery';
 ﻿import { showFeedback } from '../components/AppFeedback';
@@ -554,7 +555,7 @@ export struct FileTransferScreen {
         }
         .width('100%')
         .constraintSize({ maxWidth: this.contentMax() })
-        .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth) })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
             }
             .width('100%')
             .height('100%')
@@ -581,7 +582,6 @@ export struct FileTransferScreen {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
-    .padding({ top: Breakpoints.BREATH_TOP })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const next: number = Number(newArea.width);
       if (Math.abs(next - this.layoutWidth) > 1) {

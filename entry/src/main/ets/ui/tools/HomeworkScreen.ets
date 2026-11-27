@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
 import { LengthMetrics } from '@kit.ArkUI';
@@ -642,7 +643,8 @@ export struct HomeworkScreen {
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
-          .padding(Tokens.PAGE_PADDING)
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+            top: Tokens.GAP_LG, bottom: Tokens.GAP_LG })
         } else {
           Row({ space: 8 }) {
             this.filterChip(HomeworkFilter.ALL)
@@ -650,7 +652,7 @@ export struct HomeworkScreen {
             this.filterChip(HomeworkFilter.DONE)
           }
           .width('100%')
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
 
           if (this.hiddenCount > 0) {
             Row() {
@@ -666,14 +668,14 @@ export struct HomeworkScreen {
                 })
             }
             .width('100%')
-            .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 6 })
+            .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 6 })
           }
           if (this.errorMsg.length > 0) {
             Text(this.errorMsg)
               .fontSize(Tokens.F_CAPTION)
               .fontColor($r('app.color.task_urgent'))
               .width('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 8 })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 8 })
           }
 
           if (this.visibleItems().length === 0) {
@@ -695,7 +697,7 @@ export struct HomeworkScreen {
                 }, (item: HomeworkItem) => item.row.id + '_' + (item.done ? '1' : '0'))
               }
               .width('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
               .scrollBar(BarState.Off)
               .onDidScroll((offset: number) => {
                 const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);

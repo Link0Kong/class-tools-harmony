@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 ﻿import { RosterPicker } from '../components/RosterPicker';
 import { Services } from '../../app/Services';
@@ -345,13 +346,13 @@ export struct RollScreen {
             })
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
 
         Text('应点 ' + this.rows().length + ' 人' + (this.selSeats.length > 0 ? '（自定义名单）' : ''))
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
           .width('100%')
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
           .margin({ top: 4 })
 
         Row() {
@@ -360,7 +361,7 @@ export struct RollScreen {
           this.summaryTile('pending')
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING - 6, right: Tokens.PAGE_PADDING - 6 })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
         .margin({ top: 10 })
 
         Row() {
@@ -370,7 +371,7 @@ export struct RollScreen {
           Blank()
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
         .margin({ top: 6 })
 
         if (this.loading) {
@@ -385,7 +386,8 @@ export struct RollScreen {
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.DANGER)
             .width('100%')
-            .padding(Tokens.PAGE_PADDING)
+            .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+            top: Tokens.GAP_LG, bottom: Tokens.GAP_LG })
         } else {
           List({ scroller: this.scroller }) {
             ForEach(this.rows(), (row: RollRow) => {
@@ -398,7 +400,7 @@ export struct RollScreen {
           .width('100%')
           .layoutWeight(1)
           .margin({ top: 6 })
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
           .divider({ strokeWidth: 0.5, color: Tokens.DIVIDER })
           .scrollBar(BarState.Off)
           .onDidScroll((offset: number) => {

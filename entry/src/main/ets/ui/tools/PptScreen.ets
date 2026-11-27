@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 ﻿import request from '@ohos.request';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -739,14 +740,14 @@ export struct PptScreen {
           }
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
 
         if (this.uploading && this.uploadNotice.length > 0) {
           Text(this.uploadNotice)
             .fontSize(Tokens.F_CAPTION)
             .fontColor(Tokens.TEXT_TERTIARY)
             .width('100%')
-            .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 4 })
+            .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 4 })
         }
 
         if (this.loading) {
@@ -762,7 +763,7 @@ export struct PptScreen {
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.DANGER)
               .width('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 8 })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 8 })
           }
           if (this.decks.length === 0) {
             Text('暂无演示')
@@ -782,7 +783,7 @@ export struct PptScreen {
               }
               .width('100%')
               .height('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
               .scrollBar(BarState.Off)
               .onDidScroll((offset: number) => {
                 const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);

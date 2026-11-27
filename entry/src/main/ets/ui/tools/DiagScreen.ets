@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 ﻿import { Services } from '../../app/Services';
 import {
@@ -346,7 +347,7 @@ export struct DiagScreen {
             }
           }
           .width('100%')
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: 24 })
         }
         .width('100%')
         .height('100%')

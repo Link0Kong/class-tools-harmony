@@ -1,3 +1,5 @@
+import { PageInsets } from '../theme/PageInsets';
+import { Breakpoints } from '../theme/Breakpoints';
 import { showFeedback } from '../components/AppFeedback';
 ﻿import { VerifyResult } from '../../data/auth/AuthRepository';
 import { Session } from '../../data/session/Session';
@@ -46,7 +48,7 @@ export struct IdentityScreen {
   private pendingOpenId: string = '';
 
   aboutToAppear(): void {
-    this.topInset = px2vp(AppGlobal.statusBarPx);
+    this.topInset = Math.max(Breakpoints.PAGE_TOP, px2vp(AppGlobal.statusBarPx));
     this.prefetchHuawei();
   }
 
@@ -231,10 +233,10 @@ export struct IdentityScreen {
       Text('登录后同步班级数据与常用工具')
         .fontSize(Tokens.F_BODY)
         .fontColor(Tokens.TEXT_SECONDARY)
-        .margin({ top: Tokens.SPACE_6 })
+        .margin({ top: Tokens.TEXT_GAP })
     }
     .width('100%')
-    .margin({ top: 36 })
+    .margin({ top: Tokens.GAP_LG })
   }
 
   @Builder
@@ -504,7 +506,8 @@ export struct IdentityScreen {
         }
         .width('100%')
         .constraintSize({ maxWidth: 520 })
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: this.topInset, bottom: 40 })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+          top: this.topInset, bottom: Breakpoints.PAGE_BOTTOM })
       }
       .width('100%')
       .height('100%')

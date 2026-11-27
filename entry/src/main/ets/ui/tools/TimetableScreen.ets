@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 ﻿import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
@@ -1547,7 +1548,7 @@ export struct TimetableScreen {
 
   @Builder
   tabletSchedule() {
-    Row({ space: 16 }) {
+    Row({ space: Tokens.GAP_LG }) {
       Scroll(this.scroller) {
         Column() {
           this.weekHead()
@@ -1567,7 +1568,8 @@ export struct TimetableScreen {
         }.width('100%')
       }.layoutWeight(1).height('100%').align(Alignment.Top).scrollBar(BarState.Auto)
     }.width('100%').height('100%').alignItems(VerticalAlign.Top)
-      .padding({ left: 20, right: 20, top: 10, bottom: 16 })
+      .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+        top: Tokens.GAP_SM, bottom: Tokens.GAP_LG })
   }
 
   @State private headerFade: number = 0;
@@ -1588,7 +1590,7 @@ export struct TimetableScreen {
               this.stateCard()
             }
             .width('100%')
-            .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 12 })
+            .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: Tokens.GAP_SM })
           } else {
             Refresh({ refreshing: $$this.refreshing }) {
               if (this.wideLayout) {
@@ -1605,7 +1607,7 @@ export struct TimetableScreen {
                       this.courseDirectory()
                     }
                     .width('100%')
-                    .padding(14)
+                    .padding(Tokens.CARD_PADDING)
                     .backgroundColor(Tokens.CARD)
                     .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
                     .border({ width: 0.5, color: Tokens.CARD_EDGE })
@@ -1614,7 +1616,8 @@ export struct TimetableScreen {
                     .clip(true)
                   }
                   .width('100%')
-                  .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10, bottom: 24 })
+                  .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+                    top: Tokens.GAP_SM, bottom: Tokens.GAP_XL })
                 }
                 .width('100%')
                 .height('100%')

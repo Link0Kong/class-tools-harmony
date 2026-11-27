@@ -1,4 +1,5 @@
 import { Tokens } from '../theme/Tokens';
+import { PageInsets } from '../theme/PageInsets';
 import { AppSymbols } from '../theme/AppSymbols';
 import { PageHeader } from '../components/PageHeader';
 import { UsageCard, UsageCategory, UsageData } from '../../features/usage/UsageData';
@@ -552,7 +553,8 @@ export struct UsageScreen {
         .margin({ top: 12 })
       }
       .width('100%')
-      .padding({ left: 18, right: 18, top: 16, bottom: 20 })
+      .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+        top: Tokens.GAP_LG, bottom: Tokens.SPACE_20 })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
@@ -659,7 +661,7 @@ export struct UsageScreen {
     }
     .width('100%')
     .height('78%')
-    .padding({ left: 18, right: 18, top: 16 })
+    .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: Tokens.GAP_LG })
     .backgroundColor(Tokens.SHEET)
     .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
     .border({ width: 0.5, color: Tokens.CARD_EDGE })
@@ -698,7 +700,7 @@ export struct UsageScreen {
           }, (cat: UsageCategory, i: number) => 'uc_' + cat.key)
         }
         .width('100%')
-        .padding({ left: 18, right: 18, top: 4 })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: Tokens.GAP_SM })
 
         Swiper() {
           ForEach(this.cards(), (card: UsageCard, i: number) => {
@@ -722,7 +724,7 @@ export struct UsageScreen {
           this.cat = this.currentCard().cat;
         })
 
-        Row({ space: 14 }) {
+        Row({ space: Tokens.GAP_LG }) {
           Text('‹ 上一张')
             .fontSize(Tokens.F_LABEL)
             .fontColor(this.index <= 0 ? Tokens.TEXT_TERTIARY : Tokens.SLATE_BLUE)
@@ -743,7 +745,7 @@ export struct UsageScreen {
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
-        .padding({ bottom: 10 })
+        .padding({ bottom: Tokens.GAP_SM })
       }
       .width('100%')
       .height('100%')

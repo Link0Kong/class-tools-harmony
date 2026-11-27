@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { Tokens } from '../theme/Tokens';
 
 /**
@@ -10,7 +11,7 @@
 export struct GlassBar {
   @Prop surface: ResourceColor = Tokens.ACTION_BAR;
   @Prop edge: ResourceColor = Tokens.CARD_EDGE;
-  @Prop inset: number = Tokens.PAGE_PADDING;
+  @Prop inset: number = PageInsets.HORIZONTAL;
   @BuilderParam content: () => void = this.emptyContent;
 
   @Builder
@@ -26,8 +27,8 @@ export struct GlassBar {
       .padding({
         left: Tokens.SPACE_12,
         right: Tokens.SPACE_12,
-        top: Tokens.SPACE_10,
-        bottom: Tokens.SPACE_10
+        top: Tokens.GAP_SM,
+        bottom: Tokens.GAP_SM
       })
       .backgroundColor(this.surface)
       .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)

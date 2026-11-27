@@ -52,11 +52,6 @@ export class Tokens {
   static readonly CARD_EDGE: string = '#59FFFFFF';
   static readonly CARD_SHADOW: string = '#141C2629';
 
-  // 顶部呼吸区（所有页面内容与状态栏之间的最小留白）
-  static readonly BREATH_TOP: number = 8;
-  /** 悬浮导航栏占位高度（内容底部需避让）。 */
-  static readonly FLOAT_BAR_SPACE: number = 160;
-
   // 形状
   static readonly RADIUS_CARD: number = 18;
   static readonly RADIUS_FLOAT: number = 24;
@@ -82,12 +77,10 @@ export class Tokens {
   static readonly SPACE_40: number = 40;
   static readonly SPACE_48: number = 48;
 
-  /** 屏幕边缘间隔（手机 16vp；折叠屏 24vp；平板/2in1 32vp，见 Breakpoints.pagePadding）。 */
-  static readonly PAGE_PADDING: number = 16;
   /** 卡片之间的间隔：12vp。 */
   static readonly GAP: number = 12;
-  /** 卡片/容器内边距：14vp。 */
-  static readonly CARD_PADDING: number = 14;
+  /** 卡片和面板内边距：16vp。 */
+  static readonly CARD_PADDING: number = 16;
   /** 无明显边界控件之间的普通间隔：8vp（上下 / 左右通用）。 */
   static readonly GAP_SM: number = 8;
   /** 有明显边界控件之间的较大间隔：16vp。 */

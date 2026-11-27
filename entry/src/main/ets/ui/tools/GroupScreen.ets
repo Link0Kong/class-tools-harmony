@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 import { RosterPicker } from '../components/RosterPicker';
 import { ClassMember, LeagueMember } from '../../data/member/ClassMember';
@@ -482,7 +483,7 @@ export struct GroupScreen {
           })
       }
       .width('100%')
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+      .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: 24 })
     }
     .layoutWeight(1)
     .align(Alignment.Top)
@@ -522,7 +523,7 @@ export struct GroupScreen {
           .width('100%')
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 20 })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: 20 })
       }
       .layoutWeight(1)
       .align(Alignment.Top)

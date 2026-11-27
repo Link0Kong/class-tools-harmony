@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { Services } from '../../app/Services';
 import { ClassMember } from '../../data/member/ClassMember';
 import { VisitLoadResult, VisitRow } from '../../data/visits/VisitsRepository';
@@ -809,8 +810,8 @@ export struct StatsScreen {
               .width('100%')
               .constraintSize({ maxWidth: 960 })
               .padding({
-                left: Breakpoints.pagePadding(this.layoutWidth),
-                right: Breakpoints.pagePadding(this.layoutWidth),
+                left: PageInsets.HORIZONTAL,
+                right: PageInsets.HORIZONTAL,
                 bottom: Tokens.SPACE_24
               })
             }

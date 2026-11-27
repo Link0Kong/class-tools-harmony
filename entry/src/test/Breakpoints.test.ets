@@ -21,19 +21,28 @@ export default function breakpointsTest() {
       expect(Breakpoints.gridItemWidthPercent(1000)).assertEqual('23.5%');
     });
 
-    it('content_max_width_and_breath', 0, () => {
+    it('content_max_width_and_bottom_inset', 0, () => {
       expect(Breakpoints.contentMaxWidth(360)).assertEqual(880);
       expect(Breakpoints.contentMaxWidth(700)).assertEqual(880);
       expect(Breakpoints.contentMaxWidth(1200)).assertEqual(1080);
-      expect(Breakpoints.breathTop(360)).assertEqual(8);
-      expect(Breakpoints.breathTop(1200)).assertEqual(12);
-      expect(Breakpoints.contentBottomSpace(360)).assertEqual(96);
-      expect(Breakpoints.contentBottomSpace(1200)).assertEqual(32);
+      expect(Breakpoints.contentBottomSpace(360)).assertEqual(108);
+      expect(Breakpoints.contentBottomSpace(1200)).assertEqual(28);
       expect(Breakpoints.toolContentMaxWidth(360) > 10000).assertTrue();
       expect(Breakpoints.toolContentMaxWidth(1200)).assertEqual(960);
       expect(Breakpoints.useSideNav(899)).assertFalse();
       expect(Breakpoints.useSideNav(900)).assertTrue();
-      expect(Tokens.BREATH_TOP).assertEqual(8);
+    });
+
+    it('page_insets_follow_the_device_type', 0, () => {
+      expect(Breakpoints.pagePadding('phone')).assertEqual(16);
+      expect(Breakpoints.pagePadding('phone', true)).assertEqual(24);
+      expect(Breakpoints.pagePadding('tablet')).assertEqual(32);
+      expect(Breakpoints.pagePadding('2in1')).assertEqual(40);
+      expect(Breakpoints.pagePadding('wearable')).assertEqual(26);
+      expect(Breakpoints.pagePadding('')).assertEqual(16);
+      expect(Breakpoints.PAGE_TOP).assertEqual(36);
+      expect(Breakpoints.PAGE_BOTTOM).assertEqual(28);
+      expect(Breakpoints.WATCH_VERTICAL).assertEqual(20);
     });
 
     it('wide_and_tablet_flags', 0, () => {

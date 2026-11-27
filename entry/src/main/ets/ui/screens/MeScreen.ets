@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 import { LiveActivity } from '../../data/notify/LiveActivity';
 import notificationManager from '@ohos.notificationManager';
@@ -1171,9 +1172,9 @@ export struct MeScreen {
       .width('100%')
       .constraintSize({ maxWidth: Breakpoints.isWide(this.layoutWidth) ? 880 : 720 })
       .padding({
-        left: Breakpoints.pagePadding(this.layoutWidth),
-        right: Breakpoints.pagePadding(this.layoutWidth),
-        top: Tokens.SPACE_12,
+        left: PageInsets.HORIZONTAL,
+        right: PageInsets.HORIZONTAL,
+        top: Tokens.GAP_SM,
         bottom: Breakpoints.contentBottomSpace(this.layoutWidth)
       })
     }

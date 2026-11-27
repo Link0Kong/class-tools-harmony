@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -1698,7 +1699,7 @@ export struct NoticeScreen {
             }
             .width('100%')
             .constraintSize({ maxWidth: 820 })
-            .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth),
+            .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
               top: Tokens.SPACE_8, bottom: Tokens.SPACE_24 })
           }
           .width('100%')
@@ -1720,7 +1721,7 @@ export struct NoticeScreen {
           })
           if (this.focused && this.cardByKey(this.focused)) {
             Column() {
-              GlassBar({ surface: $r('app.color.task_glass_bar'), edge: NT_EDGE, inset: Breakpoints.pagePadding(this.layoutWidth) }) {
+              GlassBar({ surface: $r('app.color.task_glass_bar'), edge: NT_EDGE, inset: PageInsets.HORIZONTAL }) {
                 Button('查看全部通知').noticeButton(true).layoutWeight(1).onClick(() => {
                   this.focused = '';
                   this.scroller.scrollEdge(Edge.Top);

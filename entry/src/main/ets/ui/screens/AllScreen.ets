@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { HomeTools } from '../../data/home/HomeTools';
 import { ToolCatalog, ToolCategory, ToolDef } from '../../data/tool/ToolCatalog';
 import { ToolOrderStore } from '../../data/tool/ToolOrderStore';
@@ -358,9 +359,9 @@ export struct AllScreen {
         .width('100%')
         .constraintSize({ maxWidth: Breakpoints.contentMaxWidth(this.layoutWidth) })
         .padding({
-          left: Breakpoints.pagePadding(this.layoutWidth),
-          right: Breakpoints.pagePadding(this.layoutWidth),
-          top: Tokens.SPACE_12,
+          left: PageInsets.HORIZONTAL,
+          right: PageInsets.HORIZONTAL,
+          top: Tokens.GAP_SM,
           bottom: Breakpoints.contentBottomSpace(this.layoutWidth)
         })
       }

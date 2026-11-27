@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { showFeedback } from '../components/AppFeedback';
 import { LengthMetrics } from '@kit.ArkUI';
 import { AppGlobal } from '../../app/AppGlobal';
@@ -136,8 +137,8 @@ export struct TaskScreen {
     return Breakpoints.supportsToolPanes(this.layoutWidth);
   }
 
-  private pageInset(): number {
-    return this.wideLayout() ? Tokens.PAGE_PADDING : Breakpoints.pagePadding(this.layoutWidth);
+  private paneInset(): number {
+    return this.wideLayout() ? Tokens.GAP_LG : PageInsets.HORIZONTAL;
   }
 
   private selectTask(task: PersonalTask | undefined): void {
@@ -570,7 +571,7 @@ export struct TaskScreen {
   @Builder
   detail(task: PersonalTask) {
     PageHeader({ taskColors: true, showAmbientBackground: true, progress: this.detailProgress,
-      title: '任务详情', onBack: () => { this.selectTask(undefined); },
+      inset: this.paneInset(), title: '任务详情', onBack: () => { this.selectTask(undefined); },
       actionText: '分享任务链接', onAction: () => { this.shareTask(task); },
       actionText2: '完整任务管理', onAction2: this.onAdvanced }) {
       Column() {
@@ -648,13 +649,13 @@ export struct TaskScreen {
                 if (task.sourceNoticeId) { this.action('查看原通知', () => this.onNotice(task.sourceNoticeId, task.id)) }
               }
             }
-          }.alignItems(HorizontalAlign.Start).width('100%').padding(this.pageInset())
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(this.paneInset())
         }.width('100%').layoutWeight(1).align(Alignment.Top)
           .onDidScroll(() => {
             const progress = this.scrollProgress(this.detailScroller);
             if (Math.abs(progress - this.detailProgress) > 0.03 || progress === 0) this.detailProgress = progress;
           })
-        GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: this.pageInset() }) {
+        GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: this.paneInset() }) {
           Button('编辑任务').taskButton(false).layoutWeight(1)
             .onClick(() => { this.startEdit(task); })
           Button(task.done ? '撤销完成' : '标记完成').taskButton(!task.done).layoutWeight(1)
@@ -666,7 +667,7 @@ export struct TaskScreen {
 
   @Builder
   quickEntry() {
-    GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: this.pageInset() }) {
+    GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: this.paneInset() }) {
       Column({ space: Tokens.GAP_SM }) {
         if (this.linkInput) {
           Row({ space: Tokens.SPACE_6 }) {
@@ -725,7 +726,7 @@ export struct TaskScreen {
               }.width('100%').padding(Tokens.CARD_PADDING).taskCardSurface()
             }, (draft: TaskCreateDraft, index: number) => index + ':' + draft.title)
           }
-        }.alignItems(HorizontalAlign.Start).width('100%').constraintSize({ maxWidth: 720 }).padding(this.pageInset())
+        }.alignItems(HorizontalAlign.Start).width('100%').constraintSize({ maxWidth: 720 }).padding(PageInsets.HORIZONTAL)
       }.width('100%').height('100%').align(Alignment.Top)
     }
   }
@@ -774,9 +775,9 @@ export struct TaskScreen {
                 }
               }
             }
-          }.alignItems(HorizontalAlign.Start).width('100%').padding(this.pageInset())
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(PageInsets.HORIZONTAL)
         }.width('100%').layoutWeight(1).align(Alignment.Top)
-        GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: this.pageInset() }) {
+        GlassBar({ surface: $r('app.color.task_glass_bar'), edge: $r('app.color.task_glass_edge'), inset: PageInsets.HORIZONTAL }) {
           Button(this.aiSaving ? '正在保存…' : '保存任务').taskButton(true).layoutWeight(1).enabled(!this.aiSaving)
             .onClick(() => {
               if (this.aiDraftIndex >= 0) this.saveAiDraft();
@@ -818,7 +819,7 @@ export struct TaskScreen {
         }
         ForEach(tasks, (task: PersonalTask) => { ListItem() { this.taskCard(task) } },
           (task: PersonalTask) => task.id + JSON.stringify(task))
-      }.width('100%').height('100%').padding({ left: this.pageInset(), right: this.pageInset(),
+      }.width('100%').height('100%').padding({ left: this.paneInset(), right: this.paneInset(),
         top: Tokens.SPACE_8, bottom: Tokens.GAP }).scrollBar(BarState.Auto)
         .onDidScroll(() => { this.updateListProgress(view.key); })
     }.onRefreshing(() => { this.refresh(true); })
@@ -827,7 +828,7 @@ export struct TaskScreen {
   @Builder
   taskList() {
     PageHeader({ taskColors: true, showAmbientBackground: true, progress: this.listProgress.get(this.activeView) || 0,
-      title: '任务', actionText: '完整任务管理', onAction: this.onAdvanced,
+      inset: this.paneInset(), title: '任务', actionText: '完整任务管理', onAction: this.onAdvanced,
       actionText2: '从链接添加任务', onAction2: () => { this.linkInput = true; },
       actionText3: this.searching ? '结束搜索' : '搜索任务', onAction3: () => {
         this.searching = !this.searching;
@@ -839,7 +840,7 @@ export struct TaskScreen {
             Search({ placeholder: '搜索标题、备注、来源或标签', value: this.query })
               .taskInputSurface().fontColor($r('app.color.task_text')).placeholderColor($r('app.color.task_muted'))
               .width('100%').height(48).textFont({ size: Tokens.F_BODY }).onChange((s: string) => { this.query = s; })
-          }.width('100%').padding({ left: this.pageInset(), right: this.pageInset() })
+          }.width('100%').padding({ left: this.paneInset(), right: this.paneInset() })
         }
         Tabs({ barPosition: BarPosition.Start, index: TaskView.index(this.views, this.activeView) }) {
           ForEach(this.views, (view: TaskView) => {
@@ -871,12 +872,13 @@ export struct TaskScreen {
               this.selectedDetail()
             } else {
               Scroll() {
-                Column() { this.homeworkCard() }.width('100%').padding(this.pageInset())
+                Column() { this.homeworkCard() }.width('100%').padding(Tokens.GAP_LG)
               }.width('100%').height('100%').align(Alignment.Top)
             }
           }.layoutWeight(1.08).height('100%')
         }
       }.width('100%').height('100%')
+        .padding({ left: PageInsets.HORIZONTAL - this.paneInset(), right: PageInsets.HORIZONTAL - this.paneInset() })
         .visibility(this.imagePreview || this.shared || this.editing || this.aiOpen || (!this.wideLayout() && this.selected)
           ? Visibility.Hidden : Visibility.Visible)
 
@@ -899,7 +901,7 @@ export struct TaskScreen {
                   (step: string, index: number) => index + step)
                 Button('保存为我的任务').taskButton(true).onClick(() => { this.acceptShare(); })
               }.alignItems(HorizontalAlign.Start).width('100%').padding(Tokens.SPACE_16).taskCardSurface()
-            }.width('100%').constraintSize({ maxWidth: 720 }).padding(this.pageInset())
+            }.width('100%').constraintSize({ maxWidth: 720 }).padding(PageInsets.HORIZONTAL)
           }.width('100%').height('100%').align(Alignment.Top)
         }
       } else if (this.editing || this.aiDraftIndex >= 0) {

@@ -6,6 +6,7 @@ import { ScanPayload } from '../../data/scan/ScanPayload';
 import { ScanActions } from '../../data/scan/ScanActions';
 import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { PageHeader } from '../components/PageHeader';
+import { PageInsets } from '../theme/PageInsets';
 import { Tokens } from '../theme/Tokens';
 
 @Component
@@ -87,7 +88,7 @@ export struct ScanScreen {
   build() {
     PageHeader({ taskColors: true, title: '扫一扫', onBack: this.onClose }) {
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: Tokens.GAP_LG }) {
           if (this.code.kind === 'login') {
             Text('确认网页登录').fontWeight(FontWeight.Bold).fontSize(21).fontColor($r('app.color.task_text'))
             Text('确认后，显示这张二维码的设备将以「' + Services.currentName + '」登录枫丹工具箱。')
@@ -113,7 +114,10 @@ export struct ScanScreen {
               .onChange((s: string) => { this.link = s; })
             Button('识别链接').enabled(!this.busy && !!this.link.trim()).onClick(() => { this.recognize(this.link); })
           }
-        }.width('100%').padding(18).alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: Tokens.GAP_LG })
+        .alignItems(HorizontalAlign.Start)
       }.width('100%').height('100%').align(Alignment.Top)
     }
   }

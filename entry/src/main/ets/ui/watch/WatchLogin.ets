@@ -5,6 +5,7 @@ import { HuaweiAccount } from '../../data/account/HuaweiAccount';
 import { Session } from '../../data/session/Session';
 import { VerifyResult } from '../../data/auth/AuthRepository';
 import { Tokens } from '../theme/Tokens';
+import { Breakpoints } from '../theme/Breakpoints';
 
 /** 手表登录：优先华为账号（已绑定学号），保留学号+姓名兜底；圆屏按窗口尺寸自适应。 */
 @Component
@@ -141,7 +142,8 @@ export struct WatchLogin {
           .margin({ top: this.px(1) })
       }
       .width('100%')
-      .padding({ left: this.px(24), right: this.px(24), top: this.px(14), bottom: this.px(14) })
+      .padding({ left: Breakpoints.WATCH_HORIZONTAL, right: Breakpoints.WATCH_HORIZONTAL,
+        top: Breakpoints.WATCH_VERTICAL, bottom: Breakpoints.WATCH_VERTICAL })
       .justifyContent(FlexAlign.Center)
     }
     .width('100%')

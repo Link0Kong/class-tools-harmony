@@ -68,7 +68,7 @@ export struct HomeCardShell {
           .width(15).height(15)
           .border({ width: { bottom: this.gripEdgeWidth(), right: this.gripEdgeWidth() }, color: this.gripColor() })
           .borderRadius({ bottomRight: 7 })
-          .margin({ right: 9, bottom: 9 })
+          .margin({ right: Tokens.GAP_SM, bottom: Tokens.GAP_SM })
       }
       .width(56)
       .height(56)

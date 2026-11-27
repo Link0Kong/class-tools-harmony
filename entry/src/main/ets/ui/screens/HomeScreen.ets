@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { LiveActivity } from '../../data/notify/LiveActivity';
 import { LiveRecord } from '../../data/notify/LiveRecord';
 ﻿import { showFeedback } from '../components/AppFeedback';
@@ -764,7 +765,7 @@ export struct HomeScreen {
   /** 当前内容区可用宽度（vp）。 */
   private contentWidth(): number {
     const max: number = Breakpoints.contentMaxWidth(this.layoutWidth);
-    const pad: number = Breakpoints.pagePadding(this.layoutWidth);
+    const pad: number = PageInsets.HORIZONTAL;
     const available: number = Math.min(this.layoutWidth, max) - pad * 2;
     return available > 0 ? available : 328;
   }
@@ -1902,8 +1903,8 @@ export struct HomeScreen {
     .width('100%')
     .height('100%')
     .padding({
-      left: Breakpoints.pagePadding(this.layoutWidth),
-      right: Breakpoints.pagePadding(this.layoutWidth)
+      left: PageInsets.HORIZONTAL,
+      right: PageInsets.HORIZONTAL
     })
     .backgroundColor(Color.Transparent)
     .opacity(this.shimmer ? 0.55 : 1)
@@ -1971,8 +1972,8 @@ export struct HomeScreen {
             .width('100%')
             .constraintSize({ maxWidth: Breakpoints.contentMaxWidth(this.layoutWidth) })
             .padding({
-              left: Breakpoints.pagePadding(this.layoutWidth),
-              right: Breakpoints.pagePadding(this.layoutWidth),
+              left: PageInsets.HORIZONTAL,
+              right: PageInsets.HORIZONTAL,
               top: Tokens.SPACE_8
             })
           }

@@ -21,6 +21,7 @@ import { TtResult } from '../../data/timetable/TimetableRepository';
 import { HomeDigest } from '../../features/home/HomeDigest';
 import { WatchLogic } from '../../features/watch/WatchLogic';
 import { Tokens } from '../theme/Tokens';
+import { Breakpoints } from '../theme/Breakpoints';
 
 /** 手表作业行（轻量展示模型）。 */
 class WatchHwItem {
@@ -102,7 +103,7 @@ export struct WatchShell {
   private hPad(): number {
     const w: number = this.screenW > 0 ? this.screenW : 400;
     // 圆屏安全区：内容宽度约 70%，避开上下圆弧
-    return Math.round(Math.max(22, Math.min(76, w * 0.15)));
+    return Math.round(Math.max(Breakpoints.WATCH_HORIZONTAL, Math.min(76, w * 0.15)));
   }
 
   private buzz(ms: number = 12): void {

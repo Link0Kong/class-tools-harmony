@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 import { AppGlobal } from '../../app/AppGlobal';
 import { showFeedback } from '../components/AppFeedback';
 import { systemDateTime } from '@kit.BasicServicesKit';
@@ -1214,7 +1215,7 @@ export struct VoteScreen {
           Blank()
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
 
         if (this.loading) {
           Column() {
@@ -1229,7 +1230,7 @@ export struct VoteScreen {
               .fontSize(Tokens.F_CAPTION)
               .fontColor(Tokens.DANGER)
               .width('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 8 })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 8 })
           }
           if (this.visiblePolls().length === 0) {
             Text(this.showClosed ? '暂无已结束投票' : '暂无进行中投票')
@@ -1249,7 +1250,7 @@ export struct VoteScreen {
               }
               .width('100%')
               .height('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
               .scrollBar(BarState.Off)
               .onDidScroll((offset: number) => {
                 const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);

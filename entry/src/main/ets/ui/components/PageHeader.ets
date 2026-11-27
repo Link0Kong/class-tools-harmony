@@ -1,3 +1,5 @@
+import { PageInsets } from '../theme/PageInsets';
+import { Breakpoints } from '../theme/Breakpoints';
 ﻿import { Immersive } from '../theme/Immersive';
 import { Tokens } from '../theme/Tokens';
 
@@ -12,6 +14,7 @@ import { Tokens } from '../theme/Tokens';
  */
 @Component
 export struct PageHeader {
+  @Prop inset: number = PageInsets.HORIZONTAL;
   @Prop taskColors: boolean = false;
   @Prop showAmbientBackground: boolean = false;
   @Prop title: string = '';
@@ -72,7 +75,7 @@ export struct PageHeader {
   @Builder
   headerBar() {
     Stack({ alignContent: Alignment.Center }) {
-      Row({ space: Tokens.SPACE_6 }) {
+      Row({ space: Tokens.TEXT_GAP_H }) {
         Text('‹')
           .fontSize(30)
           .fontWeight(FontWeight.Lighter)
@@ -91,7 +94,6 @@ export struct PageHeader {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-          .margin({ left: Tokens.SPACE_4 })
 
         if (this.hasMenu()) {
           Text('⋯')
@@ -106,7 +108,7 @@ export struct PageHeader {
       }
       .width('100%')
       .height(56)
-      .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+      .padding({ left: this.inset, right: this.inset })
     }
     .width('100%')
     .height(56)
@@ -133,7 +135,7 @@ export struct PageHeader {
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ top: Tokens.SPACE_4 })
+      .padding({ top: Tokens.GAP_SM, bottom: Breakpoints.PAGE_BOTTOM })
     }
     .width('100%')
     .height('100%')

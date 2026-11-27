@@ -2,6 +2,7 @@
 import { Motion } from '../theme/Motion';
 import { Immersive } from '../theme/Immersive';
 import { Breakpoints } from '../theme/Breakpoints';
+import { PageInsets } from '../theme/PageInsets';
 import { AppSymbols } from '../theme/AppSymbols';
 import { HomeTools, HomeToolsToggleResult } from '../../data/home/HomeTools';
 import { HomeScreen } from '../screens/HomeScreen';
@@ -321,7 +322,8 @@ export struct AppShell {
       .scrollable(!this.sideNav())
       .animationDuration(Motion.NORMAL)
       .barFloatingStyle(this.sideNav() ? undefined : {
-        barBottomMargin: 16,
+        barSideMargin: PageInsets.HORIZONTAL,
+        barBottomMargin: Breakpoints.PAGE_BOTTOM,
         adaptToHandedness: true,
         systemMaterialEffect: {
           materialType: hdsMaterial.MaterialType.ADAPTIVE,

@@ -10,7 +10,7 @@ export struct DetailField {
   @Prop label: string = '';
   @Prop value: string = '';
   build() {
-    Row({ space: 10 }) {
+    Row({ space: Tokens.TEXT_GAP_H }) {
       Text(this.label).fontSize(14).fontColor($r('app.color.task_muted')).width(76)
       Text(this.value).fontSize(16).lineHeight(23).fontColor($r('app.color.task_text')).layoutWeight(1)
         .copyOption(CopyOptions.InApp)
@@ -69,8 +69,8 @@ export struct TaskAttachmentRow {
   }
 
   build() {
-    Row({ space: 10 }) {
-      Column({ space: 4 }) {
+    Row({ space: Tokens.GAP_SM }) {
+      Column({ space: Tokens.TEXT_GAP }) {
         Text(this.meta.name).fontSize(16).fontColor($r('app.color.task_text'))
         if (this.meta.sizeBytes > 0) {
           Text(this.meta.sizeText()).fontSize(13).fontColor($r('app.color.task_muted'))

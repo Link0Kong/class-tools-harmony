@@ -3,7 +3,6 @@ import { webview } from '@kit.ArkWeb';
 import { AppGlobal } from '../../app/AppGlobal';
 import { MapLoadState, MapLogic } from '../../features/map/MapModels';
 import { Tokens } from '../theme/Tokens';
-import { Breakpoints } from '../theme/Breakpoints';
 import { PageHeader } from '../components/PageHeader';
 import { EMBEDDED_FEEDBACK_SCRIPT, showFeedback } from '../components/AppFeedback';
 
@@ -211,6 +210,5 @@ export struct MapScreen {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
-    .padding({ top: Breakpoints.BREATH_TOP })
   }
 }

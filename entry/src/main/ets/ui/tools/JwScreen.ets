@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { BusinessError } from '@ohos.base';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
@@ -427,7 +428,7 @@ export struct JwScreen {
             .margin({ top: 4, bottom: 16 })
         }
         .width('100%')
-        .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
+        .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, bottom: 24 })
           }
           .width('100%')
           .height('100%')

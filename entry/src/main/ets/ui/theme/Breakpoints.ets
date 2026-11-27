@@ -6,7 +6,7 @@
  * - 「全部工具」网格：宽 < 600vp → 2 列；600–899vp → 3 列；≥ 900vp → 4 列；
  * - 主内容最大宽度：手机/平板 ≤ 1080vp（平板首页二分栏），桌面再宽也居中留白；
  * - 工具页表单最大宽度：宽屏 ≤ 960vp，避免输入框/按钮横向拉满；
- * - 底部留白：悬浮页签 96vp；侧边导航形态只需 32vp。
+ * - 底部留白：悬浮页签预留页签高度和外边距；侧边导航保留屏幕边距。
  *
  * 本文件不 import ArkUI，纯函数，hypium 可直接跑。
  */
@@ -25,19 +25,12 @@ export class Breakpoints {
   /** 大屏工具页内容最大宽度（表单/列表居中，不横向拉满）。 */
   static readonly TOOL_MAX_WIDE: number = 960;
 
-  /** 屏幕边缘间隔（vp）：手机 16，折叠屏 24，平板/2in1 32（HarmonyOS 间隔规范）。 */
-  static readonly PAGE_PADDING_PHONE: number = 16;
-  static readonly PAGE_PADDING_FOLD: number = 24;
-  static readonly PAGE_PADDING_TABLET: number = 32;
-
-  /** 顶部呼吸区（vp）：手机 8，宽屏 12。 */
-  static readonly BREATH_TOP: number = 8;
-  static readonly BREATH_TOP_WIDE: number = 12;
-
-  /** 悬浮底部页签占位（vp）。 */
-  static readonly FLOAT_BAR_SPACE: number = 96;
-  /** 侧边导航形态的底部留白（vp）。 */
-  static readonly SIDE_BAR_SPACE: number = 32;
+  /** 屏幕边缘间隔与底部页签占位，单位 vp。 */
+  static readonly PAGE_TOP: number = 36;
+  static readonly PAGE_BOTTOM: number = 28;
+  static readonly WATCH_HORIZONTAL: number = 26;
+  static readonly WATCH_VERTICAL: number = 20;
+  static readonly FLOAT_BAR_SPACE: number = 80 + Breakpoints.PAGE_BOTTOM;
 
   /** 侧边导航宽度（vp）。 */
   static readonly SIDE_NAV_WIDTH: number = 104;
@@ -88,30 +81,23 @@ export class Breakpoints {
     return Breakpoints.isWide(width) ? Breakpoints.CONTENT_MAX_WIDE : Breakpoints.CONTENT_MAX_PHONE;
   }
 
-  /**
-   * 屏幕左右边缘间隔（vp）：手机 16，折叠屏展开/平板 24，大屏 32。
-   *
-   * 未知宽度（首帧 onAreaChange 前）按手机 16 处理，避免布局跳变。
-   */
-  static pagePadding(width: number): number {
-    const w: number = Breakpoints.normalize(width);
-    if (w >= Breakpoints.WIDE_MIN) {
-      return Breakpoints.PAGE_PADDING_TABLET;
+  /** 华为间隔参数按设备形态定义边距。窗口宽度仍用于列数和导航断点。 */
+  static pagePadding(deviceType: string, foldable: boolean = false): number {
+    if (deviceType === '2in1' || deviceType === 'pc') {
+      return 40;
     }
-    if (w >= Breakpoints.TABLET_MIN) {
-      return Breakpoints.PAGE_PADDING_FOLD;
+    if (deviceType === 'tablet') {
+      return 32;
     }
-    return Breakpoints.PAGE_PADDING_PHONE;
+    if (deviceType === 'wearable') {
+      return Breakpoints.WATCH_HORIZONTAL;
+    }
+    return foldable ? 24 : 16;
   }
 
-  /** 顶部呼吸区高度（vp）。 */
-  static breathTop(width: number): number {
-    return Breakpoints.isWide(width) ? Breakpoints.BREATH_TOP_WIDE : Breakpoints.BREATH_TOP;
-  }
-
-  /** 底部内容避让高度（vp）：宽屏用侧边导航，不再为悬浮页签留 96vp。 */
+  /** 底部内容避让高度（vp）：宽屏只留屏幕底边距。 */
   static contentBottomSpace(width: number): number {
-    return Breakpoints.isWide(width) ? Breakpoints.SIDE_BAR_SPACE : Breakpoints.FLOAT_BAR_SPACE;
+    return Breakpoints.isWide(width) ? Breakpoints.PAGE_BOTTOM : Breakpoints.FLOAT_BAR_SPACE;
   }
 
   /** 任务与课表的双栏各需约 400vp，以内容区实测宽度判定。 */

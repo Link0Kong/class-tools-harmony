@@ -1,3 +1,4 @@
+import { PageInsets } from '../theme/PageInsets';
 ﻿import { RosterSearchBox } from '../components/RosterSearchBox';
 import { Services } from '../../app/Services';
 import { ClassMember, LeagueMember, MemberEntry } from '../../data/member/ClassMember';
@@ -153,7 +154,8 @@ export struct RosterScreen {
           .width('100%')
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
-          .padding(Tokens.PAGE_PADDING)
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL,
+            top: Tokens.GAP_LG, bottom: Tokens.GAP_LG })
         } else {
           Row({ space: 8 }) {
             ForEach(this.categories(), (category: MemberCategory) => {
@@ -161,14 +163,14 @@ export struct RosterScreen {
             }, (category: MemberCategory) => category)
           }
           .width('100%')
-          .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+          .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
 
           Row() {
             RosterSearchBox({ onFilter: (text: string, seats: number[]) => {
               this.query = text;
               this.matchedSeats = seats;
             } })
-          }.padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, top: 10 })
+          }.padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL, top: 10 })
 
           if (this.entries().length === 0) {
             Column() {
@@ -191,7 +193,7 @@ export struct RosterScreen {
               }
               .width('100%')
               .height('100%')
-              .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING })
+              .padding({ left: PageInsets.HORIZONTAL, right: PageInsets.HORIZONTAL })
               .backgroundColor(Tokens.CARD)
               .border({ width: 0.5, color: Tokens.CARD_EDGE })
               .borderRadius(Tokens.RADIUS_CARD)
