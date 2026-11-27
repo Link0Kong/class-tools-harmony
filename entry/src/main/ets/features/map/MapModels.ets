@@ -13,7 +13,7 @@ export class MapConfig {
   /** H5 相对路径。 */
   static readonly PAGE_PATH: string = '/map/campus_final_25d.html';
 
-  static readonly PAGE_VERSION: string = '20261123-map2';
+  static readonly PAGE_VERSION: string = '20261127-map3';
 }
 
 /** 地图页加载状态。 */
