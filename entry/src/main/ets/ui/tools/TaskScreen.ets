@@ -1,5 +1,5 @@
 import { showFeedback } from '../components/AppFeedback';
-import { LengthMetrics, window } from '@kit.ArkUI';
+import { LengthMetrics } from '@kit.ArkUI';
 import { AppGlobal } from '../../app/AppGlobal';
 import { DetailField, DetailSection, TaskAttachmentRow } from '../components/TaskDetailParts';
 import { HomeworkAttachmentMeta } from '../../data/homework/HomeworkModels';
@@ -21,8 +21,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Breakpoints } from '../theme/Breakpoints';
 import { AppSymbols } from '../theme/AppSymbols';
 import { GlassBar } from '../components/GlassBar';
-
-Environment.envProp('colorMode', ColorMode.LIGHT);
+import { ImmersiveToolWindow } from '../theme/ImmersiveToolWindow';
 
 @Styles function taskCardSurface() {
   .backgroundColor($r('app.color.task_glass_card'))
@@ -71,7 +70,7 @@ export struct TaskScreen {
   onAdvanced: () => void = () => {};
   onReminderSettings: () => void = () => {};
   @State private personal: PersonalTask[] = [];
-  @StorageProp('colorMode') @Watch('updateSystemBars') private colorMode: ColorMode = ColorMode.LIGHT;
+  @StorageProp('immersiveToolDark') @Watch('updateSystemBars') private darkMode: boolean = false;
   @State private brief: HomeworkBrief = new HomeworkBrief();
   @State private selected: PersonalTask | undefined = undefined;
   @State private layoutWidth: number = 0;
@@ -131,7 +130,7 @@ export struct TaskScreen {
   private aiView: string = 'all';
   private aiRequest: number = 0;
   private nextStep: number = 0;
-  private systemBarsBeforeTask?: window.SystemBarProperties;
+  private toolWindow: ImmersiveToolWindow = new ImmersiveToolWindow();
 
   private wideLayout(): boolean {
     return Breakpoints.supportsToolPanes(this.layoutWidth);
@@ -147,27 +146,7 @@ export struct TaskScreen {
   }
 
   private updateSystemBars(): void {
-    if (!this.active) return;
-    if (this.colorMode !== ColorMode.DARK) {
-      this.restoreSystemBars();
-      return;
-    }
-    try {
-      const mainWindow = AppGlobal.context?.windowStage.getMainWindowSync();
-      if (!mainWindow || this.systemBarsBeforeTask) return;
-      this.systemBarsBeforeTask = mainWindow.getWindowSystemBarProperties();
-      mainWindow.setWindowSystemBarProperties({ statusBarColor: '#1B2629', statusBarContentColor: '#EFF5F1',
-        navigationBarContentColor: '#EFF5F1' }).catch(() => {});
-    } catch (_) { /* 系统栏不可用时保留窗口原有设置。 */ }
-  }
-
-  private restoreSystemBars(): void {
-    const previous = this.systemBarsBeforeTask;
-    this.systemBarsBeforeTask = undefined;
-    if (!previous) return;
-    try {
-      AppGlobal.context?.windowStage.getMainWindowSync().setWindowSystemBarProperties(previous).catch(() => {});
-    } catch (_) { /* 窗口可能已销毁。 */ }
+    this.toolWindow.setDark(this.active && this.darkMode);
   }
 
   aboutToAppear(): void {
@@ -187,7 +166,7 @@ export struct TaskScreen {
   aboutToDisappear(): void {
     if (AppGlobal.toolBack === this.backLayer) AppGlobal.toolBack = undefined;
     this.active = false;
-    this.restoreSystemBars();
+    this.updateSystemBars();
     this.closeAi();
     clearInterval(this.tick);
   }

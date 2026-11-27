@@ -1,5 +1,5 @@
 import { showFeedback } from '../components/AppFeedback';
-﻿import { TaskRepository } from '../../data/tasks/TaskRepository';
+import { TaskRepository } from '../../data/tasks/TaskRepository';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
@@ -20,30 +20,47 @@ import { ExportCardView } from '../components/ExportCardView';
 import { Motion } from '../theme/Motion';
 import { Tokens } from '../theme/Tokens';
 import { PageHeader } from '../components/PageHeader';
+import { Breakpoints } from '../theme/Breakpoints';
+import { AppSymbols } from '../theme/AppSymbols';
+import { GlassBar } from '../components/GlassBar';
+import { GlassSheet } from '../components/GlassSheet';
+import { ImmersiveToolWindow } from '../theme/ImmersiveToolWindow';
+import { LengthMetrics } from '@kit.ArkUI';
 
-const NT_BG: string = '#00FFFFFF';
-const NT_CARD: string = '#CCFFFFFF';
-const NT_CARD_SOFT: string = '#B8FFFFFF';
-const NT_BRIEF: string = '#D9F3F7F1';
-const NT_LINE: string = '#E8EDEE';
-const NT_LINE_STRONG: string = '#D9E2DE';
-const NT_INK: string = '#303A35';
-const NT_INK_2: string = '#5C6860';
-const NT_INK_3: string = '#667166';
-const NT_CY: string = '#5E8F87';
-const NT_CY_DEEP: string = '#46776F';
-const NT_CY_INK: string = '#3F6F66';
-const NT_CY_TINT: string = '#EAF2EC';
-const NT_BL_INK: string = '#4E6D8C';
-const NT_BL_TINT: string = '#EDF2F7';
-const NT_SD_INK: string = '#8A643B';
-const NT_SD_TINT: string = '#FAF3E6';
-const NT_ROSE_INK: string = '#9C5147';
-const NT_ROSE_TINT: string = '#F7EDEB';
-const NT_VIOLET_INK: string = '#66579A';
-const NT_VIOLET_TINT: string = '#F1EEF7';
-const NT_GREY_INK: string = '#5F6A61';
-const NT_GREY_TINT: string = '#F0F2F1';
+const NT_CARD: Resource = $r('app.color.task_glass_card');
+const NT_CARD_SOFT: Resource = $r('app.color.task_glass_control');
+const NT_EDGE: Resource = $r('app.color.task_glass_edge');
+const NT_LINE: Resource = $r('app.color.notice_line');
+const NT_INK: Resource = $r('app.color.task_text');
+const NT_INK_2: Resource = $r('app.color.task_muted');
+const NT_CY_DEEP: Resource = $r('app.color.task_primary_button');
+const NT_CY_INK: Resource = $r('app.color.task_accent');
+const NT_CY_TINT: Resource = $r('app.color.task_control');
+const NT_BL_INK: Resource = $r('app.color.notice_blue_text');
+const NT_BL_TINT: Resource = $r('app.color.notice_blue_tint');
+const NT_SD_INK: Resource = $r('app.color.task_soon');
+const NT_SD_TINT: Resource = $r('app.color.notice_sand_tint');
+const NT_ROSE_INK: Resource = $r('app.color.task_urgent');
+const NT_ROSE_TINT: Resource = $r('app.color.notice_rose_tint');
+const NT_VIOLET_INK: Resource = $r('app.color.notice_violet_text');
+const NT_VIOLET_TINT: Resource = $r('app.color.notice_violet_tint');
+const NT_GREY_TINT: Resource = $r('app.color.notice_neutral_tint');
+
+@Styles function noticeCardSurface() {
+  .backgroundColor(NT_CARD)
+  .borderRadius(Tokens.RADIUS_CARD)
+  .border({ width: 0.5, color: NT_EDGE })
+}
+
+@Extend(Button) function noticeButton(selected: boolean = false) {
+  .type(ButtonType.Capsule)
+  .constraintSize({ minHeight: 44 })
+  .fontSize(Tokens.F_LABEL)
+  .fontColor(selected ? Color.White : NT_INK)
+  .backgroundColor(selected ? NT_CY_DEEP : NT_CARD_SOFT)
+  .border({ width: selected ? 0 : 0.5, color: NT_EDGE })
+  .padding({ left: Tokens.SPACE_12, right: Tokens.SPACE_12 })
+}
 
 /**
  * 通知工具：对齐「枫丹工具箱」微信小程序 pages/nt 的界面与口径。
@@ -58,9 +75,12 @@ const NT_GREY_TINT: string = '#F0F2F1';
 export struct NoticeScreen {
   @Prop noticeId: string = '';
   @State private focused: string = '';
+  @State private layoutWidth: number = 0;
+  @StorageProp('immersiveToolDark') @Watch('updateSystemBars') private darkMode: boolean = false;
   private receivedFocus: boolean = false;
   onClose: () => void = () => {
   };
+  onOpenWeb?: () => void;
 
   @State private cards: NoticeCard[] = [];
   @State private dataVersion: number = 0;
@@ -91,6 +111,7 @@ export struct NoticeScreen {
   private shareSpec: ExportCardSpec = new ExportCardSpec();
   private reloadTimer: number = -1;
   private active: boolean = false;
+  private toolWindow: ImmersiveToolWindow = new ImmersiveToolWindow();
   /** 正在按需拉取完整 body 的通知行 id（防重复请求）。 */
   private detailLoadingIds: string[] = [];
 
@@ -101,14 +122,20 @@ export struct NoticeScreen {
     return true;
   };
 
+  private updateSystemBars(): void {
+    this.toolWindow.setDark(this.active && this.darkMode);
+  }
+
   aboutToDisappear(): void {
     this.active = false;
+    this.updateSystemBars();
     if (AppGlobal.toolBack === this.sourceBack) AppGlobal.toolBack = undefined;
   }
 
   aboutToAppear(): void {
     this.active = true;
-    if (this.noticeId) AppGlobal.toolBack = this.sourceBack;
+    this.updateSystemBars();
+    AppGlobal.toolBack = this.sourceBack;
     HomeNtBadge.markOpened(Services.currentSid);
     // 先回放本机缓存（冷启动/弱网秒开），再后台刷新
     Services.notices.hydrate().then(() => {
@@ -204,7 +231,7 @@ export struct NoticeScreen {
     const result: NoticesResult = await Services.notices.load(force);
     const marksResult: MarksRefreshResult = await marksPromise;
     this.applyEntries(result.entries, result.ok);
-    if (!result.ok) {
+    if (!result.ok || result.message) {
       this.errorMsg = result.message;
     } else if (marksResult.error !== undefined) {
       this.errorMsg = '已处理状态同步失败：' + marksResult.error.displayMessage();
@@ -596,7 +623,7 @@ export struct NoticeScreen {
     }
   }
 
-  private catBg(cls: string): string {
+  private catBg(cls: string): Resource {
     if (cls === 'jw') {
       return NT_BL_TINT;
     }
@@ -615,7 +642,7 @@ export struct NoticeScreen {
     return NT_GREY_TINT;
   }
 
-  private catFg(cls: string): string {
+  private catFg(cls: string): Resource {
     if (cls === 'jw') {
       return NT_BL_INK;
     }
@@ -631,10 +658,10 @@ export struct NoticeScreen {
     if (cls === 'hd') {
       return NT_VIOLET_INK;
     }
-    return NT_GREY_INK;
+    return NT_INK_2;
   }
 
-  private statusBg(cls: string): string {
+  private statusBg(cls: string): Resource {
     if (cls === 'urgent' || cls === 'alert') {
       return NT_ROSE_TINT;
     }
@@ -650,7 +677,7 @@ export struct NoticeScreen {
     return NT_GREY_TINT;
   }
 
-  private statusFg(cls: string): string {
+  private statusFg(cls: string): Resource {
     if (cls === 'urgent' || cls === 'alert') {
       return NT_ROSE_INK;
     }
@@ -666,7 +693,7 @@ export struct NoticeScreen {
     return NT_INK_2;
   }
 
-  private typeChipBg(cls: string): string {
+  private typeChipBg(cls: string): Resource {
     if (cls === 'time' || cls === 'due') {
       return NT_SD_TINT;
     }
@@ -676,7 +703,7 @@ export struct NoticeScreen {
     return NT_GREY_TINT;
   }
 
-  private typeChipFg(cls: string): string {
+  private typeChipFg(cls: string): Resource {
     if (cls === 'time' || cls === 'due') {
       return NT_SD_INK;
     }
@@ -687,12 +714,12 @@ export struct NoticeScreen {
   }
 
   @Builder
-  miniTag(text: string, bg: string, fg: string) {
+  miniTag(text: string, bg: Resource, fg: Resource) {
     Text(text)
-      .fontSize(10)
+      .fontSize(Tokens.F_CAPTION)
       .fontColor(fg)
       .backgroundColor(bg)
-      .borderRadius(5)
+      .borderRadius(Tokens.SPACE_6)
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .maxLines(1)
       .margin({ right: 6, bottom: 2 })
@@ -700,32 +727,16 @@ export struct NoticeScreen {
 
   @Builder
   filterChip(value: string, text: string) {
-    Text(text)
-      .fontSize(12)
-      .fontColor((this.filter === value && this.cardKey.length === 0) ? '#FFFFFF' : NT_INK_2)
-      .backgroundColor((this.filter === value && this.cardKey.length === 0) ? NT_CY_DEEP : NT_CARD)
-      .border({ width: 1, color: (this.filter === value && this.cardKey.length === 0) ? NT_CY_DEEP : NT_LINE })
-      .borderRadius(999)
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .margin({ right: 8, bottom: 8 })
-      .onClick(() => {
-        this.pickFilter(value);
-      })
+    Button(text).noticeButton(this.filter === value && this.cardKey.length === 0)
+      .onClick(() => { this.pickFilter(value); })
   }
 
   @Builder
-  hiddenChip() {
-    Text('已隐藏' + (this.hiddenIds.length > 0 ? ' ' + this.hiddenIds.length : ''))
-      .fontSize(12)
-      .fontColor((this.filter === 'hidden' && this.cardKey.length === 0) ? '#FFFFFF' : NT_INK_2)
-      .backgroundColor((this.filter === 'hidden' && this.cardKey.length === 0) ? NT_CY_DEEP : NT_CARD)
-      .border({ width: 1, color: (this.filter === 'hidden' && this.cardKey.length === 0) ? NT_CY_DEEP : NT_LINE })
-      .borderRadius(999)
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .margin({ right: 8, bottom: 8 })
-      .onClick(() => {
-        this.pickFilter('hidden');
-      })
+  categoryChip(value: string, text: string) {
+    Button(text).noticeButton()
+      .backgroundColor(this.cat === value ? NT_CY_TINT : NT_CARD_SOFT)
+      .fontColor(this.cat === value ? NT_CY_INK : NT_INK)
+      .onClick(() => { this.cat = value; })
   }
 
   private statValue(key: string): string {
@@ -770,17 +781,16 @@ export struct NoticeScreen {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Text(this.statLabel(key))
-        .fontSize(10)
+        .fontSize(Tokens.F_CAPTION)
         .fontColor(this.cardKey === key ? '#FFFFFF' : NT_INK_2)
         .margin({ top: 2 })
     }
-    .width(key === 'longterm' || key === 'latest' ? '47%' : '30%')
-    .height(56)
+    .layoutWeight(1)
+    .constraintSize({ minHeight: 60 })
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.cardKey === key ? NT_CY_DEEP : NT_CARD)
-    .border({ width: 1, color: this.cardKey === key ? NT_CY_DEEP : NT_LINE })
-    .borderRadius(10)
-    .margin({ right: 8, bottom: 8 })
+    .backgroundColor(this.cardKey === key ? NT_CY_DEEP : NT_CARD_SOFT)
+    .border({ width: 0.5, color: this.cardKey === key ? NT_CY_DEEP : NT_EDGE })
+    .borderRadius(Tokens.RADIUS_INPUT)
     .onClick(() => {
       this.pickCard(key);
     })
@@ -790,25 +800,26 @@ export struct NoticeScreen {
   sectionHeader(title: string, count: number, foldable: boolean, open: boolean, onTap: () => void) {
     Row() {
       Text(title)
-        .fontSize(13)
+        .fontSize(Tokens.F_HEADING)
         .fontWeight(FontWeight.Medium)
         .fontColor(NT_INK_2)
       Text(' · ' + count)
-        .fontSize(11)
-        .fontColor(NT_INK_3)
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(NT_INK_2)
       Blank()
       if (foldable) {
         Row({ space: 2 }) {
           Text(open ? '收起' : '展开')
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_CY_INK)
           SymbolGlyph(open ? $r('sys.symbol.arrow_up') : $r('sys.symbol.arrow_down'))
-            .fontSize(10)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor([NT_CY_INK])
         }
       }
     }
     .width('100%')
+    .constraintSize({ minHeight: 44 })
     .padding({ left: 2, right: 2, top: 10, bottom: 6 })
     .onClick(() => {
       if (foldable) {
@@ -821,15 +832,16 @@ export struct NoticeScreen {
   segmentRow(segment: NoticeSegment) {
     Row() {
       Text(segment.type)
-        .fontSize(10)
+        .fontSize(Tokens.F_CAPTION)
         .fontColor(this.typeChipFg(NoticeCards.segClsOf(segment.type)))
         .backgroundColor(this.typeChipBg(NoticeCards.segClsOf(segment.type)))
-        .borderRadius(5)
+        .borderRadius(Tokens.SPACE_6)
         .padding({ left: 6, right: 6, top: 2, bottom: 2 })
         .width(54)
         .textAlign(TextAlign.Center)
       Text(segment.text)
-        .fontSize(12)
+        .fontSize(Tokens.F_BODY)
+        .lineHeight(23)
         .fontColor(NT_INK)
         .layoutWeight(1)
         .margin({ left: 8 })
@@ -845,8 +857,8 @@ export struct NoticeScreen {
     if (item.kind === 'file') {
       Row() {
         Text(item.extText.length > 0 ? item.extText : '文件')
-          .fontSize(10)
-          .fontColor(NT_GREY_INK)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(NT_INK_2)
           .backgroundColor(NT_GREY_TINT)
           .borderRadius(6)
           .width(38)
@@ -859,8 +871,8 @@ export struct NoticeScreen {
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(item.sizeText.length > 0 ? item.sizeText : '附件')
-            .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(NT_INK_2)
             .margin({ top: 2 })
         }
         .layoutWeight(1)
@@ -868,22 +880,22 @@ export struct NoticeScreen {
         .margin({ left: 8 })
         if (item.hasUrl) {
           Text('打开')
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_CY_INK)
             .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-            .border({ width: 1, color: NT_LINE_STRONG })
-            .borderRadius(999)
+            .border({ width: 1, color: NT_LINE })
+            .borderRadius(Tokens.RADIUS_PILL)
             .onClick(() => {
               this.openUrl(item.url);
             })
         } else if (item.archiveOk) {
           Text('已识别 ' + item.archiveCount)
-            .fontSize(10)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_BL_INK)
         } else {
           Text(item.lazy ? '点此加载' : '待获取')
-            .fontSize(10)
-            .fontColor(item.lazy ? NT_CY_INK : NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(item.lazy ? NT_CY_INK : NT_INK_2)
             .onClick(() => {
               if (item.lazy) {
                 this.loadDetailByKey(cardKey);
@@ -899,8 +911,8 @@ export struct NoticeScreen {
         Column() {
           if (item.archiveSummary.length > 0) {
             Text(item.archiveSummary)
-              .fontSize(10)
-              .fontColor(NT_INK_3)
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(NT_INK_2)
               .width('100%')
               .maxLines(2)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -908,21 +920,21 @@ export struct NoticeScreen {
           ForEach(item.archiveFiles, (af: NoticeArchiveFile, afIndex: number) => {
             Row() {
               Text(af.extText)
-                .fontSize(9)
+                .fontSize(Tokens.F_CAPTION)
                 .fontColor(NT_INK_2)
                 .width(30)
               Text(af.name)
-                .fontSize(11)
+                .fontSize(Tokens.F_CAPTION)
                 .fontColor(NT_INK)
                 .layoutWeight(1)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text(af.sizeText)
-                .fontSize(9)
-                .fontColor(NT_INK_3)
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(NT_INK_2)
               Text(af.hasUrl ? '可预览' : '仅清单')
-                .fontSize(9)
-                .fontColor(af.hasUrl ? NT_CY_INK : NT_INK_3)
+                .fontSize(Tokens.F_CAPTION)
+                .fontColor(af.hasUrl ? NT_CY_INK : NT_INK_2)
                 .margin({ left: 8 })
             }
             .width('100%')
@@ -935,7 +947,7 @@ export struct NoticeScreen {
     } else if (item.kind === 'form') {
       Row() {
         Text('表')
-          .fontSize(11)
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_CY_INK)
           .backgroundColor(NT_CY_TINT)
           .borderRadius(6)
@@ -949,8 +961,8 @@ export struct NoticeScreen {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(item.statusText + (item.note.length > 0 ? ' · ' + item.note : ''))
-            .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(NT_INK_2)
             .margin({ top: 2 })
         }
         .layoutWeight(1)
@@ -958,15 +970,15 @@ export struct NoticeScreen {
         .margin({ left: 8 })
         if (item.hasUrl) {
           Text('打开')
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_CY_INK)
             .onClick(() => {
               this.openUrl(item.url);
             })
         } else {
           Text('QQ 表单')
-            .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(NT_INK_2)
         }
       }
       .width('100%')
@@ -981,8 +993,8 @@ export struct NoticeScreen {
             .fontColor(NT_INK)
             .layoutWeight(1)
           Text(item.count + ' 条')
-            .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(NT_INK_2)
         }
         .width('100%')
         ForEach(item.messages, (msg: NoticeMsgMeta, msgIndex: number) => {
@@ -990,22 +1002,22 @@ export struct NoticeScreen {
             Row({ space: 6 }) {
               if (msg.fromBadge.length > 0) {
                 Text(msg.fromBadge)
-                  .fontSize(9)
+                  .fontSize(Tokens.F_CAPTION)
                   .fontColor(NT_BL_INK)
               }
               if (msg.fromName.length > 0) {
                 Text(msg.fromName)
-                  .fontSize(10)
-                  .fontColor(NT_INK_3)
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(NT_INK_2)
               }
               if (msg.timeText.length > 0) {
                 Text(msg.timeText)
-                  .fontSize(9)
-                  .fontColor(NT_INK_3)
+                  .fontSize(Tokens.F_CAPTION)
+                  .fontColor(NT_INK_2)
               }
             }
             Text(msg.text)
-              .fontSize(11)
+              .fontSize(Tokens.F_CAPTION)
               .fontColor(NT_INK)
               .width('100%')
               .margin({ top: 2 })
@@ -1022,7 +1034,7 @@ export struct NoticeScreen {
     } else if (item.kind === 'link' || item.kind === 'mini' || item.kind === 'article') {
       Row() {
         Text(item.kind === 'article' ? '公' : (item.kind === 'mini' ? '程' : '链'))
-          .fontSize(11)
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_INK_2)
           .backgroundColor(NT_GREY_TINT)
           .borderRadius(6)
@@ -1037,8 +1049,8 @@ export struct NoticeScreen {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(item.account.length > 0 ? item.account
             : (item.host.length > 0 ? item.host : (item.note.length > 0 ? item.note : '外部链接')))
-            .fontSize(10)
-            .fontColor(NT_INK_3)
+            .fontSize(Tokens.F_CAPTION)
+            .fontColor(NT_INK_2)
             .margin({ top: 2 })
         }
         .layoutWeight(1)
@@ -1046,7 +1058,7 @@ export struct NoticeScreen {
         .margin({ left: 8 })
         if (item.hasUrl) {
           Text('打开')
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_CY_INK)
             .onClick(() => {
               this.openUrl(item.url);
@@ -1070,8 +1082,8 @@ export struct NoticeScreen {
           })
       } else {
         Text(item.text.length > 0 ? item.text : '图片')
-          .fontSize(11)
-          .fontColor(item.lazy ? NT_CY_INK : NT_INK_3)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(item.lazy ? NT_CY_INK : NT_INK_2)
           .width('48.5%')
           .height(110)
           .textAlign(TextAlign.Center)
@@ -1099,11 +1111,11 @@ export struct NoticeScreen {
           this.miniTag('OCR', NT_GREY_TINT, NT_INK_2)
         }
         Text(card.statusLabel)
-          .fontSize(10)
+          .fontSize(Tokens.F_CAPTION)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.statusFg(card.statusCls))
           .backgroundColor(this.statusBg(card.statusCls))
-          .borderRadius(999)
+          .borderRadius(Tokens.RADIUS_PILL)
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .maxLines(1)
           .margin({ right: 6, bottom: 2 })
@@ -1114,21 +1126,15 @@ export struct NoticeScreen {
           this.miniTag('已更新', NT_SD_TINT, NT_SD_INK)
         }
         if (card.hasRaw) {
-          Text('原始消息')
-            .fontSize(10)
-            .fontColor(NT_INK_3)
-            .padding({ left: 4, right: 4, top: 4, bottom: 4 })
-            .onClick(() => {
-              this.openRaw(card);
-            })
+          Button('原始消息').noticeButton().onClick(() => { this.openRaw(card); })
         }
       }
       .width('100%')
 
       Text(card.title)
-        .fontSize(16)
+        .fontSize(this.focused === card.key ? Tokens.F_TITLE : Tokens.F_HEADING)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.isDone(card.key) ? NT_INK_3 : NT_INK)
+        .fontColor(this.isDone(card.key) ? NT_INK_2 : NT_INK)
         .decoration({ type: this.isDone(card.key) ? TextDecorationType.LineThrough : TextDecorationType.None })
         .width('100%')
         .maxLines(3)
@@ -1142,30 +1148,30 @@ export struct NoticeScreen {
               Circle()
                 .width(5)
                 .height(5)
-                .fill(card.sourceKind === 'qq' ? NT_BL_INK : (card.sourceKind === 'wx' ? NT_CY : NT_INK_3))
+                .fill(card.sourceKind === 'qq' ? NT_BL_INK : (card.sourceKind === 'wx' ? NT_CY_INK : NT_INK_2))
               Text(card.source)
-                .fontSize(10)
+                .fontSize(Tokens.F_CAPTION)
                 .fontColor(NT_INK_2)
                 .margin({ left: 4 })
             }
             .padding({ left: 8, right: 8, top: 2, bottom: 2 })
             .border({ width: 1, color: NT_LINE })
-            .borderRadius(999)
+            .borderRadius(Tokens.RADIUS_PILL)
             .margin({ right: 8, top: 4 })
           }
           if (card.senderBadge.length > 0) {
             Text(card.senderBadge)
-              .fontSize(9)
+              .fontSize(Tokens.F_CAPTION)
               .fontColor(NT_BL_INK)
               .backgroundColor(NT_BL_TINT)
-              .borderRadius(5)
+              .borderRadius(Tokens.SPACE_6)
               .padding({ left: 4, right: 4, top: 2, bottom: 2 })
               .margin({ right: 6, top: 4 })
           }
           if (card.senderName.length > 0) {
             Text(card.senderName)
-              .fontSize(10)
-              .fontColor(NT_INK_3)
+              .fontSize(Tokens.F_CAPTION)
+              .fontColor(NT_INK_2)
               .margin({ top: 4 })
           }
         }
@@ -1176,7 +1182,7 @@ export struct NoticeScreen {
       if (card.recurring && card.nextText.length > 0) {
         Row() {
           Text('下次 ' + card.nextText)
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_BL_INK)
         }
         .width('100%')
@@ -1190,20 +1196,21 @@ export struct NoticeScreen {
         Column() {
           Row() {
             Text('AI')
-              .fontSize(9)
+              .fontSize(Tokens.F_CAPTION)
               .fontWeight(FontWeight.Bold)
               .fontColor(NT_CY_INK)
               .backgroundColor(NT_CY_TINT)
               .borderRadius(4)
               .padding({ left: 4, right: 4, top: 2, bottom: 2 })
             Text('摘要')
-              .fontSize(10)
+              .fontSize(Tokens.F_CAPTION)
               .fontWeight(FontWeight.Medium)
               .fontColor(NT_CY_INK)
               .margin({ left: 4 })
           }
           Text(card.aiSummary)
-            .fontSize(12)
+            .fontSize(Tokens.F_BODY)
+            .lineHeight(23)
             .fontColor(NT_INK)
             .width('100%')
             .maxLines(this.isExpanded(card.key) ? 30 : 4)
@@ -1213,10 +1220,10 @@ export struct NoticeScreen {
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(card.points, (point: string, pointIndex: number) => {
                 Text(point)
-                  .fontSize(10)
+                  .fontSize(Tokens.F_CAPTION)
                   .fontColor(NT_CY_INK)
                   .backgroundColor(NT_CY_TINT)
-                  .borderRadius(5)
+                  .borderRadius(Tokens.SPACE_6)
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                   .margin({ right: 6, bottom: 4 })
               }, (point: string, pointIndex: number) => card.key + '_pt' + pointIndex)
@@ -1226,16 +1233,16 @@ export struct NoticeScreen {
           }
         }
         .width('100%')
-        .padding(8)
+        .padding(Tokens.SPACE_12)
         .backgroundColor(NT_CARD_SOFT)
-        .borderRadius(9)
+        .borderRadius(Tokens.RADIUS_INPUT)
         .margin({ top: 8 })
       }
 
       if (!this.isExpanded(card.key) && card.moreText.length > 0) {
         Text(card.moreText)
-          .fontSize(10)
-          .fontColor(NT_INK_3)
+          .fontSize(Tokens.F_CAPTION)
+          .fontColor(NT_INK_2)
           .width('100%')
           .margin({ top: 8 })
       }
@@ -1269,24 +1276,24 @@ export struct NoticeScreen {
                 Column() {
                   Row({ space: 6 }) {
                     Text(quote.label)
-                      .fontSize(9)
+                      .fontSize(Tokens.F_CAPTION)
                       .fontColor(NT_SD_INK)
                       .backgroundColor(NT_SD_TINT)
                       .borderRadius(4)
                       .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                     if (quote.fromName.length > 0) {
                       Text(quote.fromName)
-                        .fontSize(9)
-                        .fontColor(NT_INK_3)
+                        .fontSize(Tokens.F_CAPTION)
+                        .fontColor(NT_INK_2)
                     }
                     if (quote.timeText.length > 0) {
                       Text(quote.timeText)
-                        .fontSize(9)
-                        .fontColor(NT_INK_3)
+                        .fontSize(Tokens.F_CAPTION)
+                        .fontColor(NT_INK_2)
                     }
                   }
                   Text(quote.text)
-                    .fontSize(11)
+                    .fontSize(Tokens.F_CAPTION)
                     .fontColor(NT_INK)
                     .width('100%')
                     .maxLines(6)
@@ -1309,16 +1316,16 @@ export struct NoticeScreen {
               ForEach(card.compose, (chip: NoticeComposeChip, chipIndex: number) => {
                 Row() {
                   Text('' + chip.n)
-                    .fontSize(9)
+                    .fontSize(Tokens.F_CAPTION)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(NT_CY_INK)
                   Text(' ' + chip.label)
-                    .fontSize(9)
+                    .fontSize(Tokens.F_CAPTION)
                     .fontColor(NT_INK_2)
                 }
                 .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                 .border({ width: 1, color: NT_LINE })
-                .borderRadius(999)
+                .borderRadius(Tokens.RADIUS_PILL)
                 .margin({ right: 6, bottom: 4 })
               }, (chip: NoticeComposeChip, chipIndex: number) => card.key + '_cp' + chipIndex)
             }
@@ -1330,81 +1337,34 @@ export struct NoticeScreen {
         .animation({ duration: Motion.FAST, curve: Motion.ease() })
       }
 
-      Row({ space: 8 }) {
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Tokens.GAP_SM), cross: LengthMetrics.vp(Tokens.GAP_SM) } }) {
         if (!card.definition) {
-          Text(this.isDone(card.key) ? (card.occurrence ? '本期已处理' : '已处理')
+          Button(this.isDone(card.key) ? (card.occurrence ? '本期已处理' : '已处理')
             : (card.occurrence ? '本次已处理' : '标记已处理'))
-            .fontSize(11)
-            .fontColor(this.isDone(card.key) ? NT_CY_INK : NT_INK_2)
-            .backgroundColor(this.isDone(card.key) ? NT_CY_TINT : NT_GREY_TINT)
-            .borderRadius(999)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.toggleDone(card);
-            })
+            .noticeButton(!this.isDone(card.key)).onClick(() => { this.toggleDone(card); })
         }
         if (!card.definition && !card.hiddenLocal) {
-          Text('加入任务')
-            .fontSize(11).fontColor(NT_CY_INK).backgroundColor(NT_CY_TINT).borderRadius(999)
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-            .onClick(() => this.addTask(card))
+          Button('加入任务').noticeButton().onClick(() => { this.addTask(card); })
         }
         if (card.hiddenLocal) {
-          Text('恢复')
-            .fontSize(11)
-            .fontColor(NT_CY_INK)
-            .backgroundColor(NT_CARD)
-            .border({ width: 1, color: NT_LINE })
-            .borderRadius(999)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.restoreCard(card);
-            })
+          Button('恢复').noticeButton().onClick(() => { this.restoreCard(card); })
         } else if (card.entry !== undefined) {
-          Text('隐藏')
-            .fontSize(11)
-            .fontColor(NT_INK_3)
-            .backgroundColor(NT_CARD)
-            .border({ width: 1, color: NT_LINE })
-            .borderRadius(999)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.hideCard(card);
-            })
+          Button('隐藏').noticeButton().onClick(() => { this.hideCard(card); })
         }
-        Text('分享')
-          .fontSize(11)
-          .fontColor(NT_INK_2)
-          .backgroundColor(NT_CARD)
-          .border({ width: 1, color: NT_LINE })
-          .borderRadius(999)
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .onClick(() => {
-            this.shareCard(card);
-          })
-        Blank()
+        Button('分享').noticeButton().onClick(() => { this.shareCard(card); })
         if (card.hasDetail) {
-          Text(this.isExpanded(card.key) ? '收起' : '展开')
-            .fontSize(11)
-            .fontColor(NT_CY_INK)
-            .backgroundColor(NT_CARD)
-            .border({ width: 1, color: NT_LINE })
-            .borderRadius(999)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.toggleExpand(card.key);
-            })
+          Button(this.isExpanded(card.key) ? '收起' : '展开').noticeButton().onClick(() => { this.toggleExpand(card.key); })
         }
       }
       .width('100%')
       .margin({ top: 8 })
     }
     .width('100%')
-    .padding(12)
+    .padding(Tokens.CARD_PADDING)
     .backgroundColor(this.isDone(card.key) || card.expired ? NT_CARD_SOFT : NT_CARD)
-    .borderRadius(14)
-    .border({ width: 1, color: card.occurrence ? '#BFD3E3' : NT_LINE })
-    .margin({ bottom: 10 })
+    .borderRadius(Tokens.RADIUS_CARD)
+    .border({ width: 0.5, color: card.occurrence ? NT_LINE : NT_EDGE })
+    .margin({ bottom: Tokens.GAP })
     .opacity(this.entered ? 1 : 0)
     .translate({ y: this.entered ? 0 : 8 })
     .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
@@ -1436,72 +1396,62 @@ export struct NoticeScreen {
   @Builder
   emptyState(title: string, text: string) {
     Column({ space: 6 }) {
-      SymbolGlyph($r('sys.symbol.bell'))
+      SymbolGlyph(AppSymbols.NOTICE)
         .fontSize(30)
         .fontWeight(FontWeight.Medium)
-        .fontColor([NT_INK_3])
+        .fontColor([NT_INK_2])
         .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
       Text(title)
-        .fontSize(14)
+        .fontSize(Tokens.F_BODY)
         .fontColor(NT_INK)
       Text(text)
-        .fontSize(11)
-        .fontColor(NT_INK_3)
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(NT_INK_2)
         .textAlign(TextAlign.Center)
     }
     .width('100%')
     .padding({ top: 32, bottom: 32 })
-    .backgroundColor(NT_CARD)
-    .border({ width: 0.5, color: '#59FFFFFF' })
-    .borderRadius(14)
-    .border({ width: 1, color: NT_LINE })
+    .noticeCardSurface()
   }
 
   @Builder
   briefCard() {
-    Column() {
-      Row() {
+    Column({ space: Tokens.GAP_SM }) {
+      Row({ space: Tokens.GAP_SM }) {
+        SymbolGlyph(AppSymbols.NOTICE).fontSize(22).fontColor([NT_CY_INK])
         Text('待处理简报')
-          .fontSize(11)
+          .fontSize(Tokens.F_HEADING)
           .fontWeight(FontWeight.Bold)
-          .fontColor(NT_CY_INK)
-        Text(this.stats.pending > 0 ? this.stats.pending + ' 项待处理' : '无待处理')
-          .fontSize(9)
-          .fontColor(NT_CY_INK)
-          .backgroundColor(NT_CARD)
-          .border({ width: 0.5, color: '#59FFFFFF' })
-          .borderRadius(999)
-          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-          .margin({ left: 8 })
-        Blank()
+          .fontColor(NT_INK)
+          .layoutWeight(1)
         Text(NoticeStatus.pad2(new Date(this.now).getMonth() + 1) + '-' + NoticeStatus.pad2(new Date(this.now).getDate()))
-          .fontSize(10)
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_INK_2)
       }
       .width('100%')
 
-      Flex({ wrap: FlexWrap.Wrap }) {
+      Row({ space: Tokens.GAP_SM }) {
         this.dataCard('pending')
         this.dataCard('urgent')
         this.dataCard('week')
+      }.width('100%')
+      Row({ space: Tokens.GAP_SM }) {
         this.dataCard('longterm')
         this.dataCard('latest')
-      }
-      .width('100%')
-      .margin({ top: 10 })
+      }.width('100%')
 
       if (this.brief.length > 0) {
         Column() {
           ForEach(this.brief, (card: NoticeCard, index: number) => {
             Row() {
               Text(card.title)
-                .fontSize(11)
+                .fontSize(Tokens.F_CAPTION)
                 .fontColor(NT_INK)
                 .layoutWeight(1)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text(card.statusLabel)
-                .fontSize(9)
+                .fontSize(Tokens.F_CAPTION)
                 .fontColor(card.statusCls === 'urgent' ? NT_ROSE_INK : NT_INK_2)
                 .margin({ left: 8 })
             }
@@ -1520,8 +1470,9 @@ export struct NoticeScreen {
       }
 
       Row() {
-        Text(this.syncing ? '同步中…' : '已同步 · ' + new Date(this.now).getHours() + ':' + NoticeStatus.pad2(new Date(this.now).getMinutes()))
-          .fontSize(9)
+        Text(this.syncing ? '同步中…' : this.errorMsg ? (this.cards.length ? '本机缓存' : '暂未同步') :
+          '已同步 · ' + new Date(this.now).getHours() + ':' + NoticeStatus.pad2(new Date(this.now).getMinutes()))
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_INK_2)
           .layoutWeight(1)
       }
@@ -1529,10 +1480,8 @@ export struct NoticeScreen {
       .margin({ top: 6 })
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor(NT_BRIEF)
-    .borderRadius(14)
-    .border({ width: 1, color: NT_LINE })
+    .padding(Tokens.CARD_PADDING)
+    .noticeCardSurface()
   }
 
   @Builder
@@ -1543,7 +1492,7 @@ export struct NoticeScreen {
         this.miniTag('长期安排', NT_BL_TINT, NT_BL_INK)
         Blank()
         Text('进行中')
-          .fontSize(10)
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_CY_INK)
       }
       .width('100%')
@@ -1556,12 +1505,12 @@ export struct NoticeScreen {
         .margin({ top: 6 })
       Row() {
         Text(card.recurLabel)
-          .fontSize(11)
+          .fontSize(Tokens.F_CAPTION)
           .fontColor(NT_BL_INK)
           .layoutWeight(1)
         if (card.nextCnText.length > 0) {
           Text(card.nextCnText)
-            .fontSize(11)
+            .fontSize(Tokens.F_CAPTION)
             .fontColor(NT_INK_2)
         }
       }
@@ -1569,12 +1518,9 @@ export struct NoticeScreen {
       .margin({ top: 4 })
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor(NT_CARD)
-    .border({ width: 0.5, color: '#59FFFFFF' })
-    .borderRadius(14)
-    .border({ width: 1, color: NT_LINE })
-    .margin({ bottom: 10 })
+    .padding(Tokens.CARD_PADDING)
+    .noticeCardSurface()
+    .margin({ bottom: Tokens.GAP })
   }
 
   @State private headerFade: number = 0;
@@ -1582,8 +1528,14 @@ export struct NoticeScreen {
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       PageHeader({
-      progress: this.headerFade,
+        taskColors: true,
+        showAmbientBackground: true,
+        progress: this.headerFade,
         title: '通知',
+        actionText: this.onOpenWeb ? '网页通知' : '',
+        onAction: () => { this.onOpenWeb?.(); },
+        actionText2: '刷新通知',
+        onAction2: () => { this.pullRefresh(); },
         scroller: this.scroller,
         onBack: () => {
           this.onClose();
@@ -1592,9 +1544,9 @@ export struct NoticeScreen {
         Column() {
           if (this.loading) {
           Column({ space: 10 }) {
-            LoadingProgress().width(30).height(30).color(NT_CY)
+            LoadingProgress().width(30).height(30).color(NT_CY_INK)
             Text('正在读取通知…')
-              .fontSize(11)
+              .fontSize(Tokens.F_CAPTION)
               .fontColor(NT_INK_2)
           }
           .width('100%')
@@ -1605,70 +1557,47 @@ export struct NoticeScreen {
           Scroll(this.scroller) {
             Column() {
               if (this.focused && this.cardByKey(this.focused)) {
-                this.noticeCard(this.cardByKey(this.focused)!)
-                Button('查看全部通知').onClick(() => { this.focused = ''; })
+                ForEach([this.cardByKey(this.focused)!], (card: NoticeCard) => {
+                  this.noticeCard(card)
+                }, (card: NoticeCard) => card.key + '_' + this.isDone(card.key) + '_' +
+                  this.isExpanded(card.key) + '_' + card.hiddenLocal + '_' + this.dataVersion)
               } else {
               this.briefCard()
 
               if (this.errorMsg.length > 0) {
-                Text(this.errorMsg)
-                  .fontSize(10)
-                  .fontColor(NT_ROSE_INK)
-                  .width('100%')
-                  .margin({ top: 6 })
+                Row({ space: Tokens.GAP_SM }) {
+                  Text(this.errorMsg).fontSize(Tokens.F_LABEL).fontColor(NT_ROSE_INK).layoutWeight(1)
+                  Button('重试').noticeButton().onClick(() => { this.pullRefresh(); })
+                }.width('100%').padding(Tokens.GAP).margin({ top: Tokens.GAP }).noticeCardSurface()
               }
 
-              Column() {
-                Flex({ wrap: FlexWrap.Wrap }) {
+              Column({ space: Tokens.GAP_SM }) {
+                Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Tokens.GAP_SM), cross: LengthMetrics.vp(Tokens.GAP_SM) } }) {
                   this.filterChip('all', '全部')
                   this.filterChip('active', '待处理')
                   this.filterChip('expired', '已截止')
-                  this.hiddenChip()
+                  this.filterChip('hidden', '已隐藏' + (this.hiddenIds.length ? ' ' + this.hiddenIds.length : ''))
                 }
                 .width('100%')
-                Flex({ wrap: FlexWrap.Wrap }) {
-                  Text('全部分类')
-                    .fontSize(11)
-                    .fontColor(this.cat === '全部' ? NT_CY_INK : NT_INK_2)
-                    .backgroundColor(this.cat === '全部' ? NT_CY_TINT : NT_CARD)
-                    .border({ width: 1, color: this.cat === '全部' ? NT_CY : NT_LINE })
-                    .borderRadius(999)
-                    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                    .margin({ right: 8, bottom: 8 })
-                    .onClick(() => {
-                      this.cat = '全部';
-                    })
-                  ForEach(this.categories, (cat: string, index: number) => {
-                    Text(cat)
-                      .fontSize(11)
-                      .fontColor(this.cat === cat ? NT_CY_INK : NT_INK_2)
-                      .backgroundColor(this.cat === cat ? NT_CY_TINT : NT_CARD)
-                      .border({ width: 1, color: this.cat === cat ? NT_CY : NT_LINE })
-                      .borderRadius(999)
-                      .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                      .margin({ right: 8, bottom: 8 })
-                      .onClick(() => {
-                        this.cat = cat;
-                      })
-                  }, (cat: string, index: number) => 'cat_' + cat)
+                if (this.categories.length) {
+                  Scroll() {
+                    Row({ space: Tokens.GAP_SM }) {
+                      this.categoryChip('全部', '全部分类')
+                      ForEach(this.categories, (cat: string) => { this.categoryChip(cat, cat) }, (cat: string) => cat)
+                    }
+                  }.width('100%').align(Alignment.Start).scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off)
                 }
-                .width('100%')
               }
               .width('100%')
-              .margin({ top: 4 })
+              .margin({ top: Tokens.GAP })
 
               if (this.filter === 'hidden' && this.hiddenIds.length > 0) {
                 Row() {
                   Text('已隐藏 ' + this.hiddenIds.length + ' 条（仅自己不可见）')
-                    .fontSize(10)
-                    .fontColor(NT_INK_3)
+                    .fontSize(Tokens.F_CAPTION)
+                    .fontColor(NT_INK_2)
                     .layoutWeight(1)
-                  Text('全部恢复')
-                    .fontSize(11)
-                    .fontColor(NT_CY_INK)
-                    .onClick(() => {
-                      this.restoreAll();
-                    })
+                  Button('全部恢复').noticeButton().onClick(() => { this.restoreAll(); })
                 }
                 .width('100%')
                 .padding({ left: 2, right: 2, top: 4, bottom: 4 })
@@ -1677,13 +1606,13 @@ export struct NoticeScreen {
               if (this.mode() === 'longterm') {
                 Row() {
                   Text(this.longtermList().length + ' 组')
-                    .fontSize(11)
+                    .fontSize(Tokens.F_CAPTION)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(NT_INK_2)
                   Blank()
                   Text('仅进行中的长期安排')
-                    .fontSize(10)
-                    .fontColor(NT_INK_3)
+                    .fontSize(Tokens.F_CAPTION)
+                    .fontColor(NT_INK_2)
                 }
                 .width('100%')
                 .padding({ left: 2, right: 2, top: 8, bottom: 6 })
@@ -1697,18 +1626,18 @@ export struct NoticeScreen {
               } else {
                 Row() {
                   Text(this.currentCards().length + ' 组')
-                    .fontSize(11)
+                    .fontSize(Tokens.F_CAPTION)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(NT_INK_2)
                   if (this.mode() === 'latest') {
                     Text('按发布时间倒序')
-                      .fontSize(10)
-                      .fontColor(NT_INK_3)
+                      .fontSize(Tokens.F_CAPTION)
+                      .fontColor(NT_INK_2)
                       .margin({ left: 8 })
                   } else if (this.mode() === 'active') {
                     Text('未过期默认展开')
-                      .fontSize(10)
-                      .fontColor(NT_INK_3)
+                      .fontSize(Tokens.F_CAPTION)
+                      .fontColor(NT_INK_2)
                       .margin({ left: 8 })
                   }
                   Blank()
@@ -1766,17 +1695,18 @@ export struct NoticeScreen {
               }
 
               }
-              Blank().height(44)
             }
             .width('100%')
-            .padding({ left: 14, right: 14, top: 4, bottom: 8 })
+            .constraintSize({ maxWidth: 820 })
+            .padding({ left: Breakpoints.pagePadding(this.layoutWidth), right: Breakpoints.pagePadding(this.layoutWidth),
+              top: Tokens.SPACE_8, bottom: Tokens.SPACE_24 })
           }
           .width('100%')
           .height('100%')
           .align(Alignment.Top)
           .scrollBar(BarState.Off)
-          .onDidScroll((offset: number) => {
-            const next: number = offset <= 0 ? 0 : (offset >= 56 ? 1 : offset / 56);
+          .onDidScroll(() => {
+            const next = Math.min(1, Math.max(0, this.scroller.currentOffset().yOffset / 56));
             if (Math.abs(next - this.headerFade) > 0.03) {
               this.headerFade = next;
             }
@@ -1788,6 +1718,16 @@ export struct NoticeScreen {
           .onRefreshing(() => {
             this.pullRefresh();
           })
+          if (this.focused && this.cardByKey(this.focused)) {
+            Column() {
+              GlassBar({ surface: $r('app.color.task_glass_bar'), edge: NT_EDGE, inset: Breakpoints.pagePadding(this.layoutWidth) }) {
+                Button('查看全部通知').noticeButton(true).layoutWeight(1).onClick(() => {
+                  this.focused = '';
+                  this.scroller.scrollEdge(Edge.Top);
+                })
+              }
+            }.constraintSize({ maxWidth: 820 })
+          }
         }
         }
         .width('100%')
@@ -1796,61 +1736,59 @@ export struct NoticeScreen {
       }
 
       if (this.rawOpen) {
-        Column() {
-          Column() {
-            Row() {
+        GlassSheet({ panelHeight: '68%', maxWidth: 820, surface: $r('app.color.notice_panel'), edge: NT_EDGE,
+          onDismiss: () => { this.closeRaw(); } }) {
+            Row({ space: Tokens.GAP_SM }) {
               Text(this.rawTitle)
-                .fontSize(14)
+                .fontSize(Tokens.F_HEADING)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(NT_INK)
                 .layoutWeight(1)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text('关闭')
-                .fontSize(11)
-                .fontColor(NT_CY_INK)
-                .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-                .onClick(() => {
-                  this.closeRaw();
-                })
+              Button('关闭').noticeButton().onClick(() => { this.closeRaw(); })
             }
             .width('100%')
-            .padding({ left: 16, right: 10, top: 12, bottom: 8 })
+            .padding({ bottom: Tokens.SPACE_8 })
             Divider().color(NT_LINE)
             Scroll() {
               Column() {
                 if (this.rawBody.length > 0) {
                   Text(this.rawBody)
-                    .fontSize(12)
+                    .fontSize(Tokens.F_BODY)
+                    .lineHeight(24)
                     .fontColor(NT_INK)
                     .width('100%')
+                    .copyOption(CopyOptions.InApp)
                 }
                 ForEach(this.rawBlocks, (block: NoticeItemMeta, index: number) => {
                   Column() {
                     Row({ space: 6 }) {
                       Text(block.label)
-                        .fontSize(9)
+                        .fontSize(Tokens.F_CAPTION)
                         .fontColor(NT_SD_INK)
                         .backgroundColor(NT_SD_TINT)
                         .borderRadius(4)
                         .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                       if (block.fromName.length > 0) {
                         Text(block.fromName)
-                          .fontSize(9)
-                          .fontColor(NT_INK_3)
+                          .fontSize(Tokens.F_CAPTION)
+                          .fontColor(NT_INK_2)
                       }
                       if (block.timeText.length > 0) {
                         Text(block.timeText)
-                          .fontSize(9)
-                          .fontColor(NT_INK_3)
+                          .fontSize(Tokens.F_CAPTION)
+                          .fontColor(NT_INK_2)
                       }
                     }
                     .width('100%')
                     Text(block.text)
-                      .fontSize(12)
+                      .fontSize(Tokens.F_BODY)
+                      .lineHeight(24)
                       .fontColor(NT_INK)
                       .width('100%')
                       .margin({ top: 4 })
+                      .copyOption(CopyOptions.InApp)
                   }
                   .width('100%')
                   .padding({ top: 10, bottom: 10 })
@@ -1859,49 +1797,37 @@ export struct NoticeScreen {
                 Blank().height(20)
               }
               .width('100%')
-              .padding({ left: 16, right: 16, top: 6 })
+              .padding({ top: Tokens.SPACE_8, bottom: Tokens.GAP })
             }
             .layoutWeight(1)
             .align(Alignment.Top)
-          }
-          .width('100%')
-          .height('68%')
-          .backgroundColor(Tokens.SHEET)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-          .border({ width: 0.5, color: '#59FFFFFF' })
-          .borderRadius({ topLeft: Tokens.RADIUS_FLOAT, topRight: Tokens.RADIUS_FLOAT })
         }
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Tokens.SCRIM)
-        .justifyContent(FlexAlign.End)
-        .onClick(() => {
-          this.closeRaw();
-        })
-        .transition(Motion.scrim())
       }
 
       if (this.previewOpen) {
-        Stack() {
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('#E6000000')
-            .onClick(() => {
-              this.closePreview();
-            })
-          Image(this.previewSrc)
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Contain)
-            .hitTestBehavior(HitTestMode.None)
+        Column() {
+          PageHeader({ taskColors: true, showAmbientBackground: true, title: '图片预览',
+            onBack: () => { this.closePreview(); } }) {
+            Stack() {
+              Column().width('100%').height('100%').backgroundColor(Color.Black)
+                .onClick(() => { this.closePreview(); })
+              Image(this.previewSrc).width('100%').height('100%').objectFit(ImageFit.Contain)
+                .hitTestBehavior(HitTestMode.None)
+            }.width('100%').height('100%')
+          }
         }
         .width('100%')
         .height('100%')
+        .backgroundColor($r('app.color.task_glass_bar'))
         .transition(Motion.scrim())
       }
     }
     .width('100%')
     .height('100%')
+    .backgroundColor($r('app.color.task_ambient_scrim'))
+    .onAreaChange((_old: Area, area: Area) => {
+      const width = Number(area.width);
+      if (Math.abs(width - this.layoutWidth) > 1) this.layoutWidth = width;
+    })
   }
 }

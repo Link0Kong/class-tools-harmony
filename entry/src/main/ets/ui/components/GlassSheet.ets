@@ -11,6 +11,10 @@ import { Motion } from '../theme/Motion';
 export struct GlassSheet {
   @Prop panelHeight: string = '80%';
   @Prop panelRadius: number = Tokens.RADIUS_FLOAT;
+  @Prop surface: ResourceColor = Tokens.SHEET;
+  @Prop edge: ResourceColor = Tokens.CARD_EDGE;
+  @Prop maxWidth: number = 100000;
+  onDismiss?: () => void;
   @BuilderParam content: () => void = this.emptyContent;
 
   @Builder
@@ -18,23 +22,27 @@ export struct GlassSheet {
   }
 
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Tokens.SCRIM)
+        .onClick(() => { this.onDismiss?.(); })
       Column() {
         this.content()
       }
       .width('100%')
+      .constraintSize({ maxWidth: this.maxWidth })
       .height(this.panelHeight)
       .padding(Tokens.SPACE_16)
-      .backgroundColor(Tokens.SHEET)
+      .backgroundColor(this.surface)
       .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-      .border({ width: 0.5, color: Tokens.CARD_EDGE })
+      .border({ width: 0.5, color: this.edge })
       .borderRadius({ topLeft: this.panelRadius, topRight: this.panelRadius })
       .transition(TransitionEffect.asymmetric(Motion.sheetEnter(), Motion.sheetExit()))
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Tokens.SCRIM)
-    .justifyContent(FlexAlign.End)
     .transition(Motion.scrim())
     .animation({ duration: Motion.NORMAL, curve: Motion.ease() })
   }

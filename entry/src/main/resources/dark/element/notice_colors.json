@@ -1,0 +1,13 @@
+{
+  "color": [
+    { "name": "notice_panel", "value": "#F2263437" },
+    { "name": "notice_line", "value": "#5D7070" },
+    { "name": "notice_blue_text", "value": "#BBCFE8" },
+    { "name": "notice_blue_tint", "value": "#324556" },
+    { "name": "notice_sand_tint", "value": "#4D4033" },
+    { "name": "notice_rose_tint", "value": "#523935" },
+    { "name": "notice_violet_text", "value": "#D8C9F2" },
+    { "name": "notice_violet_tint", "value": "#433D57" },
+    { "name": "notice_neutral_tint", "value": "#384748" }
+  ]
+}

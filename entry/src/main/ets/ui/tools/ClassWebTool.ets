@@ -43,8 +43,8 @@ export struct ClassWebTool {
     this.currentHomework = this.homeworkId;
     this.currentTask = this.taskId;
     this.incomingShare = this.taskShareUrl;
-    this.nativeView = !!this.homeworkId || !!this.noticeId;
-    this.prepareSession();
+    this.nativeView = !!this.homeworkId || this.toolId === 'nt';
+    if (this.toolId !== 'nt') this.prepareSession();
   }
 
   aboutToDisappear(): void {
@@ -70,7 +70,7 @@ export struct ClassWebTool {
   }
 
   private handleEditorBack = (): boolean => {
-    if (!this.advanced) return false;
+    if (!this.advanced && (this.toolId !== 'nt' || this.nativeView)) return false;
     this.editorBack();
     return true;
   };
@@ -87,7 +87,7 @@ export struct ClassWebTool {
   }
 
   private editorBack(): void {
-    if (this.toolId === 'nt') { this.onClose(); return; }
+    if (this.toolId === 'nt') { this.nativeView = true; return; }
     clearInterval(this.watchTimer);
     this.advanced = false;
     this.incomingShare = '';
@@ -182,7 +182,13 @@ export struct ClassWebTool {
       NoticeScreen({ noticeId: this.sourceNotice, onClose: () => { this.sourceNotice = ''; } })
     } else if (this.nativeView) {
       if (this.toolId === 'nt') {
-        NoticeScreen({ noticeId: this.noticeId, onClose: () => { if (this.noticeId) this.onClose(); else this.nativeView = false; } })
+        NoticeScreen({ noticeId: this.noticeId, onClose: this.onClose, onOpenWeb: () => {
+          AppGlobal.toolBack = this.handleEditorBack;
+          this.error = '';
+          this.progress = 0;
+          this.nativeView = false;
+          if (this.scripts.length === 0) this.prepareSession();
+        } })
       } else {
         HomeworkScreen({ homeworkId: this.currentHomework, onClose: () => {
           this.nativeView = false; this.currentHomework = ''; this.incomingShare = '';
@@ -195,7 +201,7 @@ export struct ClassWebTool {
         onHomework: (id: string, fromTask?: string) => { this.currentTask = fromTask || ''; this.currentHomework = id; this.nativeView = true; } })
     } else {
       PageHeader({
-        title: this.toolId === 'nt' ? '通知' : '任务',
+        title: this.toolId === 'nt' ? '网页通知' : '任务',
         actionText: this.toolId === 'nt' ? '本机通知' : '任务概览',
         onAction: () => { if (this.toolId === 'hw') this.editorBack(); else this.nativeView = true; this.error = ''; },
         onBack: () => { this.editorBack(); }

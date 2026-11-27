@@ -1,4 +1,4 @@
-﻿import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+﻿import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { AppGlobal } from '../app/AppGlobal';
@@ -17,12 +17,23 @@ export default class EntryAbility extends UIAbility {
     // 数据层（preferences 等）依赖 UIAbilityContext，进程内只注入一次。
     AppGlobal.context = this.context;
     AppGlobal.ability = this;
+    this.syncToolColorMode(this.context.config);
     AppGlobal.requestTool(ToolLaunch.parse(want.parameters, want.uri));
     hilog.info(DOMAIN, TAG, '%{public}s', 'onCreate');
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     AppGlobal.requestTool(ToolLaunch.parse(want.parameters, want.uri));
+  }
+
+  onConfigurationUpdate(config: Configuration): void {
+    this.syncToolColorMode(config);
+  }
+
+  private syncToolColorMode(config: Configuration): void {
+    if (config.colorMode !== undefined) {
+      AppStorage.setOrCreate<boolean>('immersiveToolDark', config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    }
   }
 
   onDestroy(): void {
