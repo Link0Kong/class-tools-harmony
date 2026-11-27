@@ -69,6 +69,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    AppStorage.setOrCreate<boolean>('homeContextForeground', true);
     AppStorage.setOrCreate<number>('waterForeground', Date.now());
     NotifyCenter.setForeground(true);
     if (Services.currentSid.length > 0) {
@@ -80,6 +81,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onBackground(): void {
+    AppStorage.setOrCreate<boolean>('homeContextForeground', false);
     NotifyCenter.setForeground(false);
     hilog.info(DOMAIN, TAG, '%{public}s', 'onBackground');
     // 页面隐藏：立即冲刷待推送的 userdata（失败由 pending 兜底）

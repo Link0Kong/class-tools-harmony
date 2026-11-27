@@ -35,6 +35,7 @@ export struct AppShell {
   onNotifyHandled: () => void = () => {};
   @Prop @Watch('goHome') homeRequest: number = 0;
   @Prop contentEpoch: number = 0;
+  @Prop toolOpen: boolean = false;
   @Prop userName: string = '';
   @Prop maskedSid: string = '';
   @Prop roleLabel: string = '';
@@ -226,9 +227,7 @@ export struct AppShell {
           Stack({ alignContent: Alignment.Bottom }) {
             HomeScreen({
               scroller: this.homeScroller,
-              userName: this.userName,
-              maskedSid: this.maskedSid,
-              roleLabel: this.roleLabel,
+              contextActive: this.activeTab === 0 && !this.toolOpen,
               quickIds: this.quickIds,
               epoch: this.homeEpoch + this.contentEpoch,
               onReorderQuick: (ids: string[]) => {

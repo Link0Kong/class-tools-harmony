@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.furina.classtools",
     "vendor": "furina",
-    "versionCode": 1000020,
-    "versionName": "1.0.18",
+    "versionCode": 1000021,
+    "versionName": "1.0.19",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

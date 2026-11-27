@@ -103,6 +103,7 @@ export struct ToolScreen {
     } else if (this.toolId === 'tt') {
       Stack() {
         TimetableScreen({
+          focus: this.launch.timetableFocus,
           onOpenMap: (room: string) => { this.mapRoom = room.trim(); },
           onClose: this.onClose
         })

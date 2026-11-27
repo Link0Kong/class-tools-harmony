@@ -29,6 +29,11 @@ import { Tokens } from '../theme/Tokens';
 import { Motion } from '../theme/Motion';
 import { Breakpoints } from '../theme/Breakpoints';
 import { AppSymbols } from '../theme/AppSymbols';
+import { HomeContextRepository } from '../../data/home/HomeContextRepository';
+import { HOME_DEFAULT_REGION, HomeAppearance, HomeContextRules, HomePhraseBatch, HomeRegion, HomeTimetableState,
+  HomeWeather } from '../../features/home/HomeContext';
+import { TimetableFocus } from '../../data/timetable/TimetableFocus';
+import { HomeContextCard } from '../components/HomeContextCard';
 import { HomeCardShell } from '../components/HomeCardShell';
 import { HomeCardConfigSheet } from './HomeCardConfigSheet';
 
@@ -37,7 +42,7 @@ const HOME_CARD_H: number = 152;
 
 /**
  * 工作台（对齐小程序 pages/index）：
- * 问候 hero → 可自定义卡片（课程 / 电费 / 个人任务 / 通知 / 常用工具 / 各工具入口 / 时钟 / 天气）。
+ * 情境卡与 可自定义卡片（课程 / 电费 / 个人任务 / 通知 / 常用工具 / 各工具入口 / 时钟 / 天气）。
  *
  * 卡片顺序、类型、数量与宽度由右上角配置按钮自定义：
  * - 一行最多两张，span=1 半宽、span=2 整行，宽度变化走弹性动画；
@@ -46,9 +51,17 @@ const HOME_CARD_H: number = 152;
  */
 @Component
 export struct HomeScreen {
-  @Prop userName: string = '';
-  @Prop maskedSid: string = '';
-  @Prop roleLabel: string = '';
+  @Prop @Watch('refreshHomeContext') contextActive: boolean = true;
+  @StorageLink('homeContextForeground') @Watch('refreshHomeContext') contextForeground: boolean = true;
+  @StorageLink('homeContentRevision') @Watch('refreshHomeContext') homeContentRevision: number = 0;
+  @State private homeSid: string = '';
+  @State private homeAppearance: HomeAppearance = new HomeAppearance();
+  @State private homeRegion: HomeRegion = HOME_DEFAULT_REGION;
+  @State private homeNow: number = Date.now();
+  @State private homeWeather: HomeWeather | undefined = undefined;
+  @State private homeBatch: HomePhraseBatch | undefined = undefined;
+  @State private homeTimetableState: HomeTimetableState = HomeTimetableState.Loading;
+  private settingsRevision: number = -1;
   @Prop @Watch('syncQuickOrder') quickIds: string[] = [];
   @State private quickOrder: string[] = [];
   @Prop @Watch('onEpochChanged') epoch: number = 0;
@@ -130,6 +143,7 @@ export struct HomeScreen {
   private suppressTap: boolean = false;
 
   onEpochChanged(): void {
+    this.refreshHomeContext();
     // 切回工作台：2 分钟内只复用内存缓存，避免每次切 tab 都重复请求
     if (Date.now() - this.lastLoadAt < 2 * 60 * 1000) {
       this.readLocalTasks();
@@ -211,7 +225,69 @@ export struct HomeScreen {
     this.clockDate = HomeDigest.dateText(now);
     const names: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     this.clockWeek = names[now.getDay()];
+    this.homeNow = now.getTime();
+    this.refreshHomeContext();
   }
+
+  private contextVisible(): boolean {
+    return this.contextActive && this.contextForeground;
+  }
+
+  private async refreshHomeContext(): Promise<void> {
+    if (!this.contextVisible()) return;
+    const sid = Services.currentSid;
+    if (this.homeSid !== sid) {
+      this.homeSid = sid;
+      this.homeAppearance = new HomeAppearance();
+      this.homeRegion = HOME_DEFAULT_REGION;
+      this.homeWeather = undefined;
+      this.settingsRevision = -1;
+    }
+    if (!sid.length) return;
+    if (this.settingsRevision !== this.homeContentRevision) {
+      const revision = this.homeContentRevision;
+      const settings = await HomeContextRepository.settings(sid);
+      if (sid !== this.homeSid || revision !== this.homeContentRevision || !this.contextVisible()) return;
+      this.settingsRevision = revision;
+      this.homeAppearance = settings;
+      const region = HomeContextRepository.region(settings.regionId);
+      if (region.id !== this.homeRegion.id) {
+        this.homeWeather = undefined;
+        this.homeRegion = region;
+      }
+    }
+    const now = Date.now();
+    this.homeNow = now;
+    const regionId = this.homeRegion.id;
+    const cached = HomeContextRepository.cachedWeather(regionId, now);
+    if (cached !== undefined) this.homeWeather = cached;
+    HomeContextRepository.weather(regionId, now).then((weather: HomeWeather | undefined) => {
+      if (sid === this.homeSid && regionId === this.homeRegion.id && this.contextVisible()) this.homeWeather = weather;
+    });
+    if (!this.homeAppearance.funContent || !this.homeAppearance.onlineContent) return;
+    const cachedBatch = await HomeContextRepository.cachedContent(now);
+    if (sid === this.homeSid && this.contextVisible() && cachedBatch) this.homeBatch = cachedBatch;
+    if (!this.contextVisible() || sid !== this.homeSid || !this.homeAppearance.funContent || !this.homeAppearance.onlineContent) return;
+    const batch = await HomeContextRepository.content(now);
+    if (sid === this.homeSid && this.contextVisible()) this.homeBatch = batch;
+  }
+
+  private freshWeather(): HomeWeather | undefined {
+    return HomeContextRules.validWeather(this.homeWeather, this.homeRegion.id, this.homeNow) ? this.homeWeather : undefined;
+  }
+
+  private weatherTemperature(): string {
+    const value = this.freshWeather()?.temperatureC;
+    return typeof value === 'number' ? ' · ' + Math.round(value) + ' ℃' : '';
+  }
+
+  private openContextCourse(focus: TimetableFocus): void {
+    if (this.editing || this.suppressTap) return;
+    const launch = new ToolLaunch('tt');
+    launch.timetableFocus = focus;
+    AppGlobal.requestTool(launch);
+  }
+
 
   private async loadCards(): Promise<void> {
     // 首帧可能早于根页面写入会话身份，等 sid 就绪后再读本机布局
@@ -228,6 +304,7 @@ export struct HomeScreen {
       return;
     }
     const stored: HomeCardConfig[] | undefined = await HomeCards.load(sid);
+    this.refreshHomeContext();
     if (stored !== undefined && stored.length > 0) {
       this.cards = HomeCards.normalize(stored);
     }
@@ -281,7 +358,7 @@ export struct HomeScreen {
       return;
     }
     if (id === 'weather') {
-      showFeedback(this.getUIContext(), '当前设备暂未提供天气数据');
+      if (this.freshWeather() === undefined) showFeedback(this.getUIContext(), '当前天气暂不可用');
       return;
     }
     if (id === 'clock') {
@@ -539,9 +616,11 @@ export struct HomeScreen {
       if (seq === this.loadSeq) {
         this.ttSnapshot = tt.snapshot;
         this.plan = TtCalendar.plan(tt.snapshot, Date.now());
+        this.homeTimetableState = !tt.ok && tt.message === '暂无课表数据' ? HomeTimetableState.Unconfigured
+          : !tt.ok || tt.message.length > 0 ? HomeTimetableState.Failed : HomeTimetableState.Ready;
       }
     } catch (e) {
-      // 忽略
+      if (seq === this.loadSeq) this.homeTimetableState = HomeTimetableState.Failed;
     }
     try {
       const nt: NoticesResult = await ntPromise;
@@ -626,23 +705,6 @@ export struct HomeScreen {
     return this.ntItems.length > 0 ? this.ntItems[Math.min(this.ntIdx, this.ntItems.length - 1)].sub : '';
   }
 
-  private greeting(): string {
-    return HomeDigest.hello(new Date().getHours());
-  }
-
-  private subLine(): string {
-    const parts: string[] = [];
-    parts.push(HomeDigest.dateText(new Date()));
-    const week: string = HomeDigest.weekText(this.plan.week);
-    if (week.length > 0) {
-      parts.push(week);
-    }
-    if (this.roleLabel.length > 0) {
-      parts.push(this.roleLabel);
-    }
-    return parts.join(' · ');
-  }
-
   private powerPillColor(): string {
     if (this.powerState === 'low') {
       return Tokens.DANGER;
@@ -663,22 +725,6 @@ export struct HomeScreen {
       }
     }
     return undefined;
-  }
-
-  /** Hero 里的一行课程摘要（不写长段落）。 */
-  private todaySummary(): string {
-    if (!this.plan.hasData) {
-      return '课表未同步 · 打开课表拉取本周课程';
-    }
-    const next: SessionInfo | undefined = this.nextToday();
-    let text: string = this.plan.today.length > 0
-      ? '今日 ' + this.plan.today.length + ' 节' : '今天没课';
-    if (next !== undefined) {
-      text += ' · ' + (next.state === SessionState.ONGOING ? '上课中 ' : '下一节 ') + next.startText + ' ' + next.name;
-    } else if (this.plan.next !== undefined) {
-      text += ' · 下次 ' + this.plan.next.dayText + ' ' + this.plan.next.name;
-    }
-    return text;
   }
 
   /** 当前内容区可用宽度（vp）。 */
@@ -987,91 +1033,6 @@ export struct HomeScreen {
    * 工作台「今日」hero：莫奈浅色纸面（睡莲青 / 雾蓝 / 暖沙三段色条），
    * 深色只用于文字，保持与通知页、手表端一致的莫奈色系。
    */
-  @Builder
-  heroCard() {
-    Column() {
-      Row() {
-        Row()
-          .layoutWeight(1)
-          .height(3)
-          .backgroundColor(Tokens.MIST_TEAL)
-        Row()
-          .layoutWeight(1)
-          .height(3)
-          .backgroundColor(Tokens.SLATE_BLUE)
-        Row()
-          .layoutWeight(1)
-          .height(3)
-          .backgroundColor(Tokens.WARM_SAND)
-      }
-      .width('100%')
-      .borderRadius(2)
-      .margin({ bottom: 12 })
-
-      Row() {
-        Text('今日')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor('#3F6F66')
-          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-          .backgroundColor('#FFFCF6')
-          .borderRadius(Tokens.RADIUS_PILL)
-        Blank()
-        Text(HomeDigest.weekText(this.plan.week).length > 0
-          ? HomeDigest.weekText(this.plan.week) : '课表未同步')
-          .fontSize(Tokens.F_CAPTION)
-          .fontColor('#5C6860')
-      }
-      .width('100%')
-
-      Text(this.greeting() + '，' + this.userName)
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#303A35')
-        .width('100%')
-        .margin({ top: 12 })
-
-      Text(this.subLine())
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor('#5C6860')
-        .width('100%')
-        .margin({ top: 6 })
-
-      Row() {
-        Text(this.todaySummary())
-          .fontSize(Tokens.F_LABEL)
-          .fontColor('#303A35')
-          .layoutWeight(1)
-          .maxLines(2)
-        Row({ space: 2 }) {
-          Text('课表')
-            .fontSize(Tokens.F_CAPTION)
-            .fontColor('#4E6D8C')
-          SymbolGlyph(AppSymbols.ARROW_RIGHT)
-            .fontSize(12)
-            .fontColor(['#4E6D8C'])
-        }
-        .padding({ left: Tokens.GAP_SM })
-        .onClick(() => {
-          this.onOpenTool('tt');
-        })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .padding({ top: Tokens.GAP })
-      .margin({ top: Tokens.GAP })
-      .border({ width: { top: 0.5 }, color: '#D8E4DE' })
-    }
-    .width('100%')
-    .padding(Tokens.SPACE_16)
-    .margin({ top: Tokens.SPACE_4, bottom: Tokens.GAP })
-    .backgroundColor('#D9F1F6F2')
-    .border({ width: 0.5, color: '#E6DCE7E2' })
-    .borderRadius(24)
-    .alignItems(HorizontalAlign.Start)
-    .shadow({ radius: 16, color: '#0F4E9082', offsetX: 0, offsetY: 6 })
-    .transition(Motion.listItem())
-  }
-
   @Builder
   iconBadge(symbol: Resource, accent: string, box: number, glyph: number) {
     Stack({ alignContent: Alignment.Center }) {
@@ -1657,50 +1618,21 @@ export struct HomeScreen {
 
   @Builder
   weatherBody(wide: boolean) {
-    Row() {
-      Text('天气')
-        .fontSize(Tokens.F_LABEL)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(Tokens.TEXT_SECONDARY)
-        .layoutWeight(1)
-      SymbolGlyph(AppSymbols.WEATHER)
-        .fontSize(16)
-        .fontColor(['#4A88A8'])
-        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
-    }
-    .width('100%')
-
-    Row({ space: 8 }) {
-      SymbolGlyph(AppSymbols.WEATHER)
-        .fontSize(wide ? 30 : 24)
-        .fontColor(['#4A88A8'])
-        .renderingStrategy(SymbolRenderingStrategy.MULTIPLE_OPACITY)
-      Text('天气数据未接入')
-        .fontSize(Tokens.F_LABEL)
-        .fontColor(Tokens.TEXT_SECONDARY)
-        .maxLines(1)
-    }
-    .alignItems(VerticalAlign.Center)
-    .margin({ top: wide ? 12 : 10 })
-
-    if (wide) {
-      Text('当前设备未提供天气服务，可在系统天气中查看')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
-        .maxLines(2)
-        .margin({ top: 6 })
+    this.cardTitleRow(AppSymbols.WEATHER, Tokens.MIST_TEAL, '天气', this.homeRegion.label)
+    if (this.freshWeather() !== undefined) {
+      Text(this.freshWeather()?.conditionText + this.weatherTemperature())
+        .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY)
+        .margin({ top: Tokens.SPACE_8 })
+      if (wide) {
+        Text('和风天气').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
+      }
     } else {
-      Text('可在系统天气查看')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
-        .maxLines(1)
-        .margin({ top: 4 })
+      Text('当前天气暂不可用').fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY)
+        .margin({ top: Tokens.SPACE_8 })
     }
     Blank()
-    if (!wide) {
-      this.cardFooter('在系统天气中查看')
-    }
   }
+
   @Builder
   cardBody(cfg: HomeCardConfig) {
     if (cfg.id === 'tt') {
@@ -1929,7 +1861,17 @@ export struct HomeScreen {
         Scroll(this.scroller) {
           Row() {
             Column() {
-              this.heroCard()
+              HomeContextCard({
+                account: this.homeSid,
+                active: this.contextVisible(),
+                appearance: this.homeAppearance,
+                region: this.homeRegion,
+                now: this.homeNow,
+                weather: this.homeWeather,
+                course: HomeContextRules.course(this.plan, this.homeTimetableState, this.homeNow),
+                batch: this.homeBatch,
+                onOpenCourse: (focus: TimetableFocus) => { this.openContextCourse(focus); }
+              })
 
               if (this.editing) {
                 this.editHint()

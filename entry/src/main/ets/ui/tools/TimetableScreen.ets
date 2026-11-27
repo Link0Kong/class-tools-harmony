@@ -9,6 +9,7 @@ import {
   TtPlan,
   TtSnapshot
 } from '../../data/timetable/TimetableModels';
+import { TimetableFocus } from '../../data/timetable/TimetableFocus';
 import { TtCalendar } from '../../data/timetable/TtCalendar';
 import { TimetableRepository, TtResult, TtSource } from '../../data/timetable/TimetableRepository';
 import { NativeShare, ShareResult } from '../../features/share/NativeShare';
@@ -64,6 +65,7 @@ class TtGroupItem {
  */
 @Component
 export struct TimetableScreen {
+  @Prop focus: TimetableFocus | undefined = undefined;
   onClose: () => void = () => {
   };
   onOpenMap: (room: string) => void = () => {};
@@ -91,6 +93,7 @@ export struct TimetableScreen {
   private shareSpec: ExportCardSpec = new ExportCardSpec();
 
   private clockTimer: number = -1;
+  private focusApplied: boolean = false;
   private currentSession(): SessionInfo | undefined {
     return this.plan.today.find((s: SessionInfo) => s.state === SessionState.ONGOING) ?? this.plan.next;
   }
@@ -122,6 +125,24 @@ export struct TimetableScreen {
       this.errorMsg = result.message;
     }
     this.loading = false;
+    this.applyFocus();
+  }
+
+  private applyFocus(): void {
+    const focus = this.focus;
+    if (this.focusApplied || !focus || !Number.isFinite(focus.time) || focus.time <= 0) return;
+    const date = new Date(focus.time);
+    const week = TtCalendar.weekOf(this.termStart(), date);
+    if (week !== undefined) this.weekOffset = week - this.baseWeek();
+    else if (this.termStart() !== undefined) return;
+    this.dayIdx = TtCalendar.dayIndex(date);
+    this.viewMode = 'day';
+    this.focusApplied = true;
+    if (focus.name.length === 0) return;
+    const course = this.coursesOf(this.dayIdx).find((row: Course) =>
+      row.name.trim() === focus.name && row.room.trim() === focus.room &&
+      focus.period >= row.start && focus.period <= row.end);
+    if (course) this.openCourse(course, this.dayIdx);
   }
 
   private async pullRefresh(): Promise<void> {

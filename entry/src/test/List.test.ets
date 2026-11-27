@@ -1,5 +1,6 @@
 import sessionTest from './Session.test';
 import homeToolsTest from './HomeTools.test';
+import homeContextTest from './HomeContext.test';
 import deskFormsTest from './DeskForms.test';
 import userdataMergeTest from './UserdataMerge.test';
 import waterNormalizerTest from './WaterNormalizer.test';
@@ -40,6 +41,7 @@ import legalTest from './Legal.test';
 export default function testsuite() {
   sessionTest();
   homeToolsTest();
+  homeContextTest();
   deskFormsTest();
   userdataMergeTest();
   waterNormalizerTest();

@@ -2,7 +2,7 @@
 
 面向班级日常事务的 HarmonyOS 原生客户端：用 ArkTS + ArkUI 编写，与网页、微信小程序、Android、Windows 四端共用同一套云端数据契约。
 
-![version](https://img.shields.io/badge/version-1.0.13-4E9082)
+![version](https://img.shields.io/badge/version-1.0.19-4E9082)
 ![license](https://img.shields.io/badge/license-MIT-2EA44F)
 ![platform](https://img.shields.io/badge/platform-HarmonyOS-000000)
 ![stack](https://img.shields.io/badge/ArkTS-ArkUI-6E8CA8)
@@ -19,6 +19,7 @@
 
 | 工具 | 说明 |
 |---|---|
+| 工作台 | 情境卡提供日期、课表、可用天气及生活和学习短句。通过「我的 → 首页内容」设置英语、语气和天气地区，默认福州市闽侯县 |
 | 抽签 `draw` | 支持范围、人数、排除与去重。云端存证后可分享核验链接或附二维码的结果图片，最近结果在本机留存 |
 | 分组 `group` | 全班 / 最近抽签 / 手动名单，按组数或每组人数随机分组，复制与导出分享 |
 | 课表 `tt` | 日/周视图、周次与单双周、下一节，个人课表优先 |
@@ -47,14 +48,14 @@
 - **正式站**：`https://tool.furina.fun`（阿里云杭州 ECS + Caddy 自动 HTTPS）。Web 域名已于 2026-11-23 通过 ICP 备案
   （备案号 闽ICP备2026042939号-2，工信部入口 <https://beian.miit.gov.cn/>）；**应用内不展示「备案信息」行**。
 - **同源路由**：`/v1/rdb/rest/`（正式数据面）、`/v1/rdb/rest-next/`（staging，**仅调试**）、`/drop`（文件传输 / 云空间）、
-  `/pptfiles`（演示文件）、`/legal`（法律文本）、`/map`（校园地图）、`/account`、`/android/latest.json`。
+  `/pptfiles`（演示文件）、`/legal`（法律文本）、`/map`（校园地图）、`/account`、`/home-context`（工作台）、`/android/latest.json`。
 - **明文（http）仅一处**：教务系统 `210.34.74.77`（学校系统无 HTTPS），在
   `entry/src/main/resources/base/profile/network_config.json` 里单独放行；其余端点一律 https。
 - 备案期的 ECS 明文 IP `121.196.47.2` 只保留本机调试，**不进客户端常量**；本机联调确需临时放行时只改本地文件、不要提交。
 
 ## 下载
 
-- Release 的 Assets 中提供 **未签名 HAP**（`entry-default-unsigned.hap`）。
+- Release 的 Assets 中提供签名 HAP、未签名模拟器 HAP（`entry-default-unsigned.hap`）和 SHA-256 校验文件。
 - **模拟器**：接受未签名 HAP，可用 `hdc` / `bm install` 直接安装调试。
 - **真机**：需要签名。用 DevEco Studio 登录华为账号后自动签名，或使用自有证书重新签名再安装。
 

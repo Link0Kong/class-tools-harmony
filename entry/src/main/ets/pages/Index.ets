@@ -357,6 +357,7 @@ struct Index {
           })
         } else {
           AppShell({
+          toolOpen: this.openToolId.length > 0,
           notifyRequest: this.notifyRequest,
           onNotifyHandled: () => { this.notifyRequest = false; },
           homeRequest: this.homeRequest,

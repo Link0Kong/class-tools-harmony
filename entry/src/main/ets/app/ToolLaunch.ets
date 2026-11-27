@@ -1,9 +1,12 @@
+import { TimetableFocus } from '../data/timetable/TimetableFocus';
+
 export class ToolLaunch {
   toolId: string;
   homeworkId: string = '';
   taskId: string = '';
   noticeId: string = '';
   taskShareUrl: string = '';
+  timetableFocus?: TimetableFocus;
 
   constructor(toolId: string) {
     this.toolId = toolId;

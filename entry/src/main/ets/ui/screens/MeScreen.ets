@@ -4,6 +4,7 @@ import notificationManager from '@ohos.notificationManager';
 import { formProvider } from '@kit.FormKit';
 import { CloudConfig } from '../../config/CloudConfig';
 import { Tokens } from '../theme/Tokens';
+import { HomeContentSettings } from './HomeContentSettings';
 import { Breakpoints } from '../theme/Breakpoints';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
@@ -44,6 +45,7 @@ export struct MeScreen {
   @State private pushSysOn: boolean = false;
   @State private pushBusy: boolean = false;
   @State private pushNotice: string = '';
+  @State private homeContentOpen: boolean = false;
   @State private notifyOpen: boolean = false;
   @State private notifySettings: NotifySettings = new NotifySettings();
   @State private testBusy: boolean = false;
@@ -851,6 +853,11 @@ export struct MeScreen {
     .borderRadius({ topLeft: 26, topRight: 26 })
   }
 
+  @Builder
+  homeSettingsPanel() {
+    HomeContentSettings({ onClose: () => { this.homeContentOpen = false; } })
+  }
+
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Stack({ alignContent: Alignment.Top }) {
@@ -1002,6 +1009,8 @@ export struct MeScreen {
           }
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.notifySettingsRow()
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow('首页内容', '外观与天气', () => { this.homeContentOpen = true; })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.linkRow('桌面服务卡片', '预览与添加', () => {
             try {
@@ -1230,5 +1239,8 @@ export struct MeScreen {
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+    .bindSheet($$this.homeContentOpen, this.homeSettingsPanel(), {
+      height: SheetSize.LARGE, dragBar: true, showClose: false, backgroundColor: Tokens.SHEET
+    })
   }
 }
