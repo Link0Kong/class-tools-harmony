@@ -8,6 +8,9 @@
  */
 @Component
 export struct GlassBar {
+  @Prop surface: ResourceColor = Tokens.ACTION_BAR;
+  @Prop edge: ResourceColor = Tokens.CARD_EDGE;
+  @Prop inset: number = Tokens.PAGE_PADDING;
   @BuilderParam content: () => void = this.emptyContent;
 
   @Builder
@@ -26,12 +29,12 @@ export struct GlassBar {
         top: Tokens.SPACE_10,
         bottom: Tokens.SPACE_10
       })
-      .backgroundColor(Tokens.ACTION_BAR)
+      .backgroundColor(this.surface)
       .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-      .border({ width: 0.5, color: Tokens.CARD_EDGE })
+      .border({ width: 0.5, color: this.edge })
       .borderRadius(Tokens.RADIUS_FLOAT)
     }
     .width('100%')
-    .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: Tokens.GAP })
+    .padding({ left: this.inset, right: this.inset, bottom: Tokens.GAP })
   }
 }

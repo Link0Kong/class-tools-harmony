@@ -3,6 +3,7 @@ import { AppGlobal } from '../../app/AppGlobal';
 import { util } from '@kit.ArkTS';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { HomeworkAttachmentKind, HomeworkAttachmentMeta } from '../../data/homework/HomeworkModels';
+import { Tokens } from '../theme/Tokens';
 
 @Component
 export struct DetailField {
@@ -20,14 +21,15 @@ export struct DetailField {
 @Component
 export struct DetailSection {
   @Prop title: string = '';
+  @Prop surface: ResourceColor = $r('app.color.task_card');
   @BuilderParam content: () => void = this.empty;
   @Builder empty() {}
   build() {
     Column({ space: 12 }) {
       Text(this.title).fontSize(17).fontWeight(FontWeight.Bold).fontColor($r('app.color.task_text'))
       this.content()
-    }.alignItems(HorizontalAlign.Start).width('100%').padding(16)
-      .backgroundColor($r('app.color.task_card')).borderRadius(16)
+    }.alignItems(HorizontalAlign.Start).width('100%').padding(Tokens.SPACE_16)
+      .backgroundColor(this.surface).borderRadius(Tokens.RADIUS_CARD)
   }
 }
 

@@ -13,6 +13,7 @@ import { Tokens } from '../theme/Tokens';
 @Component
 export struct PageHeader {
   @Prop taskColors: boolean = false;
+  @Prop showAmbientBackground: boolean = false;
   @Prop title: string = '';
   @Prop actionText: string = '';
   @Prop actionText2: string = '';
@@ -117,9 +118,10 @@ export struct PageHeader {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor(this.taskColors ? $r('app.color.task_card') : Tokens.GLASS)
+          .backgroundColor(this.showAmbientBackground ? $r('app.color.task_glass_bar') :
+            this.taskColors ? $r('app.color.task_card') : Tokens.GLASS)
           .backgroundBlurStyle(BlurStyle.COMPONENT_THICK)
-          .border({ width: { bottom: 0.5 }, color: Tokens.GLASS_STROKE })
+          .border({ width: { bottom: 0.5 }, color: this.showAmbientBackground ? $r('app.color.task_glass_edge') : Tokens.GLASS_STROKE })
           .opacity(this.progress)
           .hitTestBehavior(HitTestMode.None)
         this.headerBar()
@@ -135,6 +137,6 @@ export struct PageHeader {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.taskColors ? $r('app.color.task_page') : Color.Transparent)
+    .backgroundColor(this.taskColors && !this.showAmbientBackground ? $r('app.color.task_page') : Color.Transparent)
   }
 }

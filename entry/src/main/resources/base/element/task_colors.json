@@ -1,5 +1,11 @@
 {
   "color": [
+    { "name": "task_ambient_scrim", "value": "#00000000" },
+    { "name": "task_glass_card", "value": "#CCFFFFFF" },
+    { "name": "task_glass_bar", "value": "#D9FFFFFF" },
+    { "name": "task_glass_control", "value": "#A6FFFFFF" },
+    { "name": "task_glass_edge", "value": "#80FFFFFF" },
+    { "name": "task_primary_button", "value": "#326F60" },
     {
       "name": "task_page",
       "value": "#F3F7F5"
