@@ -700,7 +700,7 @@ export struct PptScreen {
     Stack() {
       PageHeader({
       progress: this.headerFade,
-        title: '演示',
+        title: '班级课件',
         actionText: this.loading ? '' : (this.uploading ? '上传中' : '上传'),
         scroller: this.scroller,
         onBack: () => {

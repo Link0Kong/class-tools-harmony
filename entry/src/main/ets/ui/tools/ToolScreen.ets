@@ -42,6 +42,7 @@ export struct ToolScreen {
   onClose: () => void = () => {
   };
   onOpenMap: (room: string) => void = () => {};
+  onOpenClassDecks: () => void = () => {};
 
   aboutToAppear(): void {
     this.topInset = px2vp(AppGlobal.statusBarPx);
@@ -164,6 +165,7 @@ export struct ToolScreen {
       })
     } else if (this.toolId === 'file') {
       FileTransferScreen({
+        onOpenClassDecks: this.onOpenClassDecks,
         onClose: () => {
           this.onClose();
         }

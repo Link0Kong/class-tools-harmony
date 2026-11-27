@@ -1,4 +1,6 @@
-﻿import { ToolLaunch } from '../main/ets/app/ToolLaunch';
+﻿import { HomeCards, HomeCardConfig } from '../main/ets/data/home/HomeCards';
+import { ToolCatalog } from '../main/ets/data/tool/ToolCatalog';
+import { ToolLaunch } from '../main/ets/app/ToolLaunch';
 import { describe, it, expect } from '@ohos/hypium';
 import { HomeTools, HomeToolsToggleResult } from '../main/ets/data/home/HomeTools';
 import { NickLogic } from '../main/ets/features/home/NickLogic';
@@ -139,6 +141,15 @@ export default function homeToolsTest() {
       expect(normalized.length).assertEqual(2);
       expect(normalized[0]).assertEqual('draw');
       expect(normalized[1]).assertEqual('group');
+    });
+
+    it('merges_old_ppt_shortcuts_and_cards_into_file', 0, () => {
+      expect(HomeTools.normalize(['ppt', 'draw', 'file']).join(',')).assertEqual('file,draw');
+      const cards: HomeCardConfig[] = HomeCards.normalize([new HomeCardConfig('ppt', 1), new HomeCardConfig('file', 2)]);
+      expect(cards.length).assertEqual(1);
+      expect(cards[0].id).assertEqual('file');
+      expect(cards[0].span).assertEqual(1);
+      expect(ToolCatalog.visibleTools().some(tool => tool.id === 'ppt')).assertFalse();
     });
 
     it('normalize_truncates_to_max', 0, () => {

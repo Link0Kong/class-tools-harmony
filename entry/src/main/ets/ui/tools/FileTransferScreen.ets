@@ -19,6 +19,7 @@ import { PageHeader } from '../components/PageHeader';
  */
 @Component
 export struct FileTransferScreen {
+  onOpenClassDecks: () => void = () => {};
   onClose: () => void = () => {
   };
 
@@ -486,6 +487,9 @@ export struct FileTransferScreen {
           Refresh({ refreshing: $$this.refreshing }) {
             Scroll(this.scroller) {
         Column() {
+          Button('班级课件')
+            .alignSelf(ItemAlign.Start)
+            .onClick(() => this.onOpenClassDecks())
           this.uploadBar()
           this.fileList()
 

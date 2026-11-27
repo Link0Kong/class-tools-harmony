@@ -1,3 +1,4 @@
+import { ToolCatalog } from '../tool/ToolCatalog';
 import { preferences } from '@kit.ArkData';
 import { AppGlobal } from '../../app/AppGlobal';
 import { Log } from '../../common/Log';
@@ -82,8 +83,7 @@ export class HomeCards {
     new HomeCardDef('roll', '点名', '到 · 假 · 一键点名', AppSymbols.ROLL, '#B06A55', HomeCardKind.ENTRY, 'roll'),
     new HomeCardDef('jw', '教务', '卡片速览 · 自动登录', AppSymbols.JW, '#6E8CA8', HomeCardKind.ENTRY, 'jw'),
     new HomeCardDef('map', '地图', '2.5D · 楼层 · 道路导航', AppSymbols.MAP, '#4E9082', HomeCardKind.ENTRY, 'map'),
-    new HomeCardDef('file', '文件传输', '临时云空间 · 保留 3 天', AppSymbols.FILE, '#4E9082', HomeCardKind.ENTRY, 'file'),
-    new HomeCardDef('ppt', '演示', 'PPT 自动转换 · 分步播放', AppSymbols.PPT, '#6E8CA8', HomeCardKind.ENTRY, 'ppt'),
+    new HomeCardDef('file', '文件传输', '个人文件 · 班级课件', AppSymbols.FILE, '#4E9082', HomeCardKind.ENTRY, 'file'),
     new HomeCardDef('clock', '时钟', '当前时间与日期', AppSymbols.CLOCK, '#4E9082', HomeCardKind.LOCAL, ''),
     new HomeCardDef('weather', '天气', '系统天气服务', AppSymbols.WEATHER, '#4A88A8', HomeCardKind.LOCAL, '')
   ];
@@ -123,7 +123,7 @@ export class HomeCards {
     const seen: Set<string> = new Set<string>();
     for (let i = 0; i < list.length && out.length < HomeCards.MAX; i++) {
       const cfg: HomeCardConfig = list[i];
-      const id: string = cfg.id.trim();
+      const id: string = ToolCatalog.directoryId(cfg.id.trim());
       if (id.length === 0 || seen.has(id) || HomeCards.byId(id) === undefined) {
         continue;
       }

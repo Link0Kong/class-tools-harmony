@@ -1,3 +1,4 @@
+import { HomeTools } from '../data/home/HomeTools';
 ﻿import { Services } from '../app/Services';
 import { NotifyWork } from '../data/notify/NotifyWork';
 import { DeskForms } from '../forms/DeskForms';
@@ -174,11 +175,12 @@ struct Index {
         }
       }
     }
-    this.quickIds = ids;
+    this.quickIds = HomeTools.normalize(ids);
   }
 
   /** 首页快捷写回 userdata（经仓库做脏检测 + 防抖推送 + 跨端同步）。 */
-  private async setHomeTools(ids: string[]): Promise<void> {
+  private async setHomeTools(requested: string[]): Promise<void> {
+    const ids: string[] = HomeTools.normalize(requested);
     const current: Blob = Services.userdata.currentSections();
     const next: Blob = {};
     const keys: string[] = JsonBlob.keys(current);
@@ -305,6 +307,10 @@ struct Index {
       DeskForms.refresh();
       NotifyCenter.syncAll(true);
     }
+    if (this.openToolId === 'ppt') {
+      this.openTool('file');
+      return;
+    }
     if (this.openToolId === 'map' && this.mapRoom.length > 0) {
       this.mapRoom = '';
       this.openTool('tt');
@@ -405,6 +411,7 @@ struct Index {
             this.notifyRequest = true;
           },
           toolId: this.openToolId,
+          onOpenClassDecks: () => this.openTool('ppt'),
           mapRoom: this.mapRoom,
           onOpenMap: (room: string) => {
             this.openTool('map', room);

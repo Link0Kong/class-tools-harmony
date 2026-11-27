@@ -27,7 +27,7 @@ export class HomeTools {
   static normalize(ids: string[]): string[] {
     const out: string[] = [];
     for (let i = 0; i < ids.length; i++) {
-      const id: string = ids[i].trim();
+      const id: string = ToolCatalog.directoryId(ids[i].trim());
       if (id.length === 0 || out.indexOf(id) >= 0) {
         continue;
       }
@@ -40,7 +40,8 @@ export class HomeTools {
   }
 
   /** 点按加入/移出：已存在则移除；未满则追加；已满则拒绝。 */
-  static toggle(current: string[], id: string): HomeToolsToggleResult {
+  static toggle(current: string[], toolId: string): HomeToolsToggleResult {
+    const id: string = ToolCatalog.directoryId(toolId);
     const ids: string[] = HomeTools.normalize(current);
     const index: number = ids.indexOf(id);
     if (index >= 0) {
@@ -62,7 +63,8 @@ export class HomeTools {
     return new HomeToolsToggleResult(ids, true, '');
   }
 
-  static remove(current: string[], id: string): string[] {
+  static remove(current: string[], toolId: string): string[] {
+    const id: string = ToolCatalog.directoryId(toolId);
     const ids: string[] = HomeTools.normalize(current);
     const out: string[] = [];
     for (let i = 0; i < ids.length; i++) {
@@ -74,6 +76,6 @@ export class HomeTools {
   }
 
   static contains(current: string[], id: string): boolean {
-    return current.indexOf(id) >= 0;
+    return HomeTools.normalize(current).indexOf(ToolCatalog.directoryId(id)) >= 0;
   }
 }

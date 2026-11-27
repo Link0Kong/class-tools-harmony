@@ -62,8 +62,6 @@ export class ToolCatalog {
       ['周视图 / 日视图', '上一周 / 下一周', '今日课程与下一节课提醒']),
     new ToolDef('power', '电费', AppSymbols.POWER, '剩余电量 · 趋势', ToolCatalog.AMBER, ToolCategory.CLASS,
       ['关注宿舍剩余电量', '24h / 7d / 30d 趋势（点击查看采样点）', '低电量提醒']),
-    new ToolDef('ppt', '演示', AppSymbols.PPT, 'PPT 自动转换 · 分步播放', ToolCatalog.BLUE, ToolCategory.CLASS,
-      ['上传 .ppt/.pptx 自动转换（分步图片 + 视频）', '沉浸式全屏播放', '下载兼容版 / PDF / 视频']),
     new ToolDef('water', '水量', AppSymbols.WATER, '4/6 人间 · 月份记录', ToolCatalog.SKY, ToolCategory.CLASS,
       ['按月份查看抄表', '本机录入与云端同步', '月份选择器']),
     new ToolDef('roster', '名单', AppSymbols.ROSTER, '班委 · 团员 · 全班', ToolCatalog.PLUM, ToolCategory.CLASS,
@@ -79,16 +77,21 @@ export class ToolCatalog {
       ['成绩 · 考试 · 选课 · 公告速览', '官方工具入口', '数据只在本机内存展示']),
     new ToolDef('map', '地图', AppSymbols.MAP, '2.5D · 楼层 · 道路导航', ToolCatalog.TEAL, ToolCategory.STUDY,
       ['校园 2.5D 地图与楼栋楼层', '按道路步行导航', '顶栏返回 / 刷新 / 浏览器降级']),
-    new ToolDef('file', '文件传输', AppSymbols.FILE, '临时云空间 · 保留 3 天', ToolCatalog.TEAL, ToolCategory.CLASS,
-      ['同账号跨设备临时空间（无需配对）', '任意大小 · 8 MiB 分片上传', '文件上传完成起保留 72 小时'])
+    new ToolDef('file', '文件传输', AppSymbols.FILE, '个人文件 · 班级课件', ToolCatalog.TEAL, ToolCategory.CLASS,
+      ['同账号跨设备临时空间（无需配对）', '任意大小 · 8 MiB 分片上传', '个人文件保留 72 小时，可转换 PPT 并下载', '查看、上传和播放班级课件'])
   ];
 
   /** 默认「常用工具」：与网页首页前 4 个默认工具对齐（M1 起从 userdata.homeTools 读取）。 */
   static readonly DEFAULT_QUICK_IDS: string[] = ['draw', 'group', 'fit', 'hw'];
 
+  static directoryId(id: string): string {
+    return id === 'ppt' ? 'file' : id;
+  }
+
   static byId(id: string): ToolDef | undefined {
+    const directoryId: string = ToolCatalog.directoryId(id);
     for (let i = 0; i < ToolCatalog.ALL.length; i++) {
-      if (ToolCatalog.ALL[i].id === id) {
+      if (ToolCatalog.ALL[i].id === directoryId) {
         return ToolCatalog.ALL[i];
       }
     }
