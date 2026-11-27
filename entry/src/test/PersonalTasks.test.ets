@@ -83,6 +83,10 @@ export default function personalTaskTest() {
       const task = new PersonalTask();
       task.title = '分享测试';
       expect(ScanPayload.parse(TaskShare.link(task)).kind).assertEqual('task');
+      const drawLink = ScanPayload.parse('https://tool.furina.fun/l/draw/dABC123456');
+      expect(drawLink.kind).assertEqual('draw');
+      expect(drawLink.recordId).assertEqual('dabc123456');
+      expect(ScanPayload.parse('https://example.com/l/draw/dabc123456').kind).assertEqual('');
     });
 
     it('validates_deadline_and_time_without_rollover', 0, () => {
@@ -132,6 +136,7 @@ export default function personalTaskTest() {
       t.group = '课程';
       t.steps = ['第 1 步', '第 2 步', '第 3 步', '第 4 步'];
       const link = TaskShare.link(t);
+      expect(link.startsWith('https://tool.furina.fun/l/task-share#s=')).assertTrue();
       const parsed = TaskShare.parse(link) as TaskShare;
       expect(parsed.title).assertEqual(t.title);
       expect(parsed.group).assertEqual(t.group);
@@ -141,6 +146,13 @@ export default function personalTaskTest() {
       expect(TaskShare.parse(link.replace('tool.furina.fun', 'example.com')) === undefined).assertTrue();
       expect(TaskShare.parse(TaskShare.PREFIX + '%') === undefined).assertTrue();
       expect(TaskShare.parse(TaskShare.PREFIX + encodeURIComponent('{"t":4}')) === undefined).assertTrue();
+      // 旧分享链接（#task-share=）继续可读，解码后同样是任务快照
+      const legacyPayload = encodeURIComponent(JSON.stringify({ 't': '复习', 'd': '', 'l': '未分组', 'n': '', 's': [] }));
+      const legacy = TaskShare.parse(TaskShare.PREFIX + legacyPayload) as TaskShare;
+      expect(legacy.title).assertEqual('复习');
+      expect(TaskShare.parse('https://tool.furina.fun/l/task-share#s=' + legacyPayload)?.title).assertEqual('复习');
+      // 片段缺失或跨域都不认
+      expect(TaskShare.parse('https://tool.furina.fun/l/task-share') === undefined).assertTrue();
     });
 
     it('reads_cleared_text_row_json_text_or_object_and_preserves_old_wrapper', 0, () => {

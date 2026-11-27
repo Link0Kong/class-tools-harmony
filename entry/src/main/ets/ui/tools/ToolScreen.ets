@@ -69,7 +69,8 @@ export struct ToolScreen {
         }
       })
     } else if (this.toolId === 'scan') {
-      ScanScreen({ onClose: this.onClose })
+      /* App Link `/l/draw/<id>`：带 verifyLink 进入，页面直接读记录核验 */
+      ScanScreen({ onClose: this.onClose, initialLink: this.launch.verifyLink })
     } else if (this.toolId === 'draw') {
       DrawScreen({
         onClose: () => {

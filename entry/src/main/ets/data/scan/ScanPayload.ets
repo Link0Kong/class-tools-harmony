@@ -20,6 +20,9 @@ export class ScanPayload {
     }
     const draw = /^https:\/\/tool\.furina\.fun\/#verify=(d[0-9a-z]{8,31})$/.exec(text);
     if (draw) { result.kind = 'draw'; result.recordId = draw[1]; return result; }
+    /* 统一内容链接（新二维码）：https://tool.furina.fun/l/draw/<recordId>[?query] */
+    const link = /^https:\/\/tool\.furina\.fun\/l\/draw\/(d[0-9a-z]{8,31})(?:\?[^#]*)?(?:#.*)?$/i.exec(text);
+    if (link) { result.kind = 'draw'; result.recordId = link[1].toLowerCase(); return result; }
     result.task = TaskShare.parse(text);
     if (result.task) result.kind = 'task';
     return result;

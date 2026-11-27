@@ -31,6 +31,36 @@
             "actions": [
               "action.system.home"
             ]
+          },
+          {
+            // 统一 HTTPS 内容链接（docs/app-links/CONTRACT.md）：独立 skill，不混入桌面启动 skill。
+            // 域名校验依赖 https://tool.furina.fun/.well-known/applinking.json（appIdentifier 取自
+            // HarmonyAppProvision 的 app-identifier，并需在 AppGallery Connect 开通 App Linking + 关联域名）。
+            // 只声明客户端真正能处理的路径；/l/course/ 与 /l/file/ 仍由浏览器网页承接。
+            "entities": [
+              "entity.system.browsable"
+            ],
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "https",
+                "host": "tool.furina.fun",
+                "pathStartWith": "/l/draw/"
+              },
+              {
+                "scheme": "https",
+                "host": "tool.furina.fun",
+                "pathStartWith": "/l/notice/"
+              },
+              {
+                "scheme": "https",
+                "host": "tool.furina.fun",
+                "path": "/l/task-share"
+              }
+            ],
+            "domainVerify": true
           }
         ]
       }

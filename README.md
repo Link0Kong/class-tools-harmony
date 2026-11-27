@@ -2,7 +2,7 @@
 
 面向班级日常事务的 HarmonyOS 原生客户端：用 ArkTS + ArkUI 编写，与网页、微信小程序、Android、Windows 四端共用同一套云端数据契约。
 
-![version](https://img.shields.io/badge/version-1.0.21-4E9082)
+![version](https://img.shields.io/badge/version-1.0.9-4E9082)
 ![license](https://img.shields.io/badge/license-MIT-2EA44F)
 ![platform](https://img.shields.io/badge/platform-HarmonyOS-000000)
 ![stack](https://img.shields.io/badge/ArkTS-ArkUI-6E8CA8)
@@ -55,7 +55,7 @@
 
 ## 下载
 
-- Release 的 Assets 中提供签名 HAP、未签名模拟器 HAP（`entry-default-unsigned.hap`）和 SHA-256 校验文件。
+- 当前正式版本为 **1.0.9**，商店发布使用 Release App Pack（`.app`）。更新内容见[更新日志](CHANGELOG.md)。
 - **模拟器**：接受未签名 HAP，可用 `hdc` / `bm install` 直接安装调试。
 - **真机**：需要签名。用 DevEco Studio 登录华为账号后自动签名，或使用自有证书重新签名再安装。
 

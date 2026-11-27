@@ -236,7 +236,10 @@ export class HomeworkBrief {
 }
 
 export class TaskShare {
+  /** 旧分享格式（主域根路径 hash）；继续可读。 */
   static readonly PREFIX: string = 'https://tool.furina.fun/#task-share=';
+  /** 统一内容链接（docs/app-links/CONTRACT.md §3）：快照只放片段，不进入服务端日志。 */
+  static readonly LINK_PREFIX: string = 'https://tool.furina.fun/l/task-share#s=';
   title: string = '';
   group: string = '';
   due: string = '';
@@ -251,14 +254,17 @@ export class TaskShare {
     const payload: Blob = { 't': TaskShare.clip(task.title, 60), 'd': TaskShare.clip(task.dueLabel(), 32),
       'l': TaskShare.clip(task.group || '未分组', 12), 'n': '',
       's': task.steps.slice(0, 3).map((s: string) => TaskShare.clip(s, 40)) };
-    return TaskShare.PREFIX + encodeURIComponent(JSON.stringify(payload));
+    return TaskShare.LINK_PREFIX + encodeURIComponent(JSON.stringify(payload));
   }
 
   static parse(input: string): TaskShare | undefined {
     const url = input.trim();
-    if (input.length > 8192 || !url.startsWith(TaskShare.PREFIX)) return undefined;
+    if (input.length > 8192) return undefined;
+    const prefix: string = url.startsWith(TaskShare.LINK_PREFIX) ? TaskShare.LINK_PREFIX
+      : (url.startsWith(TaskShare.PREFIX) ? TaskShare.PREFIX : '');
+    if (!prefix) return undefined;
     try {
-      const payload = JsonBlob.parse(decodeURIComponent(url.substring(TaskShare.PREFIX.length)));
+      const payload = JsonBlob.parse(decodeURIComponent(url.substring(prefix.length)));
       if (!payload) return undefined;
       const result = new TaskShare();
       result.title = TaskShare.clip(field(payload, 't'), 100);

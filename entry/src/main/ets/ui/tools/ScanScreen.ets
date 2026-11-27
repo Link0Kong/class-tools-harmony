@@ -11,6 +11,8 @@ import { Tokens } from '../theme/Tokens';
 @Component
 export struct ScanScreen {
   onClose: () => void = () => {};
+  /** App Link `/l/draw/<id>` 进入时的链接（为空则是普通扫码页）。 */
+  @Prop initialLink: string = '';
   @State private link: string = '';
   @State private code: ScanPayload = new ScanPayload();
   @State private status: string = '';
@@ -18,7 +20,12 @@ export struct ScanScreen {
   private owner: string = '';
   private active: boolean = false;
 
-  aboutToAppear(): void { this.active = true; this.owner = Services.currentSid; }
+  aboutToAppear(): void {
+    this.active = true;
+    this.owner = Services.currentSid;
+    const initial: string = this.initialLink;
+    if (initial.length > 0) this.recognize(initial);
+  }
   aboutToDisappear(): void { this.active = false; this.clear(); }
   private current(): boolean { return this.active && !!this.owner && this.owner === Services.currentSid; }
   private clear(): void { this.code = new ScanPayload(); this.link = ''; this.status = ''; }

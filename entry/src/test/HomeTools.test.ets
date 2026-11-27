@@ -75,6 +75,21 @@ export default function homeToolsTest() {
       expect(route?.taskId).assertEqual('');
       expect(ToolLaunch.parse(undefined, 'https://example.com/#task-share=1') === undefined).assertTrue();
       expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/#task-share=1')?.toolId).assertEqual('hw');
+      // 统一内容链接（App Linking）：只接管已声明的 /l/ 业务路径
+      const draw = ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/draw/D1234ABCD?from=qr');
+      expect(draw?.toolId).assertEqual('scan');
+      expect(draw?.verifyLink).assertEqual('https://tool.furina.fun/l/draw/d1234abcd');
+      const notice = ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/notice/group@occ:20261127');
+      expect(notice?.toolId).assertEqual('nt');
+      expect(notice?.noticeId).assertEqual('group@occ:20261127');
+      const share = ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/task-share#s=%7B%22t%22%3A%22%E5%A4%8D%E4%B9%A0%22%7D');
+      expect(share?.toolId).assertEqual('hw');
+      expect(share?.taskShareUrl).assertEqual('https://tool.furina.fun/l/task-share#s=%7B%22t%22%3A%22%E5%A4%8D%E4%B9%A0%22%7D');
+      expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/notice/') === undefined).assertTrue();
+      expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/file/deck1') === undefined).assertTrue();
+      expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/course/2026-11-27/3-4') === undefined).assertTrue();
+      expect(ToolLaunch.parse(undefined, 'https://www.tool.furina.fun/l/notice/abc') === undefined).assertTrue();
+      expect(ToolLaunch.parse(undefined, 'https://tool.furina.fun/l/task-share') === undefined).assertTrue();
     });
 
     it('homework_open_and_items', 0, () => {
