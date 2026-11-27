@@ -18,7 +18,8 @@ export class CloudConfig {
   static readonly GET_RETRY_DELAY_MS: number = 350;
 
   /** 与网页/小程序一致的应用版本号（HarmonyOS 端独立版本线，M0 = 1.0.0）。 */
-  static readonly APP_VERSION: string = '1.0.15';
+  static readonly APP_VERSION: string = '1.0.9';
+  static readonly RELEASE_NOTES: string = '工作台卡片支持添加、移除、排序，并可切换半宽或整行显示。顶部操作整合到工作台。访问统计可识别鸿蒙端，管理员现在可以清空通知覆盖内容。';
 
   static isConfigured(): boolean {
     // 只做长度/前缀校验：不要把 key 字面量和自身比较（占位符替换脚本会把比较里的占位符一起替换掉）

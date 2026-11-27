@@ -1110,6 +1110,14 @@ export struct MeScreen {
             this.openLegal(LegalTexts.TERMS);
           })
           Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
+          this.linkRow('更新说明', 'v' + CloudConfig.APP_VERSION, () => {
+            AlertDialog.show({
+              title: '枫丹工具箱 ' + CloudConfig.APP_VERSION,
+              message: CloudConfig.RELEASE_NOTES,
+              confirm: { value: '知道了', action: () => {} }
+            });
+          })
+          Divider().color(Tokens.DIVIDER).strokeWidth(0.5).margin({ left: 16, right: 16 })
           this.linkRow(this.updateBusy ? '检查更新中…' : '检查更新',
             'v' + CloudConfig.APP_VERSION, () => {
               this.checkUpdate();
