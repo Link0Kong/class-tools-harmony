@@ -80,6 +80,8 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    const previous = AppStorage.get<number>('homeContextOpenedAt') ?? 0;
+    AppStorage.setOrCreate<number>('homeContextOpenedAt', Math.max(Date.now(), previous + 1));
     AppStorage.setOrCreate<boolean>('homeContextForeground', true);
     AppStorage.setOrCreate<number>('waterForeground', Date.now());
     NotifyCenter.setForeground(true);

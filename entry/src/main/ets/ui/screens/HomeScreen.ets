@@ -32,10 +32,10 @@ import { Motion } from '../theme/Motion';
 import { Breakpoints } from '../theme/Breakpoints';
 import { AppSymbols } from '../theme/AppSymbols';
 import { HomeContextRepository } from '../../data/home/HomeContextRepository';
-import { HOME_DEFAULT_REGION, HomeAppearance, HomeContextRules, HomePhraseBatch, HomeRegion, HomeTimetableState,
+import { HOME_DEFAULT_REGION, HomeAppearance, HomeContextRules, HomeCourseContext, HomePhraseBatch, HomeRegion, HomeTimetableState,
   HomeWeather } from '../../features/home/HomeContext';
 import { TimetableFocus } from '../../data/timetable/TimetableFocus';
-import { HomeContextCard } from '../components/HomeContextCard';
+import { HomeContextCard, HomeWeatherAttribution } from '../components/HomeContextCard';
 import { HomeCardShell } from '../components/HomeCardShell';
 import { HomeCardConfigSheet } from './HomeCardConfigSheet';
 
@@ -55,6 +55,7 @@ const HOME_CARD_H: number = 152;
 export struct HomeScreen {
   @Prop @Watch('refreshHomeContext') contextActive: boolean = true;
   @StorageLink('homeContextForeground') @Watch('refreshHomeContext') contextForeground: boolean = true;
+  @StorageProp('homeContextOpenedAt') homeOpenedAt: number = 0;
   @StorageLink('homeContentRevision') @Watch('refreshHomeContext') homeContentRevision: number = 0;
   @State private homeSid: string = '';
   @State private homeAppearance: HomeAppearance = new HomeAppearance();
@@ -62,6 +63,7 @@ export struct HomeScreen {
   @State private homeNow: number = Date.now();
   @State private homeWeather: HomeWeather | undefined = undefined;
   @State private homeBatch: HomePhraseBatch | undefined = undefined;
+  @State private homeContentReady: boolean = false;
   @State private homeTimetableState: HomeTimetableState = HomeTimetableState.Loading;
   private settingsRevision: number = -1;
   @StorageProp('activityRevision') @Watch('refreshActivities') activityRevision: number = 0;
@@ -252,6 +254,7 @@ export struct HomeScreen {
       this.homeAppearance = new HomeAppearance();
       this.homeRegion = HOME_DEFAULT_REGION;
       this.homeWeather = undefined;
+      this.homeContentReady = false;
       this.settingsRevision = -1;
     }
     if (!sid.length) return;
@@ -277,7 +280,10 @@ export struct HomeScreen {
     });
     if (!this.homeAppearance.funContent || !this.homeAppearance.onlineContent) return;
     const cachedBatch = await HomeContextRepository.cachedContent(now);
-    if (sid === this.homeSid && this.contextVisible() && cachedBatch) this.homeBatch = cachedBatch;
+    if (sid === this.homeSid && this.contextVisible()) {
+      if (cachedBatch) this.homeBatch = cachedBatch;
+      this.homeContentReady = true;
+    }
     if (!this.contextVisible() || sid !== this.homeSid || !this.homeAppearance.funContent || !this.homeAppearance.onlineContent) return;
     const batch = await HomeContextRepository.content(now);
     if (sid === this.homeSid && this.contextVisible()) this.homeBatch = batch;
@@ -290,6 +296,14 @@ export struct HomeScreen {
   private weatherTemperature(): string {
     const value = this.freshWeather()?.temperatureC;
     return typeof value === 'number' ? ' · ' + Math.round(value) + ' ℃' : '';
+  }
+
+  private courseContext(): HomeCourseContext {
+    return HomeContextRules.course(this.plan, this.homeTimetableState, this.homeNow);
+  }
+
+  private timetableAction(): string {
+    return this.courseContext().action === '查看明日课表' ? '查看明日课表' : '查看课表';
   }
 
   private openContextCourse(focus: TimetableFocus): void {
@@ -373,6 +387,15 @@ export struct HomeScreen {
       return;
     }
     if (id === 'clock') {
+      return;
+    }
+    if (id === 'tt') {
+      const course = this.courseContext();
+      const compact = this.cards[this.indexOf(id)]?.span !== HomeCards.FULL;
+      const focus = course.action === '查看明日课表' || (compact && course.action === '查看课程')
+        ? course.focus : undefined;
+      if (focus) this.openContextCourse(focus);
+      else this.onOpenTool('tt');
       return;
     }
     if (id === 'quick') {
@@ -864,7 +887,9 @@ export struct HomeScreen {
 
   private cardHeight(cfg: HomeCardConfig): number {
     if (cfg.id === 'tt' && cfg.span === HomeCards.FULL) {
-      return Math.max(HOME_CARD_H, 86 + 46 * this.plan.today.length);
+      const next = this.plan.todayState === TodayState.DONE && this.plan.next !== undefined ? 48 : 0;
+      const status = this.courseContext().status.length > 0 ? 20 : 0;
+      return Math.max(HOME_CARD_H, 86 + 48 * this.plan.today.length + next + status);
     }
     return HOME_CARD_H;
   }
@@ -1100,7 +1125,7 @@ export struct HomeScreen {
           .fontColor(Tokens.TEXT_PRIMARY)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(s.span + (s.room.length > 0 ? ' · ' + s.room : ''))
+        Text(s.span + (s.fullRoom.length > 0 ? ' · ' + s.fullRoom : ''))
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_SECONDARY)
           .maxLines(1)
@@ -1117,8 +1142,9 @@ export struct HomeScreen {
       }
     }
     .width('100%')
-    .height(46)
+    .height(48)
     .alignItems(VerticalAlign.Center)
+    .onClick(() => { this.openContextCourse(TimetableFocus.fromSession(s)); })
   }
 
   /** 整行列表卡的一行：标题 + 右侧辅助信息。 */
@@ -1167,14 +1193,32 @@ export struct HomeScreen {
     .alignItems(VerticalAlign.Center)
   }
 
-  private afterClassText(): string {
-    const next = this.plan.next;
-    return '今日课程已结束' + (next !== undefined ? ' · 下次 ' + next.dayText + ' ' + next.startText + ' ' + next.name : '');
+  private courseLabel(s: SessionInfo): string {
+    const status = this.courseContext().status;
+    if (status.length > 0) return status + ' · ' + s.startText;
+    return (s.state === SessionState.ONGOING ? '上课中' : '下一节') + ' · ' + s.startText;
+  }
+
+  @Builder
+  nextCourseSummary(s: SessionInfo, wide: boolean) {
+    Column({ space: 2 }) {
+      Text('下一节 · ' + s.dayText + ' ' + s.startText + ' · ' + s.name)
+        .fontSize(Tokens.F_CAPTION)
+        .fontColor(Tokens.TEXT_SECONDARY)
+        .maxLines(wide ? 2 : 1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (wide && s.fullRoom.length > 0) {
+        Text(s.fullRoom).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+    }
+    .width('100%').alignItems(HorizontalAlign.Start).margin({ top: 4 })
+    .onClick(() => { this.openContextCourse(TimetableFocus.fromSession(s)); })
   }
 
   @Builder
   compactCourse(s: SessionInfo) {
-    Text((s.state === SessionState.ONGOING ? '上课中' : '下一节') + ' · ' + s.startText)
+    Text(this.courseLabel(s))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(Tokens.MIST_TEAL)
       .margin({ top: 6 })
@@ -1184,12 +1228,12 @@ export struct HomeScreen {
       .fontColor(Tokens.TEXT_PRIMARY)
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
-    Text(s.span + (s.room.length > 0 ? ' · ' + s.room : ''))
+    Text(s.span + (s.fullRoom.length > 0 ? ' · ' + s.fullRoom : ''))
       .fontSize(Tokens.F_CAPTION)
       .fontColor(Tokens.TEXT_SECONDARY)
       .maxLines(1)
     Blank()
-    this.cardFooter(s.countdown && s.countdown !== '下一节' ? s.countdown : '查看本周课表')
+    this.cardFooter(s.countdown && s.countdown !== '下一节' ? s.countdown : this.timetableAction())
   }
 
   @Builder
@@ -1198,44 +1242,45 @@ export struct HomeScreen {
       this.plan.hasData && this.plan.today.length > 0 ? '' + this.plan.today.length + ' 节' : '')
     if (this.plan.hasData && this.plan.today.length > 0 && (wide || this.nextToday() !== undefined)) {
       if (wide) {
+        if (this.courseContext().status.length > 0) {
+          Text(this.courseContext().status).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
+            .margin({ top: 2 })
+        }
         Column() {
           ForEach(this.plan.today, (s: SessionInfo) => {
             this.sessionRow(s)
-          }, (s: SessionInfo, index: number) => index + '_' + s.startAt + '_' + s.name + '_' + s.room + '_' + s.span + '_' + s.state + '_' + s.countdown)
+          }, (s: SessionInfo, index: number) => index + '_' + s.startAt + '_' + s.name + '_' + s.fullRoom + '_' + s.span + '_' + s.state + '_' + s.countdown)
         }
         .width('100%')
+        if (this.plan.todayState === TodayState.DONE && this.plan.next !== undefined) {
+          this.nextCourseSummary(this.plan.next, true)
+        }
         Blank()
-        this.cardFooter(this.plan.todayState === TodayState.DONE ? this.afterClassText() : '查看本周课表')
+        this.cardFooter(this.timetableAction())
       } else if (this.nextToday() !== undefined) {
         this.compactCourse(this.nextToday()!)
       }
     } else if (this.plan.hasData) {
-      Text(this.plan.todayState === TodayState.DONE ? '今日课程已结束' : '今天没课')
+      Text(this.courseContext().status || '今日无课')
         .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY)
         .fontWeight(FontWeight.Bold)
         .fontColor(Tokens.TEXT_PRIMARY)
         .margin({ top: 10 })
-      Text(this.plan.next !== undefined
-        ? '下次 · ' + this.plan.next.dayText + ' ' + this.plan.next.startText + ' ' + this.plan.next.name : '近期暂无课程')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
-        .maxLines(1)
-        .margin({ top: 4 })
+      if (this.plan.next !== undefined) {
+        this.nextCourseSummary(this.plan.next, wide)
+      } else if (this.homeTimetableState === HomeTimetableState.Ready) {
+        Text('近期暂无课程').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).margin({ top: 4 })
+      }
       Blank()
-      this.cardFooter('查看本周课表')
+      this.cardFooter(this.timetableAction())
     } else {
-      Text('课表未同步')
+      Text(this.courseContext().status)
         .fontSize(Tokens.F_BODY)
         .fontWeight(FontWeight.Medium)
         .fontColor(Tokens.TEXT_PRIMARY)
         .margin({ top: 10 })
-      Text('打开课表拉取本周课程')
-        .fontSize(Tokens.F_CAPTION)
-        .fontColor(Tokens.TEXT_TERTIARY)
-        .maxLines(1)
-        .margin({ top: 4 })
       Blank()
-      this.cardFooter('去同步课表')
+      this.cardFooter(this.timetableAction())
     }
   }
 
@@ -1634,9 +1679,7 @@ export struct HomeScreen {
       Text(this.freshWeather()?.conditionText + this.weatherTemperature())
         .fontSize(wide ? Tokens.F_HEADING : Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY)
         .margin({ top: Tokens.SPACE_8 })
-      if (wide) {
-        Text('和风天气').fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
-      }
+      HomeWeatherAttribution({ attributions: this.freshWeather()?.attributions ?? [] })
     } else {
       Text('当前天气暂不可用').fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY)
         .margin({ top: Tokens.SPACE_8 })
@@ -1874,14 +1917,16 @@ export struct HomeScreen {
             Column() {
               HomeContextCard({
                 account: this.homeSid,
+                name: Services.currentName,
                 active: this.contextVisible(),
                 appearance: this.homeAppearance,
                 region: this.homeRegion,
-                now: this.homeNow,
+                now: Math.max(this.homeNow, this.homeOpenedAt),
+                openedAt: this.homeOpenedAt,
                 weather: this.homeWeather,
-                course: HomeContextRules.course(this.plan, this.homeTimetableState, this.homeNow),
+                course: this.courseContext(),
                 batch: this.homeBatch,
-                onOpenCourse: (focus: TimetableFocus) => { this.openContextCourse(focus); }
+                contentReady: this.homeContentReady
               })
               if (this.currentActivities.length > 0) {
                 Column({ space: 6 }) {

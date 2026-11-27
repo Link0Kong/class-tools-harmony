@@ -78,6 +78,10 @@ export interface HomeWeather {
   attributions?: string[];
 }
 
+export enum HomeAtmosphere {
+  None, Rain, Sun, Night
+}
+
 export enum HomeTimetableState {
   Loading, Ready, Unconfigured, Failed
 }
@@ -130,9 +134,9 @@ export class HomeReading {
   course: string;
   occurrence: number;
   expiresAt: number;
-  expanded: boolean = false;
+  openedAt: number;
 
-  constructor(phrase: HomePhrase, context: HomePhraseContext, expiresAt: number) {
+  constructor(phrase: HomePhrase, context: HomePhraseContext, expiresAt: number, openedAt: number = 0) {
     this.phrase = phrase;
     this.day = context.day;
     this.time = context.time;
@@ -141,6 +145,7 @@ export class HomeReading {
     this.course = context.course.topic;
     this.occurrence = context.course.occurrence;
     this.expiresAt = expiresAt;
+    this.openedAt = openedAt;
   }
 }
 
@@ -194,13 +199,31 @@ export class HomeContextRules {
     if (code === 900 || (weather.temperatureC ?? 0) >= 35) return 'HEAT';
     if (weather.cooling === true) return 'COOLING';
     if (code >= 101 && code <= 104) return 'CLOUD';
-    if (code !== 100) return '';
+    return code === 100 ? HomeContextRules.daylightTopic(weather, now) : '';
+  }
+
+  private static daylightTopic(weather: HomeWeather, now: number): string {
     const rise = Date.parse(weather.sunrise ?? '');
     const set = Date.parse(weather.sunset ?? '');
     const day = Math.floor((now + CHINA_OFFSET) / DAY);
     if (!(rise < set) || Math.floor((rise + CHINA_OFFSET) / DAY) !== day ||
       Math.floor((set + CHINA_OFFSET) / DAY) !== day) return '';
     return now >= rise && now < set ? 'CLEAR_DAY' : 'CLEAR_NIGHT';
+  }
+
+  static atmosphere(weather: HomeWeather | undefined, context: HomePhraseContext, now: number): HomeAtmosphere {
+    const code = weather?.conditionCode ?? 0;
+    if ((code >= 300 && code <= 318) || code === 350 || code === 351 || code === 399) return HomeAtmosphere.Rain;
+    if (context.importantWeather) return HomeAtmosphere.None;
+    const night = context.time === 'DUSK' || context.time === 'NIGHT';
+    if (code >= 150 && code <= 153) return HomeAtmosphere.Night;
+    if (weather?.conditionCode === 100) {
+      const daylight = HomeContextRules.daylightTopic(weather, now);
+      if (daylight === 'CLEAR_DAY') return HomeAtmosphere.Sun;
+      if (daylight === 'CLEAR_NIGHT') return HomeAtmosphere.Night;
+      return night ? HomeAtmosphere.Night : HomeAtmosphere.Sun;
+    }
+    return night ? HomeAtmosphere.Night : HomeAtmosphere.None;
   }
 
   static publicationDay(now: number): number {
@@ -254,7 +277,7 @@ export class HomeContextRules {
       const target = current ?? next;
       if (target) {
         result.action = '查看课程';
-        result.focus = new TimetableFocus(target.startAt, target.name, target.fullRoom, target.start);
+      result.focus = TimetableFocus.fromSession(target);
       }
     }
     return result;
@@ -271,15 +294,13 @@ export class HomeContextRules {
 
   static keep(reading: HomeReading, context: HomePhraseContext, prefs: HomeAppearance, now: number): boolean {
     const phrase = reading.phrase;
-    const expandedEnglish = reading.expanded && phrase.topic === 'ENGLISH' &&
-      prefs.english && prefs.funContent && phrase.tone === prefs.tone;
-    if (!expandedEnglish && !HomeContextRules.allows(phrase, context, prefs)) return false;
+    if (!HomeContextRules.allows(phrase, context, prefs)) return false;
     if (HomeContextRules.online(phrase) && !(reading.expiresAt > now && HomeContextRules.validSource(phrase.sourceUrl))) return false;
     if (WEATHER_TOPICS.indexOf(phrase.topic) >= 0 && reading.regionId !== context.regionId) return false;
     if (COURSE_TOPICS.indexOf(phrase.topic) >= 0 && reading.occurrence !== context.course.occurrence) return false;
-    return expandedEnglish || (reading.day === context.day && reading.time === context.time &&
+    return reading.day === context.day && reading.time === context.time &&
       (!context.course.urgent || (reading.course === context.course.topic && reading.occurrence === context.course.occurrence)) &&
-      (WEATHER_CHANGES.indexOf(context.weather) < 0 || (reading.weather === context.weather && reading.regionId === context.regionId)));
+      (WEATHER_CHANGES.indexOf(context.weather) < 0 || (reading.weather === context.weather && reading.regionId === context.regionId));
   }
 
   static pick(pool: HomePhrase[], context: HomePhraseContext, prefs: HomeAppearance,

@@ -1,38 +1,34 @@
 import { AppGlobal } from '../../app/AppGlobal';
 import { HomeContextRepository } from '../../data/home/HomeContextRepository';
-import { SessionInfo } from '../../data/timetable/TimetableModels';
-import { TimetableFocus } from '../../data/timetable/TimetableFocus';
 import { HomeDigest } from '../../features/home/HomeDigest';
-import { HOME_DEFAULT_REGION, HomeAppearance, HomeContextRules, HomeCourseContext, HomePhrase, HomePhraseBatch,
-  HomePhraseContext, HomeReading, HomeRegion, HomeWeather } from '../../features/home/HomeContext';
+import { HOME_DEFAULT_REGION, HomeAppearance, HomeAtmosphere, HomeContextRules, HomeCourseContext, HomePhrase,
+  HomePhraseBatch, HomePhraseContext, HomeReading, HomeRegion, HomeWeather } from '../../features/home/HomeContext';
 import { HOME_LOCAL_PHRASES } from '../../features/home/HomePhrases';
-import { showFeedback } from './AppFeedback';
+import { HomeAtmosphereIcon, homeAtmosphereFeedback } from './HomeAtmosphereIcon';
 import { Tokens } from '../theme/Tokens';
-import { Motion } from '../theme/Motion';
 
 @Component
 export struct HomeContextCard {
   @Prop @Watch('changeAccount') account: string = '';
+  @Prop name: string = '';
   @Prop @Watch('update') now: number = Date.now();
+  @Prop @Watch('update') openedAt: number = 0;
   @Prop @Watch('update') appearance: HomeAppearance = new HomeAppearance();
   @Prop @Watch('update') region: HomeRegion = HOME_DEFAULT_REGION;
   @Prop @Watch('update') weather: HomeWeather | undefined = undefined;
   @Prop @Watch('update') course: HomeCourseContext = new HomeCourseContext();
   @Prop @Watch('update') batch: HomePhraseBatch | undefined = undefined;
+  @Prop @Watch('update') contentReady: boolean = true;
   @Prop @Watch('update') active: boolean = true;
-  onOpenCourse: (focus: TimetableFocus) => void = () => {};
 
   @State private reading: HomeReading | undefined = undefined;
-  @State private sourceOpen: boolean = false;
-  @State private lit: boolean = false;
-  @State private bulbScale: number = 1;
+  @State private response: HomeAtmosphere = HomeAtmosphere.None;
   private history: Map<string, number> = new Map();
   private shown: boolean = false;
   private lastRecorded: string = '';
   private revision: number = 0;
-  private choice: number = 0;
   private ready: boolean = false;
-  private lampTimer: number = -1;
+  private feedbackTimer: number = -1;
 
   aboutToAppear(): void {
     this.changeAccount();
@@ -40,7 +36,7 @@ export struct HomeContextCard {
 
   aboutToDisappear(): void {
     this.revision += 1;
-    this.resetLamp();
+    this.clearFeedback();
     this.shown = false;
   }
 
@@ -50,10 +46,8 @@ export struct HomeContextCard {
     this.ready = false;
     this.reading = undefined;
     this.history = new Map();
-    this.sourceOpen = false;
     this.lastRecorded = '';
-    this.choice = 0;
-    this.resetLamp();
+    this.clearFeedback();
     const history = await HomeContextRepository.readHistory(sid, this.now);
     const reading = await HomeContextRepository.reading(sid);
     if (revision !== this.revision || sid !== this.account) return;
@@ -71,9 +65,14 @@ export struct HomeContextCard {
     return new HomePhraseContext(this.now, this.region.id, this.facts(), this.course);
   }
 
+  private scene(): HomeAtmosphere {
+    return this.appearance.funContent
+      ? HomeContextRules.atmosphere(this.facts(), this.context(), this.now) : HomeAtmosphere.None;
+  }
+
   private seed(context: HomePhraseContext): number {
     const date = new Date(this.now);
-    return date.getDate() * 31 + date.getMonth() + context.time.length * 13 + this.choice * 17 + this.account.length;
+    return date.getDate() * 31 + date.getMonth() + context.time.length * 13 + this.account.length;
   }
 
   private fallback(): HomePhrase | undefined {
@@ -91,99 +90,68 @@ export struct HomeContextCard {
   }
 
   private update(): void {
-    if (!this.active) {
-      this.resetLamp();
-      return;
-    }
-    if (!this.appearance.motion) this.resetLamp();
-    if (!this.ready || !this.appearance.funContent) return;
+    if (!this.active || this.response !== this.scene()) this.clearFeedback();
+    if (!this.active || !this.ready || !this.appearance.funContent) return;
+    if (this.appearance.onlineContent && !this.contentReady) return;
+    const context = this.context();
     const current = this.reading;
-    if (current && HomeContextRules.keep(current, this.context(), this.appearance, this.now)) {
+    if (current && current.openedAt === this.openedAt && HomeContextRules.keep(current, context, this.appearance, this.now)) {
       this.recordSoon();
       return;
     }
     if (current && this.course.status === '正在读取课表' &&
       ['UPCOMING', 'ONGOING', 'BREAK', 'NO_CLASS', 'ENDED'].indexOf(current.phrase.topic) >= 0) return;
-    this.choose(false);
-  }
-
-  private pick(manual: boolean): HomePhrase | undefined {
-    const context = this.context();
     const batch = this.batch;
     const available = batch && Date.parse(batch.expiresAt) > this.now
       ? HOME_LOCAL_PHRASES.concat(batch.entries) : HOME_LOCAL_PHRASES;
-    return HomeContextRules.pick(available, context, this.appearance, this.history, this.now,
-      this.seed(context) + (manual ? 17 : 0), this.reading?.phrase.id ?? '', manual);
+    const next = HomeContextRules.pick(available, context, this.appearance, this.history, this.now,
+      this.seed(context), current?.phrase.id ?? this.lastSeen());
+    if (!next) return;
+    const expiry = HomeContextRules.online(next) ? Date.parse(batch?.expiresAt ?? '') : 0;
+    this.reading = new HomeReading(next, context, expiry, this.openedAt);
+    this.recordSoon();
   }
 
-  private choose(manual: boolean): void {
-    const next = this.pick(manual);
-    if (!next || (manual && next.id === this.reading?.phrase.id)) return;
-    if (manual) this.choice += 1;
-    const expiry = HomeContextRules.online(next) ? Date.parse(this.batch?.expiresAt ?? '') : 0;
-    this.reading = new HomeReading(next, this.context(), expiry);
-    this.sourceOpen = false;
-    this.resetLamp();
-    this.recordSoon();
+  private lastSeen(): string {
+    let latest = 0;
+    let result = '';
+    this.history.forEach((seen: number, id: string) => {
+      if (seen >= latest && seen <= this.now) {
+        latest = seen;
+        result = id;
+      }
+    });
+    return result;
   }
 
   private recordSoon(): void {
     const id = this.reading?.phrase.id;
-    if (!this.shown || !this.active || !id || this.lastRecorded === id) return;
+    const openedAt = this.openedAt;
+    const record = openedAt + '/' + id;
+    if (!this.shown || !this.active || !id || this.lastRecorded === record) return;
+    const revision = this.revision;
     setTimeout(() => {
       const current = this.reading;
-      if (!this.shown || !this.active || !current || this.lastRecorded === id ||
+      if (revision !== this.revision || !this.shown || !this.active || !current || this.lastRecorded === record ||
+        current.openedAt !== openedAt || this.openedAt !== openedAt ||
         current.phrase.id !== id || this.visiblePhrase()?.id !== id) return;
-      this.lastRecorded = id;
+      this.lastRecorded = record;
       this.history.set(id, this.now);
       HomeContextRepository.remember(this.account, current, this.history);
     }, 32);
   }
 
-  private translation(): void {
-    const reading = this.reading;
-    if (!reading || !reading.phrase.translation) return;
-    reading.expanded = !reading.expanded;
-    this.reading = JSON.parse(JSON.stringify(reading)) as HomeReading;
-    HomeContextRepository.remember(this.account, reading, this.history);
+  private clearFeedback(): void {
+    clearTimeout(this.feedbackTimer);
+    this.feedbackTimer = -1;
+    this.response = HomeAtmosphere.None;
   }
 
-  private resetLamp(): void {
-    clearTimeout(this.lampTimer);
-    this.lampTimer = -1;
-    this.lit = false;
-    this.bulbScale = 1;
-  }
-
-  private tapLamp(): void {
-    this.resetLamp();
-    this.lit = true;
-    if (this.appearance.motion) {
-      this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.ease() }, () => { this.bulbScale = 1.12; });
-    }
-    this.lampTimer = setTimeout(() => { this.resetLamp(); }, 550);
-  }
-
-  private canSwap(): boolean {
-    const alternative = this.pick(true);
-    return this.ready && alternative !== undefined && alternative.id !== this.visiblePhrase()?.id;
-  }
-
-  private primary(): string {
-    const phrase = this.visiblePhrase();
-    if (phrase?.translation) return this.reading?.expanded ? '收起中文' : '看中文';
-    if (this.course.action.length > 0 && (!this.appearance.funContent || this.course.urgent ||
-      (this.course.action === '查看明日课表' && phrase !== undefined && !HomeContextRules.online(phrase)))) {
-      return this.course.action;
-    }
-    return this.canSwap() ? '换一句' : '';
-  }
-
-  private primaryTap(): void {
-    const action = this.primary();
-    if (action === '看中文' || action === '收起中文') this.translation();
-    else if (action === '换一句') this.choose(true);
-    else if (this.course.focus) this.onOpenCourse(this.course.focus);
+  private showResponse(scene: HomeAtmosphere): void {
+    if (!this.active || scene !== this.scene()) return;
+    clearTimeout(this.feedbackTimer);
+    this.response = scene;
+    this.feedbackTimer = setTimeout(() => { this.clearFeedback(); }, 2200);
   }
 
   private weatherLabel(): string {
@@ -195,102 +163,104 @@ export struct HomeContextCard {
       HomeDigest.pad2(time.getUTCHours()) + ':' + HomeDigest.pad2(time.getUTCMinutes());
   }
 
-  private weatherCredit(): string {
-    const credits = this.facts()?.attributions;
-    const values = Array.isArray(credits) ? credits.filter((value: string) => typeof value === 'string') : [];
-    return Array.from(new Set<string>(['和风天气'].concat(values))).join(' · ');
-  }
-
-  private openSource(): void {
-    const url = this.visiblePhrase()?.sourceUrl;
-    if (url && HomeContextRules.validSource(url)) {
-      AppGlobal.context?.openLink(url).catch(() => { showFeedback(this.getUIContext(), '原文暂时无法打开'); });
-    }
-  }
-
-  @Builder
-  sourcePanel() {
-    Column({ space: Tokens.SPACE_12 }) {
-      Text('文案出处').fontSize(Tokens.F_HEADING).fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
-      Text('由 DeepSeek 根据公开资料生成。').fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_SECONDARY)
-      Text(this.visiblePhrase()?.sourceTitle ?? '').fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY)
-      Button('阅读原文').constraintSize({ minHeight: 48 }).onClick(() => { this.openSource(); })
-      Button('关闭').type(ButtonType.Normal).constraintSize({ minHeight: 48 })
-        .backgroundColor(Color.Transparent).fontColor(Tokens.TEXT_PRIMARY)
-        .onClick(() => { this.sourceOpen = false; })
-    }
-    .alignItems(HorizontalAlign.Start)
-    .padding(Tokens.CARD_PADDING)
-    .width('100%')
-  }
-
-  @Builder
-  courseLine(label: string, session: SessionInfo) {
-    Text(label + ' · ' + (session.dayOffset > 0 ? session.dayText + ' ' : '') + session.startText + ' · ' + session.name)
-      .fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY).width('100%')
-    if (session.fullRoom.length > 0) {
-      Text(session.fullRoom).fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY).width('100%')
-    }
+  private greeting(): string {
+    const hello = HomeDigest.hello(new Date(this.now).getHours());
+    const name = this.name.trim();
+    return name.length > 0 ? hello + '，' + name : hello;
   }
 
   build() {
     Column({ space: Tokens.SPACE_8 }) {
-      Text(HomeDigest.dateText(new Date(this.now)) + ' ' + ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(this.now).getDay()])
-        .fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY)
-      if (this.visiblePhrase() !== undefined) {
-        Text(this.visiblePhrase()?.text ?? '')
-          .fontSize(Tokens.F_HEADING).fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
-          .width('100%').onVisibleAreaChange([0, 0.15], (visible: boolean, ratio: number) => {
-            this.shown = visible && ratio >= 0.15;
-            this.recordSoon();
-          })
-        if (this.reading?.expanded && this.visiblePhrase()?.translation) {
-          Text(this.visiblePhrase()?.translation ?? '').fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY).width('100%')
-        }
-        Divider().color(Tokens.DIVIDER)
-      }
-      if (this.facts() !== undefined) {
-        Text(this.weatherLabel()).fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_PRIMARY).width('100%')
-        Text(this.weatherCredit()).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).width('100%')
-      }
-      if (this.course.status.length > 0) {
-        Text(this.course.status).fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_PRIMARY)
-      }
-      if (this.course.current) this.courseLine('正在上课', this.course.current)
-      if (this.course.next) this.courseLine(this.course.cached ? '缓存中的下节课' : '下一节', this.course.next)
-      if (this.primary().length > 0) {
-        Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
-          Button(this.primary())
-            .constraintSize({ minWidth: 48, minHeight: 48 })
-            .fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY).backgroundColor(Tokens.TINT_TEAL)
-            .margin({ right: Tokens.SPACE_8 })
-            .accessibilityDescription(this.visiblePhrase()?.translation ? (this.reading?.expanded ? '已展开' : '已收起') : '')
-            .onClick(() => { this.primaryTap(); })
-          if (this.primary() !== '换一句' && this.canSwap()) {
-            Button('换一句').type(ButtonType.Normal).constraintSize({ minWidth: 48, minHeight: 48 })
-              .fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY).backgroundColor(Color.Transparent)
-              .onClick(() => { this.choose(true); })
-          } else if (HomeContextRules.validSource(this.visiblePhrase()?.sourceUrl)) {
-            Button('出处').type(ButtonType.Normal).constraintSize({ minWidth: 48, minHeight: 48 })
-              .fontSize(Tokens.F_BODY).fontColor(Tokens.TEXT_PRIMARY).backgroundColor(Color.Transparent)
-              .onClick(() => { this.sourceOpen = true; })
-          } else if (this.primary() === '换一句') {
-            Button({ type: ButtonType.Circle }) {
-              SymbolGlyph($r('sys.symbol.lightbulb')).fontSize(22)
-                .fontColor([this.lit ? Tokens.MIST_TEAL : Tokens.TEXT_PRIMARY])
-                .scale({ x: this.bulbScale, y: this.bulbScale })
-            }.width(48).height(48).backgroundColor(Color.Transparent)
-            .accessibilityText('点亮小灯').accessibilityDescription(this.lit ? '已点亮' : '未点亮')
-            .onClick(() => { this.tapLamp(); })
+      Row({ space: Tokens.SPACE_4 }) {
+        Column({ space: Tokens.SPACE_8 }) {
+          Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
+            Text(HomeDigest.dateText(new Date(this.now)) + ' ' + ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(this.now).getDay()])
+              .fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY).margin({ right: Tokens.SPACE_12 })
+            Text(this.greeting()).fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_SECONDARY)
+              .constraintSize({ maxWidth: '100%' }).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              .id('home_context_greeting')
+          }.width('100%')
+          if (this.visiblePhrase() !== undefined) {
+            Text(this.visiblePhrase()?.translation ?? this.visiblePhrase()?.text ?? '')
+              .fontSize(Tokens.F_HEADING).fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
+              .width('100%').id('home_context_phrase')
+              .onVisibleAreaChange([0, 0.15], (visible: boolean, ratio: number) => {
+                this.shown = visible && ratio >= 0.15;
+                this.recordSoon();
+              })
+            if (this.visiblePhrase()?.translation) {
+              Text(this.visiblePhrase()?.text ?? '').fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.TEXT_SECONDARY).width('100%').id('home_context_english')
+            }
           }
-        }.width('100%')
+        }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+        if (this.scene() !== HomeAtmosphere.None) {
+          HomeAtmosphereIcon({
+            scene: this.scene(), motion: this.appearance.motion, active: this.active,
+            onTap: (scene: HomeAtmosphere) => { this.showResponse(scene); }
+          })
+        }
+      }.width('100%').alignItems(VerticalAlign.Top)
+      if (this.facts() !== undefined) {
+        if (this.visiblePhrase() !== undefined) Divider().color(Tokens.DIVIDER)
+        Text(this.weatherLabel()).fontSize(Tokens.F_LABEL).fontColor(Tokens.TEXT_PRIMARY)
+          .width('100%').id('home_context_weather')
+        HomeWeatherAttribution({ attributions: this.facts()?.attributions ?? [] })
+      }
+      if (this.response !== HomeAtmosphere.None) {
+        Text(homeAtmosphereFeedback(this.response)).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
+          .width('100%').id('home_context_feedback')
       }
     }
     .width('100%').alignItems(HorizontalAlign.Start).padding(Tokens.CARD_PADDING)
     .backgroundColor(Tokens.CARD_STRONG).borderRadius(Tokens.RADIUS_CARD).border({ width: 1, color: Tokens.CARD_EDGE })
-    .bindSheet($$this.sourceOpen, this.sourcePanel(), {
-      height: SheetSize.MEDIUM, showClose: false, dragBar: true, backgroundColor: Tokens.SHEET
-    })
   }
 }
 
+class WeatherCredit {
+  label: string;
+  url: string;
+
+  constructor(label: string, url: string = '') {
+    this.label = label;
+    this.url = url;
+  }
+}
+
+@Component
+export struct HomeWeatherAttribution {
+  @Prop attributions: string[] = [];
+
+  private credits(): WeatherCredit[] {
+    const names = new Set<string>(['和风天气']);
+    const other: WeatherCredit[] = [];
+    let qweather = '';
+    for (const value of new Set(this.attributions)) {
+      if (typeof value !== 'string') continue;
+      const match = /^https:\/\/([a-z0-9.-]+)(?::443)?(?:[/?#]|$)[^\s\\]*$/i.exec(value);
+      if (match) {
+        const host = match[1].toLowerCase();
+        if (qweather.length === 0 && (host === 'qweather.com' || host.endsWith('.qweather.com'))) {
+          qweather = value;
+        } else {
+          other.push(new WeatherCredit(' · ' + host, value));
+        }
+      } else if (value.indexOf('://') < 0) {
+        names.add(value);
+      }
+    }
+    return [new WeatherCredit(Array.from(names).join(' · '), qweather)].concat(other);
+  }
+
+  build() {
+    Text() {
+      ForEach(this.credits(), (credit: WeatherCredit) => {
+        if (credit.url.length > 0) {
+          Span(credit.label).onClick(() => { AppGlobal.context?.openLink(credit.url).catch(() => {}); })
+        } else {
+          Span(credit.label)
+        }
+      }, (credit: WeatherCredit) => credit.label + credit.url)
+    }.fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY).width('100%')
+  }
+}

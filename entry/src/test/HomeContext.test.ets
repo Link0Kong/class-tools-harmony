@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { Course, TtPlan, TtSnapshot } from '../main/ets/data/timetable/TimetableModels';
 import { TtCalendar } from '../main/ets/data/timetable/TtCalendar';
-import { HOME_DEFAULT_REGION, HomeAppearance, HomeContextRules, HomeCourseContext, HomePhraseBatch, HomePhraseContext,
+import { HOME_DEFAULT_REGION, HomeAppearance, HomeAtmosphere, HomeContextRules, HomeCourseContext, HomePhraseBatch, HomePhraseContext,
   HomeReading, HomeTimetableState, HomeWeather } from '../main/ets/features/home/HomeContext';
 import { HOME_LOCAL_PHRASES } from '../main/ets/features/home/HomePhrases';
 
@@ -52,6 +52,28 @@ export default function homeContextTest(): void {
         prefs.tone = 'PLAYFUL';
         expect(HomeContextRules.keep(saved, context, prefs, now)).assertFalse();
       }
+    });
+
+    it('uses observed rain and sun and falls back to time at night', 0, () => {
+      const day = new Date(2026, 10, 27, 14, 0).getTime();
+      const night = new Date(2026, 10, 27, 21, 0).getTime();
+      const course = new HomeCourseContext();
+      const weather: HomeWeather = {
+        regionId: 'minhou', validTime: new Date(day).toISOString(), conditionCode: 100, conditionText: '晴',
+        sunrise: '2026-11-27T06:30:00+08:00', sunset: '2026-11-27T17:20:00+08:00'
+      };
+      expect(HomeContextRules.atmosphere(weather, new HomePhraseContext(day, 'minhou', weather, course), day))
+        .assertEqual(HomeAtmosphere.Sun);
+      weather.conditionCode = 350;
+      expect(HomeContextRules.atmosphere(weather, new HomePhraseContext(night, 'minhou', weather, course), night))
+        .assertEqual(HomeAtmosphere.Rain);
+      weather.conditionCode = 150;
+      expect(HomeContextRules.atmosphere(weather, new HomePhraseContext(day, 'minhou', weather, course), day))
+        .assertEqual(HomeAtmosphere.Night);
+      expect(HomeContextRules.atmosphere(undefined, new HomePhraseContext(day, 'minhou', undefined, course), day))
+        .assertEqual(HomeAtmosphere.None);
+      expect(HomeContextRules.atmosphere(undefined, new HomePhraseContext(night, 'minhou', undefined, course), night))
+        .assertEqual(HomeAtmosphere.Night);
     });
 
     it('distinguishes unavailable schedules from a known empty day and focuses tomorrow', 0, () => {
