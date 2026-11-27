@@ -1,5 +1,5 @@
 import { showFeedback } from '../components/AppFeedback';
-﻿import { Services } from '../../app/Services';
+import { Services } from '../../app/Services';
 import { Blob, JsonBlob } from '../../data/sync/JsonBlob';
 import { PowerRooms, RoomInfo } from '../../data/power/PowerModels';
 import {
@@ -13,6 +13,9 @@ import {
 import { WaterCalculator } from '../../features/water/WaterCalculator';
 import { WaterCodec } from '../../features/water/WaterCodec';
 import { WaterMonth } from '../../features/water/WaterMonth';
+import { SharedLedger, LedgerData, WaterIntent } from '../../features/water/SharedLedger';
+import { WaterLedgerFile } from '../../features/water/WaterLedgerFile';
+import { PowerPrefs } from '../../data/power/PowerPrefs';
 import { WaterMutator } from '../../features/water/WaterMutator';
 import { NativeShare, ShareResult } from '../../features/share/NativeShare';
 import { ShareSpecs } from '../../features/share/ShareSpecs';
@@ -24,7 +27,7 @@ import { PageHeader } from '../components/PageHeader';
 /**
  * 水量工具：1–6 人间自选 + 按月抄表（读数 → 用量/水费/折合扣电）+ 记录列表 + 规则卡。
  *
- * 数据：`userdata.water = { rooms: { <roomverify>: { p, recs:[{m,r,ts}] } } }`（整段 LWW）。
+ * 新读数按真实房间读写共享表，userdata.water 保留为个人历史。
  * 口径：水 3.03 元/吨、免费 2 吨/人/月、折合扣电 = 水费 ÷ 0.58；无上一条不伪造用量。
  */
 @Component
@@ -34,6 +37,16 @@ export struct WaterScreen {
 
   @State private sel: string = '';
   @State private state: WaterState = new WaterState();
+  @State private shared: WaterRoomState = new WaterRoomState();
+  @State private status: string = '';
+  @State private pending: string = '';
+  @State private legacyMode: boolean = false;
+  @State private denied: boolean = false;
+  @State private busy: boolean = false;
+  @StorageProp('waterForeground') @Watch('resumeLedger') private foreground: number = 0;
+  private ledger?: SharedLedger;
+  private alive: () => boolean = () => false;
+  private serial: number = 0;
   @State private persons: number = WaterRules.PERSONS_DEFAULT;
   @State private monthText: string = '';
   @State private readingText: string = '';
@@ -50,16 +63,16 @@ export struct WaterScreen {
     this.monthText = WaterMonth.current(this.now);
     const sections: Blob = Services.userdata.currentSections();
     this.state = WaterCodec.fromJson(JsonBlob.get(sections, 'water'));
-    const keys: string[] = [];
-    this.state.rooms.forEach((room: WaterRoomState, key: string) => {
-      keys.push(key);
-    });
-    if (keys.length > 0) {
-      this.sel = keys[0];
-      this.picking = false;
-      this.pickBuilding = PowerRooms.buildingOf(this.sel);
-      this.persons = this.state.roomOrDefault(this.sel).persons;
-    }
+    const selected = PowerPrefs.read(sections).sel;
+    if (selected.length > 0) this.pickRoom(selected);
+  }
+
+  aboutToDisappear(): void {
+    this.serial++;
+  }
+
+  private resumeLedger(): void {
+    if (!this.picking && !this.busy && this.alive()) this.reload();
   }
 
   private roomLabel(): string {
@@ -67,38 +80,95 @@ export struct WaterScreen {
   }
 
   private roomState(): WaterRoomState {
-    return this.state.roomOrDefault(this.sel);
+    return this.alive() && !this.denied ? this.shared : new WaterRoomState();
   }
 
   private stats(): WaterMonthStats {
     return WaterCalculator.stats(this.roomState(), this.monthText, this.now);
   }
 
-  private async persist(): Promise<void> {
-    const current: Blob = Services.userdata.currentSections();
-    const next: Blob = {};
-    const keys: string[] = JsonBlob.keys(current);
-    for (let i = 0; i < keys.length; i++) {
-      next[keys[i]] = current[keys[i]];
-    }
-    next['water'] = WaterCodec.toJson(this.state);
-    await Services.userdata.updateCurrent(next);
+  private reflect(ledger: SharedLedger): void {
+    if (!this.alive() || this.ledger !== ledger) return;
+    this.denied = ledger.data.denied;
+    this.shared = ledger.roomState();
+    this.persons = this.shared.persons;
+    this.status = ledger.status;
+    const op: WaterIntent | null = ledger.data.pending;
+    this.pending = !op || this.denied ? '' : (op.kind === 'persons' ? '修改人数为 ' + op.persons :
+      (op.kind === 'delete' ? '删除 ' + op.month : op.month + ' 读数 ' + op.reading + ' 吨（' + op.persons + ' 人）'));
   }
 
   private pickRoom(rv: string): void {
+    const serial = ++this.serial;
+    const sid = Services.currentSid;
+    const token = Services.currentToken;
+    const session = Services.userdata;
     this.sel = rv;
     this.picking = false;
     this.pickBuilding = PowerRooms.buildingOf(rv);
-    this.persons = this.state.roomOrDefault(rv).persons;
     this.confirmReplace = false;
     this.errorMsg = '';
+    this.legacyMode = false;
+    this.pending = '';
+    this.readingText = '';
+    this.denied = false;
+    this.busy = false;
+    this.ledger = undefined;
+    this.shared = new WaterRoomState();
     this.monthText = WaterMonth.current(this.now);
+    this.alive = () => serial === this.serial && session === Services.userdata && sid.length > 0 &&
+      sid === Services.currentSid && token === Services.currentToken;
+    try {
+      const file = new WaterLedgerFile(sid, rv);
+      const ledger = new SharedLedger(Services.api, sid, rv, file.load(), this.alive,
+        (data: LedgerData) => file.save(data));
+      this.ledger = ledger;
+      this.reflect(ledger);
+      this.reload();
+    } catch (e) {
+      this.status = '本机账本不可用，请重新进入房间';
+    }
+  }
+
+  private async reload(): Promise<void> {
+    const ledger = this.ledger;
+    if (!ledger || this.busy || !this.alive()) return;
+    this.busy = true;
+    try {
+      await ledger.refresh();
+      this.reflect(ledger);
+    } catch (e) {
+      if (this.ledger === ledger && this.alive()) this.status = '暂时无法刷新';
+    } finally {
+      if (this.ledger === ledger && this.alive()) this.busy = false;
+    }
+  }
+
+  private async send(kind: string, month: string, reading: number, count: number,
+    reconfirm: boolean = false): Promise<void> {
+    const ledger = this.ledger;
+    if (!ledger || this.busy || !this.alive()) return;
+    this.busy = true;
+    try {
+      if (kind.length > 0) ledger.prepare(kind, month, reading, count);
+      const result = await ledger.submit(reconfirm);
+      if (this.ledger !== ledger || !this.alive()) return;
+      this.reflect(ledger);
+      this.status = result;
+      this.confirmReplace = false;
+      if (!this.pending && !this.denied) this.readingText = '';
+    } catch (e) {
+      if (this.ledger === ledger && this.alive()) {
+        this.reflect(ledger);
+        this.status = this.denied ? '班级身份未获授权' : '操作尚未确认，请核对待提交项';
+      }
+    } finally {
+      if (this.ledger === ledger && this.alive()) this.busy = false;
+    }
   }
 
   private async onPersons(value: number): Promise<void> {
-    this.persons = WaterCodec.normalizePersons(value);
-    this.state = WaterMutator.withPersons(this.state, this.sel, this.persons);
-    await this.persist();
+    await this.send('persons', '', 0, value);
   }
 
   private async saveRecord(): Promise<void> {
@@ -120,18 +190,49 @@ export struct WaterScreen {
       return;
     }
     const record: WaterRecord = review.record as WaterRecord;
-    this.state = WaterMutator.put(this.state, this.sel, WaterRecordCopy(record));
-    await this.persist();
-    this.confirmReplace = false;
-    this.readingText = '';
-    showFeedback(this.getUIContext(), record.month + ' 已保存（' + record.reading.toFixed(2) + ' 吨）');
+    await this.send('save', record.month, record.reading, this.persons);
   }
 
   private async deleteRecord(month: string): Promise<void> {
-    this.state = WaterMutator.delete(this.state, this.sel, month);
-    await this.persist();
-    showFeedback(this.getUIContext(), month + ' 记录已删除');
-    this.confirmReplace = false;
+    await this.send('delete', month, 0, this.persons);
+  }
+
+  @Builder
+  ledgerActions() {
+    Column({ space: 6 }) {
+      Text(this.status).fontSize(Tokens.F_CAPTION).fontColor(Tokens.TEXT_SECONDARY)
+      Row({ space: 8 }) {
+        Button('刷新共享账本').enabled(!this.busy).onClick(() => this.reload())
+        Button(this.legacyMode ? '收起个人旧账' : '查看个人旧账').enabled(!this.denied)
+          .onClick(() => { this.legacyMode = !this.legacyMode; })
+      }
+      if (this.pending.length > 0 && !this.denied) {
+        Text('待确认 · ' + this.pending).fontColor(Tokens.TEXT_PRIMARY)
+        Row({ space: 8 }) {
+          Button('按当前共享值确认').enabled(!this.busy).onClick(() => this.send('', '', 0, 4, true))
+          Button('放弃草稿').enabled(!this.busy).onClick(() => {
+            if (this.ledger && this.alive()) { this.ledger.discard(); this.reflect(this.ledger); }
+          })
+        }
+      }
+      if (this.legacyMode && !this.denied && this.alive()) {
+        Text('个人旧账 · ' + this.state.roomOrDefault(this.sel).persons + ' 人').fontColor(Tokens.TEXT_PRIMARY)
+        if (this.state.roomOrDefault(this.sel).records.length === 0) {
+          Text('这间宿舍没有个人旧记录').fontColor(Tokens.TEXT_SECONDARY)
+        }
+        ForEach(this.state.roomOrDefault(this.sel).records, (item: WaterRecord) => {
+          Row({ space: 8 }) {
+            Text(item.month + ' · ' + item.reading + ' 吨').fontColor(Tokens.TEXT_PRIMARY)
+            Button('带入录入框').enabled(!this.busy).onClick(() => {
+              this.monthText = item.month;
+              this.readingText = String(item.reading);
+              this.confirmReplace = false;
+              this.errorMsg = '核对月份和共享值后，再点保存';
+            })
+          }
+        }, (item: WaterRecord) => item.month)
+      }
+    }.width('100%')
   }
 
   @Builder
@@ -155,7 +256,7 @@ export struct WaterScreen {
         .fontSize(Tokens.F_BODY)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.sel === info.rv ? '#FFFFFF' : Tokens.TEXT_PRIMARY)
-      Text(this.state.rooms.has(info.rv) ? '已录入' : '未录入')
+      Text(this.state.rooms.has(info.rv) ? '有个人旧账' : '查看共享账本')
         .fontSize(Tokens.F_CAPTION)
         .fontColor(this.sel === info.rv ? '#E8F2EF' : Tokens.TEXT_TERTIARY)
         .margin({ top: 2 })
@@ -516,7 +617,8 @@ export struct WaterScreen {
 
   /** 当前月份水量 → 分享卡图片 → 系统图片分享。 */
   private shareSummary(): void {
-    if (this.picking) {
+    if (this.picking || this.denied || !this.alive() || !this.ledger || !this.ledger.rowsFresh || !this.ledger.peopleFresh || this.pending.length > 0) {
+      showFeedback(this.getUIContext(), '请先刷新并确认共享账本');
       return;
     }
     const stats: WaterMonthStats = this.stats();
@@ -550,7 +652,8 @@ export struct WaterScreen {
         this.onClose();
       },
       onAction: () => {
-        this.picking = !this.picking;
+        if (this.picking && this.sel) { this.pickRoom(this.sel); }
+        else { this.serial++; this.picking = true; }
       },
       onAction2: () => {
         this.shareSummary();
@@ -621,10 +724,13 @@ export struct WaterScreen {
             }
             .width('100%')
 
-            this.entryCard()
+            this.ledgerActions()
+            if (!this.denied) {
+              this.entryCard()
             this.statsCard()
             this.recordsCard()
             this.rulesCard()
+            }
           }
           .width('100%')
           .padding({ left: Tokens.PAGE_PADDING, right: Tokens.PAGE_PADDING, bottom: 24 })
@@ -645,13 +751,4 @@ export struct WaterScreen {
       .padding({ top: 0 })
     }
   }
-}
-
-/** 记录深拷贝（避免 Put 后状态引用共享）。 */
-function WaterRecordCopy(record: WaterRecord): WaterRecord {
-  const copy: WaterRecord = new WaterRecord();
-  copy.month = record.month;
-  copy.reading = record.reading;
-  copy.ts = record.ts;
-  return copy;
 }

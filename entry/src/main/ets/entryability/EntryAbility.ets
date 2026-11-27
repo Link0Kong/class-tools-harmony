@@ -69,6 +69,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    AppStorage.setOrCreate<number>('waterForeground', Date.now());
     NotifyCenter.setForeground(true);
     if (Services.currentSid.length > 0) {
       TaskRepository.load(true).then(() => DeskForms.refresh());

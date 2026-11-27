@@ -18,6 +18,7 @@ import noticeTest from './Notice.test';
 import timetableTest from './Timetable.test';
 import powerTest from './Power.test';
 import waterTest from './Water.test';
+import sharedLedgerTest from './SharedLedger.test';
 import voteTest from './Vote.test';
 import pptTest from './Ppt.test';
 import rollTest from './Roll.test';
@@ -57,6 +58,7 @@ export default function testsuite() {
   timetableTest();
   powerTest();
   waterTest();
+  sharedLedgerTest();
   voteTest();
   pptTest();
   rollTest();
