@@ -167,7 +167,7 @@ export struct UsageScreen {
     if (id === 'roster') {
       return 'people';
     }
-    if (id === 'tt' || id === 'ppt') {
+    if (id === 'tt') {
       return 'grid';
     }
     if (id === 'hw' || id === 'jw') {

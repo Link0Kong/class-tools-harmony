@@ -1,5 +1,6 @@
 ﻿import { HomeCards, HomeCardConfig } from '../main/ets/data/home/HomeCards';
 import { ToolCatalog } from '../main/ets/data/tool/ToolCatalog';
+import { UsageData } from '../main/ets/features/usage/UsageData';
 import { ToolLaunch } from '../main/ets/app/ToolLaunch';
 import { describe, it, expect } from '@ohos/hypium';
 import { HomeTools, HomeToolsToggleResult } from '../main/ets/data/home/HomeTools';
@@ -150,6 +151,9 @@ export default function homeToolsTest() {
       expect(cards[0].id).assertEqual('file');
       expect(cards[0].span).assertEqual(1);
       expect(ToolCatalog.visibleTools().some(tool => tool.id === 'ppt')).assertFalse();
+      const help = UsageData.ofCategory('team');
+      expect(help.some(card => card.id === 'ppt')).assertFalse();
+      expect(help.filter(card => card.id === 'file' && card.steps.join('').includes('班级课件')).length).assertEqual(1);
     });
 
     it('normalize_truncates_to_max', 0, () => {
