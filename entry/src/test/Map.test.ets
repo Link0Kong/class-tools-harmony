@@ -4,7 +4,7 @@ import { MapConfig, MapLoadState, MapLogic } from '../main/ets/features/map/MapM
 export default function mapTest() {
   describe('MapUrl', () => {
     it('page_url_matches_formal_h5', 0, () => {
-      expect(MapLogic.pageUrl()).assertEqual('https://tool.furina.fun/map/campus_final_25d.html?v=20261127-map4&embed=1&native=1');
+      expect(MapLogic.pageUrl()).assertEqual('https://tool.furina.fun/map/campus_final_25d.html?v=20261127-map5&embed=1&native=1');
       expect(MapLogic.pageUrl().indexOf('embed=1') > 0).assertTrue();
       expect(MapLogic.host()).assertEqual('tool.furina.fun');
       expect(MapConfig.PAGE_PATH.indexOf('campus_final_25d.html') > 0).assertTrue();

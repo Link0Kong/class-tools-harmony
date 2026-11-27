@@ -57,6 +57,7 @@ struct Index {
   private homeMounted: boolean = false;
   private appReady: boolean = false;
   private lastPersonalTable: string = 'null';
+  private lastNoticeHide: string = 'null';
 
   aboutToAppear(): void {
     Services.api.setTokenInvalidHandler(() => {
@@ -161,8 +162,11 @@ struct Index {
   private applySections(sections: Blob): void {
     const tt = JsonBlob.asBlob(JsonBlob.get(sections, 'tt'));
     const personal = JSON.stringify(JsonBlob.get(tt, 'ttLocal') ?? null);
-    if (personal !== this.lastPersonalTable) {
+    const hide = JsonBlob.asBlob(JsonBlob.get(sections, 'hide'));
+    const noticeHide = JSON.stringify(JsonBlob.get(hide, 'ntHide') ?? null);
+    if (personal !== this.lastPersonalTable || noticeHide !== this.lastNoticeHide) {
       this.lastPersonalTable = personal;
+      this.lastNoticeHide = noticeHide;
       this.contentEpoch++;
     }
     const raw: Object[] | undefined = JsonBlob.asArray(JsonBlob.get(sections, 'homeTools'));

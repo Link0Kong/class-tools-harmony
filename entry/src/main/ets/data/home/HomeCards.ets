@@ -71,7 +71,7 @@ export class HomeCards {
   static readonly CATALOG: HomeCardDef[] = [
     new HomeCardDef('quick', '常用工具', '首页快捷入口', AppSymbols.ALL, '#6E8CA8', HomeCardKind.LOCAL, ''),
     new HomeCardDef('tt', '今日课程', '周次 · 下一节课', AppSymbols.TIMETABLE, '#6E8CA8', HomeCardKind.DATA, 'tt'),
-    new HomeCardDef('hw', '任务待办', '班级作业和个人任务', AppSymbols.HOMEWORK, '#B98F63', HomeCardKind.DATA, 'hw'),
+    new HomeCardDef('hw', '任务待办', '个人待办任务', AppSymbols.HOMEWORK, '#B98F63', HomeCardKind.DATA, 'hw'),
     new HomeCardDef('nt', '通知待处理', '班委通知', AppSymbols.NOTICE, '#B06A55', HomeCardKind.DATA, 'nt'),
     new HomeCardDef('power', '宿舍电费', '剩余电量', AppSymbols.POWER, '#C29A3B', HomeCardKind.DATA, 'power'),
     new HomeCardDef('fit', '体测', '录入 · 评分 · 历史', AppSymbols.FIT, '#5F8F5B', HomeCardKind.ENTRY, 'fit'),

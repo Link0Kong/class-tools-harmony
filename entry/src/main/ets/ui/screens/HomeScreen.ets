@@ -2,13 +2,12 @@
 import { Services } from '../../app/Services';
 import { MarkKind } from '../../data/marks/Marks';
 import { TaskRepository } from '../../data/tasks/TaskRepository';
-import { HomeworkBrief, PersonalTask } from '../../data/tasks/TaskModels';
+import { PersonalTask } from '../../data/tasks/TaskModels';
 import { AppGlobal } from '../../app/AppGlobal';
 import { ToolLaunch } from '../../app/ToolLaunch';
 import { DeskForms } from '../../forms/DeskForms';
 import { NotifyCenter } from '../../data/notify/NotifyCenter';
-import { HomeworkDueCalculator, HomeworkItem, HomeworkRow } from '../../data/homework/HomeworkModels';
-import { HomeworkResult } from '../../data/homework/HomeworkRepository';
+import { HomeworkDueCalculator } from '../../data/homework/HomeworkModels';
 import { NoticeCards, NoticeCard } from '../../features/notices/NoticeCards';
 import { NoticeEntry, NoticesResult } from '../../data/notices/NoticesRepository';
 import { PowerPrefs } from '../../data/power/PowerPrefs';
@@ -38,7 +37,7 @@ const HOME_CARD_H: number = 152;
 
 /**
  * 工作台（对齐小程序 pages/index）：
- * 问候 hero → 可自定义卡片（课程 / 电费 / 作业 / 通知 / 常用工具 / 各工具入口 / 时钟 / 天气）。
+ * 问候 hero → 可自定义卡片（课程 / 电费 / 个人任务 / 通知 / 常用工具 / 各工具入口 / 时钟 / 天气）。
  *
  * 卡片顺序、类型、数量与宽度由右上角配置按钮自定义：
  * - 一行最多两张，span=1 半宽、span=2 整行，宽度变化走弹性动画；
@@ -148,7 +147,6 @@ export struct HomeScreen {
 
   aboutToAppear(): void {
     this.syncQuickOrder();
-    this.readLocalTasks();
     this.startedAt = Date.now();
     this.applyLocal();
     this.refreshDigests();
@@ -413,25 +411,17 @@ export struct HomeScreen {
     return out;
   }
 
-  /** 首帧直接用本机缓存渲染（marks / 课表 / 作业 / 通知），不等网络。 */
   private async readLocalTasks(): Promise<void> {
     const sid = Services.currentSid;
     const tasks = await TaskRepository.load(false);
     if (sid && sid === Services.currentSid) {
       this.tasks = tasks;
-      this.applyAssignments(Services.homework.local());
+      this.applyTasks();
     }
   }
 
-  private applyAssignments(rows: HomeworkRow[]): void {
-    const hidden = HidePrefs.read(Services.userdata.currentSections()).hwHide;
-    const excluded = new Set<string>(hidden);
-    const marks = Services.marks.marks();
-    rows.forEach((row: HomeworkRow) => {
-      if (marks.isDone(MarkKind.HW, row.id)) excluded.add(row.id);
-    });
-    const brief = HomeworkBrief.build(rows, excluded, this.tasks, Date.now());
-    const items = HomeDigest.hwItems(brief.pending.map((hw: HomeworkItem) => hw.row), 5);
+  private applyTasks(): void {
+    const items: HomeCardItem[] = [];
     const personal = this.tasks.filter((task: PersonalTask) => !task.done);
     for (const task of personal) {
       const item = new HomeCardItem();
@@ -442,7 +432,7 @@ export struct HomeScreen {
       item.dueAt = HomeworkDueCalculator.parseDue(task.due, task.dueTime || '23:59') ?? Number.MAX_SAFE_INTEGER;
       items.push(item);
     }
-    this.hwOpen = personal.length + brief.pending.length;
+    this.hwOpen = personal.length;
     this.hwItems = items.sort((a: HomeCardItem, b: HomeCardItem) => a.dueAt - b.dueAt).slice(0, 5);
     this.hwIdx = this.hwIdx < this.hwItems.length ? this.hwIdx : 0;
   }
@@ -451,7 +441,6 @@ export struct HomeScreen {
     if (this.editing || this.suppressTap) return;
     const launch = new ToolLaunch(item.kind === 'nt' ? 'nt' : 'hw');
     if (item.kind === 'task') launch.taskId = item.id;
-    else if (item.kind === 'hw') launch.homeworkId = item.id;
     else launch.noticeId = item.id;
     AppGlobal.requestTool(launch);
   }
@@ -467,8 +456,7 @@ export struct HomeScreen {
         if (!saved) return;
         await this.readLocalTasks();
       } else {
-        const mark = item.kind === 'nt' ? MarkKind.NT_DONE : MarkKind.HW;
-        await Services.marks.setMark(mark, item.id, true);
+        await Services.marks.setMark(MarkKind.NT_DONE, item.id, true);
       }
       if (sid !== Services.currentSid) return;
       this.applyLocal();
@@ -483,9 +471,8 @@ export struct HomeScreen {
     const tt = Services.timetable.local();
     this.ttSnapshot = tt;
     this.plan = TtCalendar.plan(tt, Date.now());
-    this.applyAssignments(Services.homework.local());
     const entries: NoticeEntry[] = Services.notices.local();
-    if (entries.length > 0) {
+    if (entries.length > 0 || this.ntState === 'ok') {
       this.applyNotices(entries, true);
     }
   }
@@ -500,7 +487,7 @@ export struct HomeScreen {
       const card: NoticeCard = allCards[i];
       const entryId: string = card.entry !== undefined ? card.entry.row.id : '';
       const groupId: string = card.key.indexOf('@occ:') > 0 ? card.key.substring(0, card.key.indexOf('@occ:')) : card.key;
-      if (hidden.ntHide.has(entryId) || hidden.ntHide.has(groupId)) {
+      if (card.entry?.row.hidden || hidden.ntHide.has(entryId) || hidden.ntHide.has(groupId)) {
         continue;
       }
       cards.push(card);
@@ -517,6 +504,7 @@ export struct HomeScreen {
     this.lastLoadAt = Date.now();
     const now: number = Date.now();
     this.applyLocal();
+    this.readLocalTasks();
     this.refreshDigests();
     this.startSkeleton();
     if (this.loading) {
@@ -534,7 +522,6 @@ export struct HomeScreen {
     // 各模块并行请求，互不阻塞（原来串行最坏要等 5 个 10s 超时）
     const marksPromise = Services.marks.refresh(false);
     const ttPromise = Services.loadTimetableForView(force);
-    const hwPromise = Services.homework.load(force);
     const ntPromise = Services.notices.load(force);
     const prefs = PowerPrefs.read(Services.userdata.currentSections());
     let powerPromise: Promise<PowerRowResult> | undefined = undefined;
@@ -553,12 +540,6 @@ export struct HomeScreen {
         this.ttSnapshot = tt.snapshot;
         this.plan = TtCalendar.plan(tt.snapshot, Date.now());
       }
-    } catch (e) {
-      // 忽略
-    }
-    try {
-      const hw: HomeworkResult = await hwPromise;
-      if (seq === this.loadSeq) this.applyAssignments(hw.rows);
     } catch (e) {
       // 忽略
     }
@@ -1871,7 +1852,7 @@ export struct HomeScreen {
           .fontSize(Tokens.F_BODY)
           .fontWeight(FontWeight.Medium)
           .fontColor(Tokens.TEXT_PRIMARY)
-        Text('点按添加课程、作业、天气等卡片')
+        Text('点按添加课程、任务、天气等卡片')
           .fontSize(Tokens.F_CAPTION)
           .fontColor(Tokens.TEXT_TERTIARY)
           .margin({ top: 4 })
