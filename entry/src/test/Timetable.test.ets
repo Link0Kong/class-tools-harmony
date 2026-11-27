@@ -11,6 +11,8 @@ import {
   TtSnapshot
 } from '../main/ets/data/timetable/TimetableModels';
 import { TtCalendar } from '../main/ets/data/timetable/TtCalendar';
+import { TtDayNav, TtSwipe } from '../main/ets/data/timetable/TtDayNav';
+import { TtViewPrefs } from '../main/ets/data/timetable/TtViewPrefs';
 import { TimetableRepository, TtResult, TtSource } from '../main/ets/data/timetable/TimetableRepository';
 import { FakeApi } from './support/FakeApi';
 import { Blob } from '../main/ets/data/sync/JsonBlob';
@@ -418,6 +420,58 @@ export default function timetableTest() {
       const result: TtResult = await repo.load(true);
       expect(result.ok).assertFalse();
       expect(result.message.length > 0).assertTrue();
+    });
+  });
+
+  describe('TtViewPrefs', () => {
+    it('views_only_accept_week_or_day', 0, () => {
+      expect(TtViewPrefs.normalize('day')).assertEqual('day');
+      expect(TtViewPrefs.normalize('week')).assertEqual('week');
+      expect(TtViewPrefs.normalize('')).assertEqual('week');
+      expect(TtViewPrefs.normalize('DAY')).assertEqual('week');
+      expect(TtViewPrefs.normalize(' Day ')).assertEqual('week');
+      expect(TtViewPrefs.normalize('month')).assertEqual('week');
+    });
+  });
+
+  describe('TtDayNav', () => {
+    it('moves_one_day_and_stays_within_the_week', 0, () => {
+      for (let day = 0; day < 7; day++) {
+        const prev: number | undefined = TtDayNav.next(day, -1);
+        const next: number | undefined = TtDayNav.next(day, 1);
+        expect(prev === undefined).assertEqual(day === 0);
+        expect(next === undefined).assertEqual(day === 6);
+        if (prev !== undefined) {
+          expect(prev).assertEqual(day - 1);
+        }
+        if (next !== undefined) {
+          expect(next).assertEqual(day + 1);
+        }
+      }
+      expect(TtDayNav.next(-1, 1) === undefined).assertTrue();
+      expect(TtDayNav.next(7, -1) === undefined).assertTrue();
+      expect(TtDayNav.next(3, 0)).assertEqual(3);
+    });
+
+    it('day_switch_and_week_switch_share_the_same_threshold', 0, () => {
+      // 手机宽度 300vp → 阈值 54vp；宽屏封顶 64vp；未测量时按 300vp 兜底。
+      const threshold: number = TtSwipe.threshold(300);
+      expect(threshold > 0 && threshold <= TtSwipe.MIN_THRESHOLD).assertTrue();
+      expect(TtSwipe.threshold(4000)).assertEqual(TtSwipe.MIN_THRESHOLD);
+      expect(TtSwipe.threshold(0)).assertEqual(TtSwipe.threshold(TtSwipe.FALLBACK_WIDTH));
+      // 同一个 min(64, 宽 × 0.18) 判定：过阈值 1vp 就翻，差 1vp 只回弹。
+      expect(TtSwipe.delta(-threshold - 1, 300)).assertEqual(1);
+      expect(TtSwipe.delta(-threshold + 1, 300)).assertEqual(0);
+      expect(TtSwipe.delta(threshold + 1, 300)).assertEqual(-1);
+      expect(TtSwipe.delta(threshold - 1, 300)).assertEqual(0);
+      expect(TtDayNav.target(3, -threshold - 1, 300)).assertEqual(4);
+      expect(TtDayNav.target(3, -threshold + 1, 300) === undefined).assertTrue();
+      expect(TtDayNav.target(3, threshold + 1, 300)).assertEqual(2);
+      expect(TtDayNav.target(3, threshold - 1, 300) === undefined).assertTrue();
+      // 两端只回弹、不换周；位移太小也只回弹。
+      expect(TtDayNav.target(0, threshold + 1, 300) === undefined).assertTrue();
+      expect(TtDayNav.target(6, -threshold - 1, 300) === undefined).assertTrue();
+      expect(TtDayNav.target(3, 0, 300) === undefined).assertTrue();
     });
   });
 }

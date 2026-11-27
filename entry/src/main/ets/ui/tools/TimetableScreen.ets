@@ -11,6 +11,8 @@ import {
 } from '../../data/timetable/TimetableModels';
 import { TimetableFocus } from '../../data/timetable/TimetableFocus';
 import { TtCalendar } from '../../data/timetable/TtCalendar';
+import { TtDayNav, TtSwipe } from '../../data/timetable/TtDayNav';
+import { TtViewPrefs } from '../../data/timetable/TtViewPrefs';
 import { TimetableRepository, TtResult, TtSource } from '../../data/timetable/TimetableRepository';
 import { NativeShare, ShareResult } from '../../features/share/NativeShare';
 import { ShareSpecs } from '../../features/share/ShareSpecs';
@@ -57,8 +59,9 @@ class TtGroupItem {
  * 课表工具：与微信小程序同款布局（单卡片 + 周/日视图 + 下一节 + 全部课程）。
  *
  * 布局：顶部周导航与周/日分段 → 操作行 → 下一节横幅 → 周表/日表 → 全部课程 → 底部说明。
- * 动效：周视图左右跟手滑动并飞出飞入切周、分段指示块滑动、日视图切换与列表项淡入上移、
- * 课程块/卡片按压回弹、全部课程展开收起。
+ * 动效：周视图左右跟手滑动并飞出飞入切周、日视图左右跟手切本周相邻天、分段指示块滑动、
+ * 日视图切换与列表项淡入上移、课程块/卡片按压回弹、全部课程展开收起。
+ * 偏好：周/日视图按账号记在本机（`TtViewPrefs`），重进沿用；深链定位仍直接进当天。
  *
  * 数据：有效个人快照（`userdata.tt.ttLocal`）优先，其次 `site_assets id=tt`；
  * 周次/单双周/下一节全部由 `TtCalendar` 计算。
@@ -92,6 +95,11 @@ export struct TimetableScreen {
   @State private wideLayout: boolean = false;
   @State private dragX: number = 0;
   @State private weekBusy: boolean = false;
+  @State private dayBusy: boolean = false;
+  /** 深链已强制进入日视图（不再被本机偏好覆盖，也不回写偏好）。 */
+  private focusDayApplied: boolean = false;
+  /** 用户已手动切过视图（晚到的偏好回读不再覆盖）。 */
+  private viewTouched: boolean = false;
   @State private detailCourse: Course | undefined = undefined;
   @State private detailOpen: boolean = false;
   @State private detailDate: string = '';
@@ -114,7 +122,22 @@ export struct TimetableScreen {
       this.plan = TtCalendar.plan(this.snapshot, this.now);
     }, 30000);
     this.dayIdx = TtCalendar.dayIndex(new Date(Date.now()));
-    this.reload(false);
+    this.bootView();
+  }
+
+  /**
+   * 进入时恢复本机周/日视图偏好。
+   *
+   * 先并行发起偏好读取，等 `reload` 完成（其中的 `applyFocus` 已处理深链定位）后再应用，
+   * 避免在深链结果之前把 viewMode 覆盖掉；深链强制日视图时以深链为准。
+   */
+  private async bootView(): Promise<void> {
+    const stored: Promise<string | undefined> = TtViewPrefs.load(Services.currentSid);
+    await this.reload(false);
+    const view: string | undefined = await stored;
+    if (view !== undefined) {
+      this.applyStoredView(view);
+    }
   }
 
   private async reload(force: boolean): Promise<void> {
@@ -147,6 +170,7 @@ export struct TimetableScreen {
       if (week !== undefined) this.weekOffset = week - this.baseWeek();
       this.dayIdx = TtCalendar.dayIndex(date);
       this.viewMode = 'day';
+      this.focusDayApplied = true;
       if (!focus.name) return;
       const course = this.coursesOf(this.dayIdx).find((row: Course) => TimetableFocus.matches(focus, row));
       if (course) {
@@ -155,6 +179,19 @@ export struct TimetableScreen {
       }
     }
     showFeedback(this.getUIContext(), '这节课已变更，已打开课表');
+  }
+
+  /** 应用本机视图偏好；深链已强制日视图或用户已手动切换时不再覆盖。 */
+  private applyStoredView(view: string): void {
+    if (this.focusDayApplied || this.viewTouched) {
+      return;
+    }
+    const target: string = TtViewPrefs.normalize(view);
+    if (this.viewMode === target) {
+      return;
+    }
+    this.viewMode = target;
+    this.dragX = 0;
   }
 
   private async pullRefresh(): Promise<void> {
@@ -359,10 +396,24 @@ export struct TimetableScreen {
     return x;
   }
 
-  private weekOpacity(): number {
-    const width: number = this.gridWidth > 0 ? this.gridWidth : 300;
+  /** 记录课表容器宽度（周表/日表共用，阈值与飞出位移按它换算）。 */
+  private syncGridWidth(width: number): void {
+    if (width > 0 && Math.abs(width - this.gridWidth) > 1) {
+      this.gridWidth = width;
+    }
+  }
+
+  private dragOpacity(): number {
+    const width: number = TtSwipe.widthOf(this.gridWidth);
     const ratio: number = Math.abs(this.dragX) / width;
     return 1 - Math.min(0.35, ratio * 0.5);
+  }
+
+  /** 松手未过阈值：平移到原位的回弹。 */
+  private springBack(): void {
+    this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.spring() }, () => {
+      this.dragX = 0;
+    });
   }
 
   /** 翻周：旧内容飞出 → 换周 → 新内容从另一侧飞入。 */
@@ -371,7 +422,7 @@ export struct TimetableScreen {
       return;
     }
     this.weekBusy = true;
-    const width: number = this.gridWidth > 0 ? this.gridWidth : 300;
+    const width: number = TtSwipe.widthOf(this.gridWidth);
     const out: number = delta > 0 ? -width * 0.45 : width * 0.45;
     this.getUIContext().animateTo({ duration: 150, curve: Motion.ease() }, () => {
       this.dragX = out;
@@ -388,28 +439,75 @@ export struct TimetableScreen {
     }, 160);
   }
 
-  private onWeekSwipeEnd(offsetX: number): void {
-    const width: number = this.gridWidth > 0 ? this.gridWidth : 300;
-    const threshold: number = Math.min(64, width * 0.18);
-    if (offsetX < -threshold) {
-      this.commitWeek(1);
-    } else if (offsetX > threshold) {
-      this.commitWeek(-1);
-    } else {
-      this.getUIContext().animateTo({ duration: Motion.FAST, curve: Motion.spring() }, () => {
+  /** 切天（本周内）：与翻周同一动画骨架（150ms 飞出 → 换天 → 230ms 飞入），只改 dayIdx。 */
+  private commitDay(delta: number): void {
+    if (this.dayBusy || this.weekBusy) {
+      return;
+    }
+    const target: number | undefined = TtDayNav.next(this.dayIdx, delta);
+    if (target === undefined) {
+      return;
+    }
+    this.dayBusy = true;
+    const width: number = TtSwipe.widthOf(this.gridWidth);
+    const out: number = delta > 0 ? -width * 0.45 : width * 0.45;
+    this.getUIContext().animateTo({ duration: 150, curve: Motion.ease() }, () => {
+      this.dragX = out;
+    });
+    setTimeout(() => {
+      if (this.viewMode !== 'day') {
+        this.dragX = 0;
+        this.dayBusy = false;
+        return;
+      }
+      this.dayIdx = target;
+      this.dragX = -out;
+      this.getUIContext().animateTo({ duration: 230, curve: Motion.ease() }, () => {
         this.dragX = 0;
       });
+      setTimeout(() => {
+        this.dayBusy = false;
+      }, 240);
+    }, 160);
+  }
+
+  private onWeekSwipeEnd(offsetX: number): void {
+    const delta: number = TtSwipe.delta(offsetX, this.gridWidth);
+    if (delta === 0) {
+      this.springBack();
+      return;
     }
+    this.commitWeek(delta);
+  }
+
+  /** 日视图松手：本周内切相邻天；未过阈值或到两端只回弹（不换周）。 */
+  private onDaySwipeEnd(offsetX: number): void {
+    if (this.dayBusy || this.weekBusy) {
+      // 动画中收到松手：把跟手位移弹回去，避免停在半路
+      this.springBack();
+      return;
+    }
+    const delta: number = TtSwipe.delta(offsetX, this.gridWidth);
+    const target: number | undefined = delta === 0 ? undefined : TtDayNav.next(this.dayIdx, delta);
+    if (target === undefined) {
+      this.springBack();
+      return;
+    }
+    this.commitDay(delta);
   }
 
   private switchView(mode: string): void {
-    if (this.viewMode === mode) {
+    const target: string = TtViewPrefs.normalize(mode);
+    if (this.viewMode === target) {
       return;
     }
+    this.viewTouched = true;
     this.getUIContext().animateTo({ duration: Motion.NORMAL, curve: Motion.ease() }, () => {
-      this.viewMode = mode;
+      this.viewMode = target;
       this.dragX = 0;
     });
+    // 只在真正切换时记住选择；异步落盘，不阻塞界面。
+    TtViewPrefs.save(Services.currentSid, target);
   }
 
   private pickDay(index: number): void {
@@ -860,12 +958,9 @@ export struct TimetableScreen {
     }
     .width('100%')
     .translate({ x: this.dragX })
-    .opacity(this.weekOpacity())
+    .opacity(this.dragOpacity())
     .onAreaChange((oldArea: Area, newArea: Area) => {
-      const width: number = Number(newArea.width);
-      if (width > 0 && Math.abs(width - this.gridWidth) > 1) {
-        this.gridWidth = width;
-      }
+      this.syncGridWidth(Number(newArea.width));
     })
     .gesture(
       PanGesture({ direction: PanDirection.Horizontal, distance: 18 })
@@ -1014,6 +1109,23 @@ export struct TimetableScreen {
       this.dayAgenda()
     }
     .width('100%')
+    .translate({ x: this.dragX })
+    .opacity(this.dragOpacity())
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      this.syncGridWidth(Number(newArea.width));
+    })
+    .gesture(
+      PanGesture({ direction: PanDirection.Horizontal, distance: 18 })
+        .onActionStart(() => {
+          this.dragX = 0;
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          this.dragX = this.clampDrag(event.offsetX);
+        })
+        .onActionEnd((event: GestureEvent) => {
+          this.onDaySwipeEnd(event.offsetX);
+        })
+    )
     .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 8 })))
   }
 
