@@ -182,7 +182,10 @@ export struct HomeContextCard {
           }.width('100%')
           if (this.visiblePhrase() !== undefined) {
             Text(this.visiblePhrase()?.text ?? '')
-              .fontSize(Tokens.F_HEADING).fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
+              .fontSize(this.visiblePhrase()?.translation && this.appearance.onlineContent &&
+                this.batch && Date.parse(this.batch.expiresAt) > this.now && this.batch.englishTypography === 'extraLarge'
+                ? Tokens.F_TITLE : Tokens.F_HEADING)
+              .fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
               .width('100%').id('home_context_phrase')
               .onVisibleAreaChange([0, 0.15], (visible: boolean, ratio: number) => {
                 this.shown = visible && ratio >= 0.15;

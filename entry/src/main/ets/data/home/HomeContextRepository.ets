@@ -8,7 +8,7 @@ import { HOME_DEFAULT_REGION, HOME_WEATHER_INTERVAL, HomeAppearance, HomeContext
 const ENDPOINT: string = 'https://tool.furina.fun/home-context';
 const PREF_NAME: string = 'ct_home_context_v1';
 const MAX_BODY: number = 64 * 1024;
-const CONTENT_RETRY: number = 60 * 60 * 1000;
+const CONTENT_RETRY: number = 15 * 60 * 1000;
 const HISTORY_LIMIT: number = 96;
 const HISTORY_AGE: number = 7 * 24 * 60 * 60 * 1000;
 
@@ -201,8 +201,7 @@ export class HomeContextRepository {
     const current = await HomeContextRepository.cachedContent(now);
     const pending = HomeContextRepository.contentRequest;
     if (pending) return await pending;
-    if ((current && HomeContextRules.publicationDay(Date.parse(current.generatedAt)) >= HomeContextRules.publicationDay(now)) ||
-      (now >= HomeContextRepository.lastContentAttempt && now - HomeContextRepository.lastContentAttempt < CONTENT_RETRY)) {
+    if (now >= HomeContextRepository.lastContentAttempt && now - HomeContextRepository.lastContentAttempt < CONTENT_RETRY) {
       return current;
     }
     HomeContextRepository.lastContentAttempt = now;
@@ -218,7 +217,8 @@ export class HomeContextRepository {
   private static async fetchContent(current: HomePhraseBatch | undefined): Promise<HomePhraseBatch | undefined> {
     const raw = await HomeContextRepository.httpGet('/content/v1');
     const incoming = HomeContextRules.batch(raw, Date.now());
-    if (incoming && (!current || Date.parse(incoming.generatedAt) > Date.parse(current.generatedAt))) {
+    if (incoming && (!current || Date.parse(incoming.generatedAt) > Date.parse(current.generatedAt) ||
+      (incoming.generatedAt === current.generatedAt && incoming.englishTypography !== current.englishTypography))) {
       HomeContextRepository.batch = incoming;
       await HomeContextRepository.put('public_batch', raw);
       return incoming;

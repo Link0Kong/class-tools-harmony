@@ -64,6 +64,7 @@ export interface HomePhraseBatch {
   generatedAt: string;
   expiresAt: string;
   entries: HomePhrase[];
+  englishTypography?: string;
 }
 
 export interface HomeWeather {
@@ -224,10 +225,6 @@ export class HomeContextRules {
       return night ? HomeAtmosphere.Night : HomeAtmosphere.Sun;
     }
     return night ? HomeAtmosphere.Night : HomeAtmosphere.None;
-  }
-
-  static publicationDay(now: number): number {
-    return Math.floor((now + CHINA_OFFSET - 6 * 60 * 60 * 1000) / DAY);
   }
 
   static course(plan: TtPlan, state: HomeTimetableState, now: number): HomeCourseContext {
