@@ -181,7 +181,7 @@ export struct HomeContextCard {
               .id('home_context_greeting')
           }.width('100%')
           if (this.visiblePhrase() !== undefined) {
-            Text(this.visiblePhrase()?.translation ?? this.visiblePhrase()?.text ?? '')
+            Text(this.visiblePhrase()?.text ?? '')
               .fontSize(Tokens.F_HEADING).fontWeight(FontWeight.Medium).fontColor(Tokens.TEXT_PRIMARY)
               .width('100%').id('home_context_phrase')
               .onVisibleAreaChange([0, 0.15], (visible: boolean, ratio: number) => {
@@ -189,8 +189,8 @@ export struct HomeContextCard {
                 this.recordSoon();
               })
             if (this.visiblePhrase()?.translation) {
-              Text(this.visiblePhrase()?.text ?? '').fontSize(Tokens.F_CAPTION)
-                .fontColor(Tokens.TEXT_SECONDARY).width('100%').id('home_context_english')
+              Text(this.visiblePhrase()?.translation ?? '').fontSize(Tokens.F_CAPTION)
+                .fontColor(Tokens.TEXT_SECONDARY).width('100%').id('home_context_translation')
             }
           }
         }.layoutWeight(1).alignItems(HorizontalAlign.Start)
